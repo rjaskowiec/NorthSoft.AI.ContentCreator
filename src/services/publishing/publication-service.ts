@@ -166,7 +166,7 @@ export class PublicationService {
         `SELECT p.id, p.title, p.status as post_status,
                 pv.id as version_id, COALESCE(pv.content, pv.body) as body, COALESCE(pv.status, p.status, 'approved') as version_status, pv.version_number
          FROM posts p
-         JOIN post_versions pv ON (p.current_version_id = pv.id OR (p.id = pv.post_id AND p.current_version = pv.version_number))
+         JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE p.id = ?`,
       )
       .bind(postId)
@@ -456,7 +456,7 @@ export class PublicationService {
         `SELECT s.id as schedule_id, s.post_id
          FROM schedules s
          JOIN posts p ON s.post_id = p.id
-         JOIN post_versions pv ON (p.current_version_id = pv.id OR (p.id = pv.post_id AND p.current_version = pv.version_number))
+         JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE s.status = 'pending'
            AND s.scheduled_at <= datetime('now')
            AND (pv.status = 'approved' OR p.status = 'approved')`,
