@@ -506,6 +506,35 @@ export function getAdminCss(): string {
       border-radius: 4px;
     }
 
+    .audit-details-compact {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      max-width: 400px;
+    }
+
+    .detail-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      background: #090d16;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.775rem;
+    }
+
+    .detail-key {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .detail-val {
+      color: var(--text-main);
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
     /* RESPONSIVE LAYOUT ADJUSTMENTS */
     @media (max-width: 1024px) {
       .section-grid {

@@ -387,20 +387,142 @@ export function getAdminScripts(): string {
           document.getElementById('orch-neurons-val').textContent = (r.neurons_used || 0) + ' Neurons';
         }
 
+        // Audit Activity Table Formatting Helpers
+        function formatAuditEvent(eventType) {
+          const norm = (eventType || '').toUpperCase().trim();
+          switch (norm) {
+            case 'AUTH_LOGIN_SUCCESS': return { title: 'Login successful', category: 'SUCCESS', badgeClass: 'status-healthy' };
+            case 'AUTH_LOGIN_FAILURE': return { title: 'Login failed', category: 'FAILED', badgeClass: 'status-alert' };
+            case 'AUTH_LOGOUT': return { title: 'User signed out', category: 'INFO', badgeClass: 'status-disabled' };
+            case 'SESSION_CREATED': return { title: 'Session created', category: 'INFO', badgeClass: 'status-active' };
+            case 'SESSION_REVOKED': return { title: 'Session revoked', category: 'INFO', badgeClass: 'status-disabled' };
+            case 'ADMIN_PASSWORD_CHANGED': return { title: 'Password changed', category: 'SUCCESS', badgeClass: 'status-healthy' };
+            case 'ADMIN_PASSWORD_RESET_REQUESTED': return { title: 'Password reset requested', category: 'INFO', badgeClass: 'status-disabled' };
+            case 'ADMIN_PASSWORD_RESET_COMPLETED': return { title: 'Password reset completed', category: 'SUCCESS', badgeClass: 'status-healthy' };
+            case 'ADMIN_PASSWORD_RESET_FAILED': return { title: 'Password reset failed', category: 'FAILED', badgeClass: 'status-alert' };
+            case 'ADMIN_RECOVERY_EMAIL_UPDATED': return { title: 'Recovery email updated', category: 'UPDATED', badgeClass: 'status-active' };
+            case 'RESEARCH_STARTED': case 'RESEARCH_RUN_STARTED': case 'AI_RESEARCH_STARTED': return { title: 'Research started', category: 'STARTED', badgeClass: 'status-active' };
+            case 'RESEARCH_COMPLETED': case 'RESEARCH_RUN_COMPLETED': case 'AI_RESEARCH_COMPLETED': return { title: 'Research completed', category: 'SUCCESS', badgeClass: 'status-healthy' };
+            case 'POST_GENERATED': case 'POST_GENERATION_STARTED': return { title: 'Post draft generated', category: 'CREATED', badgeClass: 'status-active' };
+            case 'QUALITY_GATE': return { title: 'Quality gate evaluation', category: 'EVALUATION', badgeClass: 'status-active' };
+            case 'POST_APPROVED': case 'QA_PASSED': case 'POLICY_REVIEW_PASSED': case 'STATIC_VALIDATION_PASSED': return { title: 'Post approved', category: 'APPROVED', badgeClass: 'status-healthy' };
+            case 'POST_BLOCKED': case 'POST_REJECTED': case 'QA_FAILED': case 'POLICY_REVIEW_FAILED': case 'STATIC_VALIDATION_FAILED': return { title: 'Post rejected / blocked', category: 'BLOCKED', badgeClass: 'status-alert' };
+            case 'POST_SCHEDULED': case 'PUBLICATION_SCHEDULED': case 'PUBLICATION_CREATED': return { title: 'Publication scheduled', category: 'SCHEDULED', badgeClass: 'status-active' };
+            case 'PUBLICATION_STARTED': case 'FACEBOOK_PUBLISH_ATTEMPT': return { title: 'Publication attempt', category: 'ATTEMPT', badgeClass: 'status-active' };
+            case 'PUBLICATION_SUCCEEDED': case 'FACEBOOK_PUBLISH_SUCCESS': return { title: 'Publication succeeded', category: 'SUCCESS', badgeClass: 'status-healthy' };
+            case 'PUBLICATION_FAILED': case 'FACEBOOK_PUBLISH_FAILED': return { title: 'Publication failed', category: 'FAILED', badgeClass: 'status-alert' };
+            case 'CONFIG_CHANGED': return { title: 'Configuration updated', category: 'CONFIG', badgeClass: 'status-active' };
+            case 'SYSTEM_ERROR': case 'WORKFLOW_FAILED': return { title: 'System error', category: 'ERROR', badgeClass: 'status-alert' };
+            default: {
+              const words = norm.split('_').filter(Boolean).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+              const isErr = norm.includes('FAIL') || norm.includes('ERR') || norm.includes('BLOCK') || norm.includes('REJECT');
+              const isSucc = norm.includes('SUCCESS') || norm.includes('COMPLET') || norm.includes('PASS');
+              return { title: words || 'System Event', category: isErr ? 'FAILED' : isSucc ? 'SUCCESS' : 'INFO', badgeClass: isErr ? 'status-alert' : isSucc ? 'status-healthy' : 'status-disabled' };
+            }
+          }
+        }
+
+        function formatAuditActor(actor, details) {
+          const act = (actor || 'system').toLowerCase().trim();
+          let label = 'SYSTEM';
+          let badgeClass = 'status-disabled';
+          if (act === 'admin') { label = 'ADMIN'; badgeClass = 'status-active'; }
+          else if (act === 'ai') { label = 'AI ENGINE'; badgeClass = 'status-healthy'; }
+          const username = details && (details.username || details.actorName);
+          return { label, subtext: typeof username === 'string' && username.trim() ? username.trim() : null, badgeClass };
+        }
+
+        function formatAuditEntity(entityType, entityId) {
+          const typeMap = { admin_user: 'Admin user', admin_session: 'Admin session', publication: 'Publication', post: 'Post draft', post_version: 'Post version', topic: 'Research topic', research_run: 'Research run', orchestrator: 'Orchestrator' };
+          const rawType = (entityType || '').toLowerCase().trim();
+          const typeLabel = typeMap[rawType] || rawType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'System';
+          const fullId = String(entityId || '—');
+          const truncatedId = fullId.length > 14 ? fullId.substring(0, 8) + '…' : fullId;
+          return { typeLabel, truncatedId, fullId };
+        }
+
+        function formatAuditDetails(detailsInput) {
+          let details = {};
+          if (typeof detailsInput === 'string') {
+            try { details = JSON.parse(detailsInput); } catch { details = { info: detailsInput }; }
+          } else if (detailsInput && typeof detailsInput === 'object') {
+            details = detailsInput;
+          }
+          const labelMap = { username: 'Username', clientIp: 'IP', emailConfigured: 'Email', expiresAt: 'Expires', adminUserId: 'User ID', triggerType: 'Trigger', trigger: 'Trigger', reason: 'Reason', status: 'Status', neuronsUsed: 'Neurons', neurons: 'Neurons', errorMessage: 'Error', error: 'Error' };
+          const items = [];
+          for (const [key, rawVal] of Object.entries(details)) {
+            if (rawVal === undefined || rawVal === null) continue;
+            const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+            let value = '';
+            if (typeof rawVal === 'boolean') { value = rawVal ? 'Configured' : 'Not configured'; }
+            else if (typeof rawVal === 'object') { value = JSON.stringify(rawVal); }
+            else if (key.toLowerCase().includes('time') || key.toLowerCase().includes('expires')) {
+              const parsedDate = new Date(String(rawVal));
+              value = isNaN(parsedDate.getTime()) ? String(rawVal) : parsedDate.toLocaleString();
+            } else { value = String(rawVal); }
+            if (value.length > 36) value = value.substring(0, 33) + '…';
+            items.push({ key, label, value });
+          }
+          return items;
+        }
+
+        function formatAuditTimestamp(isoDate) {
+          const d = new Date(isoDate);
+          if (isNaN(d.getTime())) return { compact: isoDate || '—', full: isoDate || '—' };
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const day = d.getUTCDate();
+          const month = monthNames[d.getUTCMonth()];
+          const hours = String(d.getUTCHours()).padStart(2, '0');
+          const mins = String(d.getUTCMinutes()).padStart(2, '0');
+          const secs = String(d.getUTCSeconds()).padStart(2, '0');
+          return {
+            compact: day + ' ' + month + ', ' + hours + ':' + mins + ' UTC',
+            full: d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0') + ' ' + hours + ':' + mins + ':' + secs + ' UTC'
+          };
+        }
+
         // Audit Activity Table
         const actBody = document.getElementById('recent-activity-body');
         if (data.recentActivity && data.recentActivity.length > 0) {
-          actBody.innerHTML = data.recentActivity.map(act => \`
-            <tr>
-              <td><span class="code-tag">\${act.eventType}</span></td>
-              <td>\${act.actor}</td>
-              <td class="code-tag">\${act.entityType}:\${act.entityId}</td>
-              <td style="font-size:0.8rem; font-family:monospace; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${JSON.stringify(act.details)}</td>
-              <td style="font-size:0.8rem;" class="code-tag">\${new Date(act.timestamp).toLocaleString()}</td>
-            </tr>
-          \`).join('');
+          actBody.innerHTML = data.recentActivity.map(act => {
+            const evt = formatAuditEvent(act.eventType);
+            const actorInfo = formatAuditActor(act.actor, act.details);
+            const entInfo = formatAuditEntity(act.entityType, act.entityId);
+            const dtItems = formatAuditDetails(act.details);
+            const tsInfo = formatAuditTimestamp(act.timestamp);
+
+            return \`
+              <tr>
+                <td>
+                  <div style="display:flex; align-items:center; gap:0.4rem;">
+                    <span class="status-badge \${evt.badgeClass}">\${evt.category}</span>
+                    <div>
+                      <strong style="font-size:0.875rem; color:var(--text-main);">\${evt.title}</strong>
+                      <div style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;" title="Technical Event Type">\${act.eventType}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="status-badge \${actorInfo.badgeClass}">\${actorInfo.label}</span>
+                  \${actorInfo.subtext ? \`<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">\${actorInfo.subtext}</div>\` : ''}
+                </td>
+                <td>
+                  <div style="font-weight:600; font-size:0.825rem;">\${entInfo.typeLabel}</div>
+                  <div style="font-size:0.725rem; color:var(--text-subtle); font-family:monospace;" title="\${entInfo.fullId}">\${entInfo.truncatedId}</div>
+                </td>
+                <td>
+                  <div class="audit-details-compact">
+                    \${dtItems.length > 0 ? dtItems.map(d => \`<span class="detail-pill"><span class="detail-key">\${d.label}:</span> <span class="detail-val">\${d.value}</span></span>\`).join('') : '<span style="color:var(--text-subtle); font-size:0.8rem;">—</span>'}
+                  </div>
+                </td>
+                <td style="white-space:nowrap; font-size:0.8rem; color:var(--text-muted);" title="\${tsInfo.full}">
+                  \${tsInfo.compact}
+                </td>
+              </tr>
+            \`;
+          }).join('');
         } else {
-          actBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No recent audit activity.</td></tr>';
+          actBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events yet</div><div style="font-size:0.825rem;">System activity will appear here as administrative actions are recorded.</div></td></tr>';
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
