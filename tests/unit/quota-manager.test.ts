@@ -25,7 +25,7 @@ describe('QuotaManager — Zero-Cost AI Policy Enforcement', () => {
     const mockDb = {
       prepare: vi.fn().mockReturnValue({
         bind: vi.fn().mockReturnValue({
-          first: vi.fn().mockResolvedValue({ total: 5 }), // 5 requests today
+          first: vi.fn().mockResolvedValue({ req_total: 5, neuron_total: 200 }),
         }),
       }),
     } as unknown as D1Database;
@@ -46,7 +46,7 @@ describe('QuotaManager — Zero-Cost AI Policy Enforcement', () => {
     const mockDb = {
       prepare: vi.fn().mockReturnValue({
         bind: vi.fn().mockReturnValue({
-          first: vi.fn().mockResolvedValue({ total: 50 }), // 50 requests today = limit reached
+          first: vi.fn().mockResolvedValue({ req_total: 50, neuron_total: 2000 }),
         }),
       }),
     } as unknown as D1Database;
@@ -56,7 +56,7 @@ describe('QuotaManager — Zero-Cost AI Policy Enforcement', () => {
 
     expect(res.allowed).toBe(false);
     expect(res.status).toBe('DEFERRED_NO_FREE_AI_CAPACITY');
-    expect(res.reason).toContain('Daily free AI limit reached');
+    expect(res.reason).toContain('Daily free AI request limit reached');
   });
 
   it('defers request when monthly request limit is reached', async () => {
@@ -66,8 +66,8 @@ describe('QuotaManager — Zero-Cost AI Policy Enforcement', () => {
         bind: vi.fn().mockReturnValue({
           first: vi.fn().mockImplementation(() => {
             callCount++;
-            if (callCount === 1) return Promise.resolve({ total: 10 }); // Today: 10
-            return Promise.resolve({ total: 1000 }); // Month: 1000 (limit)
+            if (callCount === 1) return Promise.resolve({ req_total: 10, neuron_total: 400 });
+            return Promise.resolve({ total: 1000 });
           }),
         }),
       }),
@@ -78,7 +78,7 @@ describe('QuotaManager — Zero-Cost AI Policy Enforcement', () => {
 
     expect(res.allowed).toBe(false);
     expect(res.status).toBe('DEFERRED_NO_FREE_AI_CAPACITY');
-    expect(res.reason).toContain('Monthly free AI limit reached');
+    expect(res.reason).toContain('Monthly free AI request limit reached');
   });
 
   it('records AI usage into D1 ai_usage and ai_runs tables', async () => {
