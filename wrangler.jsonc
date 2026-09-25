@@ -4,6 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-25",
 
+  // Cron Triggers (Daily automated research run)
+  "triggers": {
+    "crons": ["0 8 * * *"]
+  },
+
   // D1 Database bindings
   "d1_databases": [
     {
@@ -13,6 +18,11 @@
       "migrations_dir": "migrations"
     }
   ],
+
+  // Cloudflare Workers AI binding (Free AI allocation)
+  "ai": {
+    "binding": "AI"
+  },
 
   // Environment-specific overrides
   "env": {

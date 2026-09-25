@@ -3,7 +3,7 @@
  *
  * Serves the single-page Admin Interface at /admin and /admin/*.
  * Includes responsive modern UI with dark theme, secure authentication state machine,
- * system status monitoring, content pipeline metrics, and recent activity logs.
+ * system status monitoring, content pipeline metrics, research engine controls, and recent activity logs.
  */
 
 export function renderAdminHtml(): string {
@@ -154,17 +154,19 @@ export function renderAdminHtml(): string {
     }
 
     .btn-primary {
-      width: 100%;
       background: linear-gradient(135deg, var(--accent-blue), #2563eb);
       color: white;
       border: none;
       border-radius: 8px;
-      padding: 0.85rem;
+      padding: 0.75rem 1.25rem;
       font-weight: 600;
       font-size: 0.95rem;
       cursor: pointer;
       transition: all 0.2s ease;
       box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
     }
 
     .btn-primary:hover {
@@ -172,10 +174,26 @@ export function renderAdminHtml(): string {
       transform: translateY(-1px);
     }
 
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .alert-error {
       background: rgba(239, 68, 68, 0.15);
       border: 1px solid rgba(239, 68, 68, 0.3);
       color: #fca5a5;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-bottom: 1.25rem;
+      display: none;
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
       padding: 0.75rem 1rem;
       border-radius: 8px;
       font-size: 0.875rem;
@@ -401,6 +419,7 @@ export function renderAdminHtml(): string {
     .status-healthy { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
     .status-disabled { background: rgba(156, 163, 175, 0.15); color: #d1d5db; }
     .status-alert { background: rgba(245, 158, 11, 0.15); color: #fde68a; }
+    .status-active { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
 
     /* Tables */
     .panel {
@@ -454,6 +473,13 @@ export function renderAdminHtml(): string {
       padding: 2px 6px;
       border-radius: 4px;
     }
+
+    .tab-section {
+      display: none;
+    }
+    .tab-section.active-tab {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -483,7 +509,7 @@ export function renderAdminHtml(): string {
           <input type="password" id="password" class="form-input" required autocomplete="current-password">
         </div>
 
-        <button type="submit" id="login-btn" class="btn-primary">Authenticate</button>
+        <button type="submit" id="login-btn" class="btn-primary" style="width:100%;">Authenticate</button>
       </form>
     </div>
   </div>
@@ -504,13 +530,13 @@ export function renderAdminHtml(): string {
         </div>
 
         <ul class="nav-list">
-          <li class="nav-item active"><a href="#dashboard">Dashboard</a></li>
-          <li class="nav-item disabled"><a href="#content">Content <span class="badge-disabled">Phase 3</span></a></li>
-          <li class="nav-item disabled"><a href="#ideas">Ideas <span class="badge-disabled">Phase 3</span></a></li>
-          <li class="nav-item disabled"><a href="#calendar">Calendar <span class="badge-disabled">Phase 3</span></a></li>
-          <li class="nav-item disabled"><a href="#research">Research <span class="badge-disabled">Phase 3</span></a></li>
-          <li class="nav-item disabled"><a href="#settings">Settings <span class="badge-disabled">Phase 3</span></a></li>
-          <li class="nav-item disabled"><a href="#audit">Audit Log <span class="badge-disabled">Phase 3</span></a></li>
+          <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">Dashboard</a></li>
+          <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">Research <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3A</span></a></li>
+          <li class="nav-item disabled"><a href="#content">Content <span class="badge-disabled">Phase 3B</span></a></li>
+          <li class="nav-item disabled"><a href="#ideas">Ideas <span class="badge-disabled">Phase 3B</span></a></li>
+          <li class="nav-item disabled"><a href="#calendar">Calendar <span class="badge-disabled">Phase 3B</span></a></li>
+          <li class="nav-item disabled"><a href="#settings">Settings <span class="badge-disabled">Phase 3B</span></a></li>
+          <li class="nav-item disabled"><a href="#audit">Audit Log <span class="badge-disabled">Phase 3B</span></a></li>
         </ul>
       </aside>
 
@@ -526,122 +552,254 @@ export function renderAdminHtml(): string {
         </header>
 
         <div class="content-body">
-          <h1 class="page-title">Admin Dashboard</h1>
-          <p class="page-subtitle">System status, content pipeline overview, and security controls.</p>
+          
+          <!-- TAB 1: DASHBOARD OVERVIEW -->
+          <div id="tab-dashboard" class="tab-section active-tab">
+            <h1 class="page-title">Admin Dashboard</h1>
+            <p class="page-subtitle">System status, content pipeline overview, and security controls.</p>
 
-          <!-- System Status Grid -->
-          <h2 style="font-size:1.1rem; margin-bottom:1rem;">System Status</h2>
-          <div class="section-grid" id="status-grid">
-            <div class="card">
-              <div class="card-label">Worker Status</div>
-              <div class="card-val" id="val-worker"><span class="status-badge status-healthy">Healthy</span></div>
-              <div class="card-sub">Cloudflare Worker runtime</div>
+            <!-- System Status Grid -->
+            <h2 style="font-size:1.1rem; margin-bottom:1rem;">System Status</h2>
+            <div class="section-grid" id="status-grid">
+              <div class="card">
+                <div class="card-label">Worker Status</div>
+                <div class="card-val" id="val-worker"><span class="status-badge status-healthy">Healthy</span></div>
+                <div class="card-sub">Cloudflare Worker runtime</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Database (D1)</div>
+                <div class="card-val" id="val-db"><span class="status-badge status-healthy">Connected</span></div>
+                <div class="card-sub">SQLite at Edge</div>
+              </div>
+              <div class="card">
+                <div class="card-label">AI Engine</div>
+                <div class="card-val" id="val-ai"><span class="status-badge status-active">Configured</span></div>
+                <div class="card-sub">AI Research Engine</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Facebook Publisher</div>
+                <div class="card-val" id="val-fb"><span class="status-badge status-disabled">Not configured</span></div>
+                <div class="card-sub">Meta Graph API</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Publishing Pipeline</div>
+                <div class="card-val" id="val-publishing"><span class="status-badge status-disabled">Disabled</span></div>
+                <div class="card-sub">Production Safety Lock</div>
+              </div>
             </div>
-            <div class="card">
-              <div class="card-label">Database (D1)</div>
-              <div class="card-val" id="val-db"><span class="status-badge status-healthy">Connected</span></div>
-              <div class="card-sub">SQLite at Edge</div>
+
+            <!-- Content Pipeline Grid -->
+            <h2 style="font-size:1.1rem; margin-bottom:1rem;">Content Pipeline</h2>
+            <div class="section-grid" id="pipeline-grid">
+              <div class="card">
+                <div class="card-label">Ideas</div>
+                <div class="card-val" id="cnt-ideas">0</div>
+                <div class="card-sub">Backlog topics</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Drafts</div>
+                <div class="card-val" id="cnt-drafts">0</div>
+                <div class="card-sub">Generated drafts</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Awaiting QA</div>
+                <div class="card-val" id="cnt-qa">0</div>
+                <div class="card-sub">Quality check queue</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Approved</div>
+                <div class="card-val" id="cnt-approved">0</div>
+                <div class="card-sub">Ready for schedule</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Scheduled</div>
+                <div class="card-val" id="cnt-scheduled">0</div>
+                <div class="card-sub">Pending publication</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Published</div>
+                <div class="card-val" id="cnt-published">0</div>
+                <div class="card-sub">Successfully posted</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Blocked</div>
+                <div class="card-val" id="cnt-blocked" style="color:var(--accent-red);">0</div>
+                <div class="card-sub">Failed policy/QA check</div>
+              </div>
             </div>
-            <div class="card">
-              <div class="card-label">AI Engine</div>
-              <div class="card-val" id="val-ai"><span class="status-badge status-disabled">Not configured</span></div>
-              <div class="card-sub">AI Research Engine</div>
+
+            <!-- Security Status Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Security & Architecture Status</div>
+              </div>
+              <div class="section-grid" style="margin-bottom:0;">
+                <div>
+                  <div class="card-label">Authentication</div>
+                  <div style="font-weight:600; color:var(--accent-green);">Enabled (HttpOnly Cookie)</div>
+                </div>
+                <div>
+                  <div class="card-label">CSRF Protection</div>
+                  <div style="font-weight:600; color:var(--accent-green);">Enabled (Session-Bound)</div>
+                </div>
+                <div>
+                  <div class="card-label">SSRF Protection</div>
+                  <div style="font-weight:600; color:var(--accent-green);">Enabled (Strict Validation)</div>
+                </div>
+                <div>
+                  <div class="card-label">Zero-Cost Guarantee</div>
+                  <div style="font-weight:600; color:var(--accent-green);">ENFORCED (MAX_AI_COST = 0)</div>
+                </div>
+              </div>
             </div>
-            <div class="card">
-              <div class="card-label">Facebook Publisher</div>
-              <div class="card-val" id="val-fb"><span class="status-badge status-disabled">Not configured</span></div>
-              <div class="card-sub">Meta Graph API</div>
+
+            <!-- AI Usage & Free Quota Accounting Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">AI Usage & Free Quota Accounting</div>
+                <span id="ai-quota-badge" class="status-badge status-healthy">FREE CAPACITY AVAILABLE</span>
+              </div>
+              <div class="section-grid" style="margin-bottom:0.5rem;">
+                <div>
+                  <div class="card-label">AI Provider</div>
+                  <div style="font-weight:600; color:var(--text-main);" id="ai-provider-name">Cloudflare Workers AI</div>
+                  <div style="font-size:0.8rem; color:var(--text-muted);">Zero Paid Inference Policy</div>
+                </div>
+                <div>
+                  <div class="card-label">Today's Requests</div>
+                  <div style="font-weight:600;" id="ai-today-text">0 / 50 requests</div>
+                  <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:8px; width:100%; margin-top:6px; overflow:hidden;">
+                    <div id="ai-today-bar" style="background:var(--accent-blue); width:0%; height:100%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="card-label">Monthly Requests</div>
+                  <div style="font-weight:600;" id="ai-month-text">0 / 1000 requests</div>
+                  <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:8px; width:100%; margin-top:6px; overflow:hidden;">
+                    <div id="ai-month-bar" style="background:var(--accent-purple); width:0%; height:100%;"></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="card">
-              <div class="card-label">Publishing Pipeline</div>
-              <div class="card-val" id="val-publishing"><span class="status-badge status-disabled">Disabled</span></div>
-              <div class="card-sub">Production Safety Lock</div>
+
+            <!-- Recent Activity Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Recent Audit Events</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Actor</th>
+                    <th>Event Type</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-table-body">
+                  <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading audit history...</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <!-- Content Pipeline Grid -->
-          <h2 style="font-size:1.1rem; margin-bottom:1rem;">Content Pipeline</h2>
-          <div class="section-grid" id="pipeline-grid">
-            <div class="card">
-              <div class="card-label">Ideas</div>
-              <div class="card-val" id="cnt-ideas">0</div>
-              <div class="card-sub">Backlog topics</div>
+          <!-- TAB 2: RESEARCH ENGINE -->
+          <div id="tab-research" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Research Engine</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Automated RSS source discovery, deduplication, and AI topic extraction.</p>
+              </div>
+              <button id="run-research-btn" class="btn-primary">
+                <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                Run Manual Research
+              </button>
             </div>
-            <div class="card">
-              <div class="card-label">Drafts</div>
-              <div class="card-val" id="cnt-drafts">0</div>
-              <div class="card-sub">Generated drafts</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Awaiting QA</div>
-              <div class="card-val" id="cnt-qa">0</div>
-              <div class="card-sub">Quality check queue</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Approved</div>
-              <div class="card-val" id="cnt-approved">0</div>
-              <div class="card-sub">Ready for schedule</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Scheduled</div>
-              <div class="card-val" id="cnt-scheduled">0</div>
-              <div class="card-sub">Pending publication</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Published</div>
-              <div class="card-val" id="cnt-published">0</div>
-              <div class="card-sub">Successfully posted</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Blocked</div>
-              <div class="card-val" id="cnt-blocked" style="color:var(--accent-red);">0</div>
-              <div class="card-sub">Failed policy/QA check</div>
-            </div>
-          </div>
 
-          <!-- Security Status Panel -->
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title">Security & Architecture Status</div>
-            </div>
-            <div class="section-grid" style="margin-bottom:0;">
-              <div>
-                <div class="card-label">Authentication</div>
-                <div style="font-weight:600; color:var(--accent-green);">Enabled (HttpOnly Cookie)</div>
-              </div>
-              <div>
-                <div class="card-label">CSRF Protection</div>
-                <div style="font-weight:600; color:var(--accent-green);">Enabled (Session-Bound)</div>
-              </div>
-              <div>
-                <div class="card-label">Brute-Force Limit</div>
-                <div style="font-weight:600; color:var(--accent-green);">Enabled (D1 Tracked)</div>
-              </div>
-              <div>
-                <div class="card-label">Facebook Publishing</div>
-                <div style="font-weight:600; color:var(--accent-red);">LOCKED / DISABLED</div>
-              </div>
-            </div>
-          </div>
+            <div id="research-alert" class="alert-success"></div>
 
-          <!-- Recent Activity Panel -->
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title">Recent Audit Events</div>
+            <!-- Metrics Grid -->
+            <div class="section-grid">
+              <div class="card">
+                <div class="card-label">Curated Sources</div>
+                <div class="card-val" id="res-sources-cnt">0</div>
+                <div class="card-sub" id="res-enabled-sub">0 Active Feeds</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Discovered Topics</div>
+                <div class="card-val" id="res-topics-cnt">0</div>
+                <div class="card-sub">Stored in Backlog</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Last Pipeline Run</div>
+                <div class="card-val" id="res-last-run" style="font-size:1.1rem;">Never</div>
+                <div class="card-sub">Cron / Manual Trigger</div>
+              </div>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Actor</th>
-                  <th>Event Type</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody id="audit-table-body">
-                <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading audit history...</td></tr>
-              </tbody>
-            </table>
+
+            <!-- Candidate Topics List -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Discovered Candidate Topics</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title & Description</th>
+                    <th>Category</th>
+                    <th>Relevance Score</th>
+                    <th>Status</th>
+                    <th>Date Discovered</th>
+                  </tr>
+                </thead>
+                <tbody id="topics-table-body">
+                  <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading discovered candidate topics...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Research Sources Table -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Configured Research Sources</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Source Name</th>
+                    <th>Category</th>
+                    <th>Feed URL</th>
+                    <th>Status</th>
+                    <th>Last Checked</th>
+                  </tr>
+                </thead>
+                <tbody id="sources-table-body">
+                  <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading research sources...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Execution Log -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Research Pipeline Execution History</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Started At</th>
+                    <th>Trigger</th>
+                    <th>Status</th>
+                    <th>Sources Checked</th>
+                    <th>Items Found</th>
+                    <th>Topics Created</th>
+                  </tr>
+                </thead>
+                <tbody id="runs-table-body">
+                  <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading execution log...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
         </div>
@@ -651,6 +809,7 @@ export function renderAdminHtml(): string {
 
   <script>
     let csrfToken = '';
+    let currentTab = 'dashboard';
 
     // Initialize State Check
     document.addEventListener('DOMContentLoaded', checkSession);
@@ -680,6 +839,24 @@ export function renderAdminHtml(): string {
       document.getElementById('dashboard-screen').style.display = 'flex';
       document.getElementById('user-display').textContent = user.username;
       loadDashboardData();
+    }
+
+    function switchTab(tabName) {
+      currentTab = tabName;
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active-tab'));
+
+      const navEl = document.getElementById('nav-' + tabName);
+      if (navEl) navEl.classList.add('active');
+
+      const tabEl = document.getElementById('tab-' + tabName);
+      if (tabEl) tabEl.classList.add('active-tab');
+
+      if (tabName === 'dashboard') {
+        loadDashboardData();
+      } else if (tabName === 'research') {
+        loadResearchData();
+      }
     }
 
     // Login Form Handler
@@ -728,7 +905,7 @@ export function renderAdminHtml(): string {
       }
     });
 
-    // Load Dashboard Data
+    // Load Dashboard Overview Data
     async function loadDashboardData() {
       try {
         const res = await fetch('/api/admin/dashboard');
@@ -754,6 +931,29 @@ export function renderAdminHtml(): string {
         document.getElementById('cnt-published').textContent = data.pipeline.published;
         document.getElementById('cnt-blocked').textContent = data.pipeline.blocked;
 
+        // AI Quota & Usage Panel
+        if (data.aiUsage) {
+          const usage = data.aiUsage;
+          document.getElementById('ai-provider-name').textContent = data.systemStatus.aiProvider || 'Cloudflare Workers AI';
+          document.getElementById('ai-today-text').textContent = \`\${usage.todayRequests} / \${usage.dailyLimit} requests\`;
+          document.getElementById('ai-month-text').textContent = \`\${usage.monthRequests} / \${usage.monthlyLimit} requests\`;
+
+          const todayPct = Math.min(100, Math.round((usage.todayRequests / usage.dailyLimit) * 100));
+          const monthPct = Math.min(100, Math.round((usage.monthRequests / usage.monthlyLimit) * 100));
+
+          document.getElementById('ai-today-bar').style.width = todayPct + '%';
+          document.getElementById('ai-month-bar').style.width = monthPct + '%';
+
+          const badgeEl = document.getElementById('ai-quota-badge');
+          if (usage.status === 'FREE_CAPACITY_AVAILABLE') {
+            badgeEl.className = 'status-badge status-healthy';
+            badgeEl.textContent = 'FREE CAPACITY AVAILABLE';
+          } else {
+            badgeEl.className = 'status-badge status-alert';
+            badgeEl.textContent = 'DEFERRED — QUOTA EXHAUSTED';
+          }
+        }
+
         // Audit Events Table
         const tableBody = document.getElementById('audit-table-body');
         if (data.recentActivity && data.recentActivity.length > 0) {
@@ -773,6 +973,118 @@ export function renderAdminHtml(): string {
         console.error('Failed to load dashboard data:', err);
       }
     }
+
+    // Load Research Tab Data
+    async function loadResearchData() {
+      try {
+        const res = await fetch('/api/admin/research');
+        if (!res.ok) {
+          if (res.status === 401) showLogin();
+          return;
+        }
+
+        const data = await res.json();
+
+        // Stats
+        document.getElementById('res-sources-cnt').textContent = data.stats.totalSources;
+        document.getElementById('res-enabled-sub').textContent = data.stats.enabledSources + ' Active Feeds';
+        document.getElementById('res-topics-cnt').textContent = data.stats.totalTopicsDiscovered;
+        document.getElementById('res-last-run').textContent = data.stats.lastRunAt ? new Date(data.stats.lastRunAt).toLocaleString() : 'Never';
+
+        // Candidate Topics Table
+        const topicsBody = document.getElementById('topics-table-body');
+        if (data.topics && data.topics.length > 0) {
+          topicsBody.innerHTML = data.topics.map(topic => \`
+            <tr>
+              <td>
+                <div style="font-weight:600; font-size:0.95rem; margin-bottom:4px;">\${topic.title}</div>
+                <div style="font-size:0.85rem; color:var(--text-muted);">\${topic.description || ''}</div>
+              </td>
+              <td><span class="code-tag">\${topic.category}</span></td>
+              <td><span class="status-badge status-healthy">\${topic.priority}/100</span></td>
+              <td><span class="status-badge status-active">\${topic.status.toUpperCase()}</span></td>
+              <td class="code-tag">\${new Date(topic.created_at).toLocaleString()}</td>
+            </tr>
+          \`).join('');
+        } else {
+          topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No candidate topics discovered yet. Click "Run Manual Research" to discover topics.</td></tr>';
+        }
+
+        // Research Sources Table
+        const sourcesBody = document.getElementById('sources-table-body');
+        if (data.sources && data.sources.length > 0) {
+          sourcesBody.innerHTML = data.sources.map(src => \`
+            <tr>
+              <td><strong>\${src.name}</strong></td>
+              <td><span class="code-tag">\${src.category}</span></td>
+              <td class="code-tag" style="max-width:300px; overflow:hidden; text-overflow:ellipsis;">\${src.url}</td>
+              <td>\${src.enabled === 1 ? '<span class="status-badge status-healthy">Enabled</span>' : '<span class="status-badge status-disabled">Disabled</span>'}</td>
+              <td class="code-tag">\${src.last_checked_at ? new Date(src.last_checked_at).toLocaleString() : 'Never'}</td>
+            </tr>
+          \`).join('');
+        } else {
+          sourcesBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No research sources configured.</td></tr>';
+        }
+
+        // Research Runs Log Table
+        const runsBody = document.getElementById('runs-table-body');
+        if (data.runs && data.runs.length > 0) {
+          runsBody.innerHTML = data.runs.map(run => \`
+            <tr>
+              <td class="code-tag">\${new Date(run.started_at).toLocaleString()}</td>
+              <td><span class="code-tag">\${run.trigger_type.toUpperCase()}</span></td>
+              <td>\${run.status === 'completed' ? '<span class="status-badge status-healthy">Completed</span>' : '<span class="status-badge status-alert">Failed</span>'}</td>
+              <td>\${run.sources_checked}</td>
+              <td>\${run.items_found}</td>
+              <td><strong>\${run.topics_created}</strong></td>
+            </tr>
+          \`).join('');
+        } else {
+          runsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No research runs logged yet.</td></tr>';
+        }
+
+      } catch (err) {
+        console.error('Failed to load research data:', err);
+      }
+    }
+
+    // Manual Research Trigger Handler
+    document.getElementById('run-research-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('run-research-btn');
+      const alertEl = document.getElementById('research-alert');
+      alertEl.style.display = 'none';
+
+      btn.disabled = true;
+      btn.textContent = 'Running Research...';
+
+      try {
+        const res = await fetch('/api/admin/research/run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          }
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alertEl.textContent = \`Research run completed successfully! Checked \${data.summary.sourcesChecked} sources, found \${data.summary.itemsFound} items, created \${data.summary.topicsCreated} candidate topics.\`;
+          alertEl.style.display = 'block';
+          loadResearchData();
+        } else {
+          alertEl.textContent = data.summary?.errorMessage || 'Research run encountered an issue.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } catch (err) {
+        alertEl.textContent = 'An unexpected error occurred while executing research.';
+        alertEl.className = 'alert-error';
+        alertEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Run Manual Research';
+      }
+    });
   </script>
 </body>
 </html>`;

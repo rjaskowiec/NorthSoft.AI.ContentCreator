@@ -65,8 +65,28 @@ D1 Database (admin_users, admin_sessions, audit_log)
 
 ### AI Layer (`src/ai/`)
 - `IAIProvider` — Provider-agnostic AI abstraction
-- Role-based model selection (writer, qa, researcher, policy)
-- Future: Provider implementations (OpenAI, Anthropic, Google)
+- `CloudflareWorkersAIProvider` — Free AI inference using native Workers AI binding (`env.AI`) with `@cf/meta/llama-3.1-8b-instruct`
+- `QuotaManager` — Enforces `MAX_ALLOWED_AI_COST = 0` and tracks daily/monthly request quotas in D1 (`ai_usage`)
+- Zero Paid AI Policy: OpenAI, Anthropic, or paid APIs are strictly prohibited from execution or automatic fallbacks
+
+### Research Engine (`src/services/research/`)
+```text
+Research Source (RSS/Atom)
+       ↓
+SSRF Safe Ingestion
+       ↓
+SHA-256 Deduplication (url_hash)
+       ↓
+Prompt Injection Escaping
+       ↓
+Quota Capacity Check (MAX_AI_COST = 0)
+       ├── Capacity Exceeded → DEFERRED_NO_FREE_AI_CAPACITY
+       └── Free Capacity Available → Cloudflare Workers AI
+                                             ↓
+                                    Schema Validation
+                                             ↓
+                                    Candidate Topic (D1)
+```
 
 ### Core (`src/core/`)
 - Domain types matching D1 schema

@@ -4,7 +4,7 @@
 
 Built on Cloudflare Workers (Free plan) with independent AI quality control and safe automated Facebook publishing.
 
-> 🟢 **Status: Phase 2 Complete — Secure Admin Authentication & Dashboard** — Secure session auth, CSRF protection, brute-force limits, audit logging, and Admin UI at `/admin`. AI pipeline and Facebook publishing disabled.
+> 🟢 **Status: Phase 3A Complete — Free AI Research Engine & Topic Pipeline** — Autonomous RSS ingestion, SSRF URL validation, prompt injection protection, schema-validated AI topic extraction, zero-cost AI quota accounting (`MAX_ALLOWED_AI_COST = 0`), daily Cron triggers, and Admin Research view at `/admin`.
 
 ---
 

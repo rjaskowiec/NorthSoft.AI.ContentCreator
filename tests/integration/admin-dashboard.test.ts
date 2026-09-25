@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import app from '../../src/index';
+import { app } from '../../src/index';
 
 interface ErrorResponse {
   error: string;
@@ -151,7 +151,7 @@ describe('Admin Dashboard Integration & Security', () => {
     expect(data.systemStatus.environment).toBe('Staging');
     expect(data.systemStatus.worker).toBe('Healthy');
     expect(data.systemStatus.database).toBe('Connected');
-    expect(data.systemStatus.aiProvider).toBe('Not configured');
+    expect(data.systemStatus.aiProvider).toBe('Mock (Development)');
     expect(data.systemStatus.facebookPublisher).toBe('Not configured');
     expect(data.systemStatus.publishing).toBe('Disabled');
 
