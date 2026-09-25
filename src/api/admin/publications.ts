@@ -13,7 +13,7 @@ export const publicationsRouter = new Hono<AppEnv>();
 
 /**
  * GET /api/admin/publications
- * Returns recent publication attempts and statuses.
+ * Returns recent publication attempts, 4-tier status, and operational health metrics.
  */
 publicationsRouter.get('/publications', async (c) => {
   const db = c.env.DB;
@@ -21,11 +21,12 @@ publicationsRouter.get('/publications', async (c) => {
   const pubService = new PublicationService(db, publisher);
 
   const publications = await pubService.getPublications(50, 0);
-  const configStatus = publisher.getConfigStatus();
+  const health = await pubService.getPublicationHealth();
 
   return c.json({
     publications,
-    configStatus,
+    configStatus: health.configStatus,
+    health,
   });
 });
 

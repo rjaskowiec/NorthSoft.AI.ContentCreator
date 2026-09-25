@@ -16,7 +16,9 @@ import type {
   FacebookPublishRequest,
   FacebookPublishResult,
   IMetaPublisher,
+  MetaErrorCategory,
   MetaPublisherConfigStatus,
+  PublisherReadinessState,
   TokenValidationResult,
 } from './meta-publisher.js';
 
@@ -38,11 +40,59 @@ export function sanitizeSecretTokens(text: string): string {
     .replace(/("access_token"\s*:\s*")[^"]+"/gi, '$1[REDACTED]"');
 }
 
+/**
+ * Maps Meta Graph API HTTP statuses and error codes to normalized system categories.
+ */
+export function normalizeMetaErrorCategory(
+  httpStatus?: number,
+  code?: number,
+  message?: string,
+): { category: MetaErrorCategory; isRetryable: boolean } {
+  // 1. Authentication errors (Invalid / expired OAuth token, invalid signature)
+  if (code === 190 || code === 102 || code === 10 || httpStatus === 401) {
+    return { category: 'AUTHENTICATION_ERROR', isRetryable: false };
+  }
+
+  // 2. Authorization errors (Permission error, restricted page, insufficient scopes)
+  if ((code !== undefined && code >= 200 && code <= 299) || code === 100 || httpStatus === 403) {
+    return { category: 'AUTHORIZATION_ERROR', isRetryable: false };
+  }
+
+  // 3. Rate limiting (User request limit reached, page rate limit)
+  if (code === 4 || code === 17 || code === 32 || code === 613 || httpStatus === 429) {
+    return { category: 'RATE_LIMITED', isRetryable: true };
+  }
+
+  // 4. Invalid request (Malformed parameters, unsupported format)
+  if (httpStatus === 400) {
+    return { category: 'INVALID_REQUEST', isRetryable: false };
+  }
+
+  // 5. Remote server error (Meta API internal error / temporary outage)
+  if (code === 1 || code === 2 || (httpStatus !== undefined && httpStatus >= 500)) {
+    return { category: 'REMOTE_SERVER_ERROR', isRetryable: true };
+  }
+
+  // 6. Network error
+  if (
+    message &&
+    (message.includes('Network') ||
+      message.includes('fetch') ||
+      message.includes('timeout') ||
+      message.includes('ECONNRESET'))
+  ) {
+    return { category: 'NETWORK_ERROR', isRetryable: true };
+  }
+
+  return { category: 'UNKNOWN_EXTERNAL_ERROR', isRetryable: false };
+}
+
 export class FacebookPublisher implements IMetaPublisher {
   private pageId: string;
   private accessToken: string;
   private apiVersion: string;
   private publishEnabled: boolean;
+  private lastErrorCategory?: MetaErrorCategory;
 
   constructor(env: FacebookPublisherEnv) {
     this.pageId = (env.META_PAGE_ID || '').trim();
@@ -55,14 +105,40 @@ export class FacebookPublisher implements IMetaPublisher {
   public getConfigStatus(): MetaPublisherConfigStatus {
     const pageIdConfigured = this.pageId.length > 0;
     const tokenConfigured = this.accessToken.length > 0;
-    const configured = pageIdConfigured && tokenConfigured && this.publishEnabled;
+    const credentialsPresent = pageIdConfigured && tokenConfigured;
+
+    let state: PublisherReadinessState;
+    let statusMessage: string;
+
+    if (!credentialsPresent) {
+      state = 'NOT_CONFIGURED';
+      statusMessage =
+        'Facebook publisher is not configured. Page ID or Page Access Token is missing.';
+    } else if (!this.publishEnabled) {
+      state = 'DISABLED';
+      statusMessage = 'Facebook credentials are valid, but META_PUBLISH_ENABLED is set to false.';
+    } else if (
+      this.lastErrorCategory === 'RATE_LIMITED' ||
+      this.lastErrorCategory === 'REMOTE_SERVER_ERROR'
+    ) {
+      state = 'DEGRADED';
+      statusMessage = `Facebook publishing is enabled but temporary operational degradation was reported (${this.lastErrorCategory}).`;
+    } else {
+      state = 'READY';
+      statusMessage = 'Facebook publishing is fully configured, enabled, and operational.';
+    }
+
+    const configured = state === 'READY' || state === 'DEGRADED';
 
     return {
+      state,
+      statusMessage,
       configured,
       pageIdConfigured,
       tokenConfigured,
       apiVersion: this.apiVersion,
       publishEnabled: this.publishEnabled,
+      lastErrorCategory: this.lastErrorCategory,
     };
   }
 
@@ -119,12 +195,24 @@ export class FacebookPublisher implements IMetaPublisher {
   public async publish(request: FacebookPublishRequest): Promise<FacebookPublishResult> {
     const config = this.getConfigStatus();
 
-    if (!config.configured) {
+    if (config.state === 'NOT_CONFIGURED') {
       return {
         success: false,
         errorCode: 'META_NOT_CONFIGURED',
+        errorCategory: 'UNKNOWN_EXTERNAL_ERROR',
         errorMessage:
-          'Facebook publishing is not configured or is disabled in environment settings.',
+          'Facebook publishing is not configured (missing Page ID or Page Access Token).',
+        retryable: false,
+      };
+    }
+
+    if (config.state === 'DISABLED') {
+      return {
+        success: false,
+        errorCode: 'META_PUBLISH_DISABLED',
+        errorCategory: 'UNKNOWN_EXTERNAL_ERROR',
+        errorMessage:
+          'Facebook publishing is disabled in environment settings (META_PUBLISH_ENABLED is false).',
         retryable: false,
       };
     }
@@ -142,7 +230,6 @@ export class FacebookPublisher implements IMetaPublisher {
       }
 
       if (request.scheduledPublishTime) {
-        // Meta Graph API expects scheduled_publish_time as Unix timestamp in seconds
         const unixTime = Math.floor(new Date(request.scheduledPublishTime).getTime() / 1000);
         if (!isNaN(unixTime) && unixTime > Math.floor(Date.now() / 1000)) {
           bodyParams.published = 'false';
@@ -171,6 +258,7 @@ export class FacebookPublisher implements IMetaPublisher {
       };
 
       if (response.ok && data.id) {
+        this.lastErrorCategory = undefined;
         return {
           success: true,
           externalPostId: data.id,
@@ -182,29 +270,35 @@ export class FacebookPublisher implements IMetaPublisher {
       const metaError = data.error;
       const rawMsg = metaError?.message || `Meta API request failed with status ${httpStatus}`;
       const sanitizedMsg = sanitizeSecretTokens(rawMsg);
-      const errCode = metaError?.code ? `META_ERROR_${metaError.code}` : `HTTP_${httpStatus}`;
+      const { category, isRetryable } = normalizeMetaErrorCategory(
+        httpStatus,
+        metaError?.code,
+        rawMsg,
+      );
+      this.lastErrorCategory = category;
 
-      const isRetryable =
-        httpStatus === 429 ||
-        httpStatus >= 500 ||
-        metaError?.is_transient === true ||
-        metaError?.code === 1 || // Meta API Unknown Error (transient)
-        metaError?.code === 2; // Meta Service Temporary Unavailable
+      const errCode = metaError?.code ? `META_ERROR_${metaError.code}` : category;
 
       return {
         success: false,
         httpStatus,
         errorCode: errCode,
+        errorCategory: category,
         errorMessage: sanitizedMsg,
         retryable: isRetryable,
       };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      const sanitizedMsg = sanitizeSecretTokens(`Network error calling Meta API: ${errorMsg}`);
+      const { category, isRetryable } = normalizeMetaErrorCategory(undefined, undefined, errorMsg);
+      this.lastErrorCategory = category;
+
       return {
         success: false,
         errorCode: 'NETWORK_ERROR',
-        errorMessage: sanitizeSecretTokens(`Network error calling Meta API: ${errorMsg}`),
-        retryable: true,
+        errorCategory: category,
+        errorMessage: sanitizedMsg,
+        retryable: isRetryable,
       };
     }
   }

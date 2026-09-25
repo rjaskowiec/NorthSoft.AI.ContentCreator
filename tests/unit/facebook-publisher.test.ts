@@ -130,6 +130,71 @@ describe('FacebookPublisher Unit Tests', () => {
     vi.unstubAllGlobals();
   });
 
+  it('should report DISABLED when credentials exist but META_PUBLISH_ENABLED is false', async () => {
+    const publisher = new FacebookPublisher({
+      META_PAGE_ID: '123456789',
+      META_PAGE_ACCESS_TOKEN: 'valid_token',
+      META_PUBLISH_ENABLED: 'false',
+    });
+    const status = publisher.getConfigStatus();
+
+    expect(status.state).toBe('DISABLED');
+    expect(status.pageIdConfigured).toBe(true);
+    expect(status.tokenConfigured).toBe(true);
+    expect(status.publishEnabled).toBe(false);
+    expect(status.configured).toBe(false);
+
+    const result = await publisher.publish({
+      postId: 'p1',
+      postVersionId: 'v1',
+      message: 'Test post',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('META_PUBLISH_DISABLED');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('should report READY state when credentials exist and META_PUBLISH_ENABLED is true', () => {
+    const publisher = new FacebookPublisher({
+      META_PAGE_ID: '123456789',
+      META_PAGE_ACCESS_TOKEN: 'valid_token',
+      META_PUBLISH_ENABLED: 'true',
+    });
+    const status = publisher.getConfigStatus();
+
+    expect(status.state).toBe('READY');
+    expect(status.configured).toBe(true);
+  });
+
+  it('should transition to DEGRADED state when temporary rate limiting or server error occurs', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        error: { message: '(#17) Rate limit', code: 17 },
+      }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const publisher = new FacebookPublisher({
+      META_PAGE_ID: '123456789',
+      META_PAGE_ACCESS_TOKEN: 'valid_token',
+      META_PUBLISH_ENABLED: 'true',
+    });
+
+    const result = await publisher.publish({
+      postId: 'p1',
+      postVersionId: 'v1',
+      message: 'Test post',
+    });
+
+    expect(result.errorCategory).toBe('RATE_LIMITED');
+    expect(publisher.getConfigStatus().state).toBe('DEGRADED');
+
+    vi.unstubAllGlobals();
+  });
+
   it('MockMetaPublisher should behave deterministically without HTTP requests', async () => {
     const mockPub = new MockMetaPublisher();
     const res = await mockPub.publish({
