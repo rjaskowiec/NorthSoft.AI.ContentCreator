@@ -11,6 +11,17 @@
  * - Zero Workers AI neuron usage during publishing.
  */
 
+export type PublisherReadinessState = 'NOT_CONFIGURED' | 'DISABLED' | 'READY' | 'DEGRADED';
+
+export type MetaErrorCategory =
+  | 'AUTHENTICATION_ERROR'
+  | 'AUTHORIZATION_ERROR'
+  | 'RATE_LIMITED'
+  | 'INVALID_REQUEST'
+  | 'REMOTE_SERVER_ERROR'
+  | 'NETWORK_ERROR'
+  | 'UNKNOWN_EXTERNAL_ERROR';
+
 /**
  * A publication request for Facebook Graph API.
  */
@@ -41,8 +52,10 @@ export interface FacebookPublishResult {
   publishedAt?: string;
   /** HTTP status code from Meta Graph API response */
   httpStatus?: number;
-  /** Normalized internal or Meta error code */
+  /** Normalized internal error code (e.g. META_NOT_CONFIGURED, META_PUBLISH_DISABLED) */
   errorCode?: string;
+  /** High-level normalized Meta error category */
+  errorCategory?: MetaErrorCategory;
   /** Sanitized error message (must NEVER expose access tokens) */
   errorMessage?: string;
   /** Whether the failure is transient/retryable (e.g. 429, timeout, 5xx) */
@@ -64,12 +77,18 @@ export interface TokenValidationResult {
  * Meta Publisher Configuration Status.
  */
 export interface MetaPublisherConfigStatus {
-  /** Whether both Page ID and Page Access Token are present and publishing is enabled */
+  /** 4-tier operational readiness state: NOT_CONFIGURED | DISABLED | READY | DEGRADED */
+  state: PublisherReadinessState;
+  /** Human-readable status description */
+  statusMessage: string;
+  /** Whether both Page ID and Page Access Token are present AND publishing is enabled */
   configured: boolean;
   pageIdConfigured: boolean;
   tokenConfigured: boolean;
   apiVersion: string;
   publishEnabled: boolean;
+  /** Last recorded error category if in DEGRADED state */
+  lastErrorCategory?: MetaErrorCategory;
 }
 
 /**

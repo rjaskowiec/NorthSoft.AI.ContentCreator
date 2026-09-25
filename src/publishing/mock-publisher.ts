@@ -25,7 +25,12 @@ export class MockMetaPublisher implements IMetaPublisher {
   public isConfigured = true;
 
   public getConfigStatus(): MetaPublisherConfigStatus {
+    const state = this.isConfigured ? 'READY' : 'NOT_CONFIGURED';
     return {
+      state,
+      statusMessage: this.isConfigured
+        ? 'Mock publisher operational'
+        : 'Mock publisher not configured',
       configured: this.isConfigured,
       pageIdConfigured: this.isConfigured,
       tokenConfigured: this.isConfigured,
