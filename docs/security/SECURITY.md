@@ -160,6 +160,21 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 - **Maximum Retries**: Bounded to a maximum of 2 retries (3 versions total) before permanent `BLOCKED` status.
 - **Audit Invariant**: Post versions are stored as immutable history in `post_versions` (v1, v2, v3). Existing versions are never overwritten.
 
+## Autonomous Orchestration & Concurrency Security Controls (Phase 3C)
+
+### Execution Concurrency Locking
+- **Active Run Lock**: Before executing an autonomous pipeline run, `ContentOrchestrator` checks `orchestrator_runs` for any active run (`status = 'running'`) started within the last 5 minutes. Concurrent execution attempts are immediately deferred (`status = 'deferred'`).
+
+### Workflow Pre-flight Budget Reservation
+- **Pre-flight Check**: Before making any AI API invocation, `ContentOrchestrator` evaluates remaining daily neuron capacity against worst-case estimated workflow cost (Writer + QA = ~3,000 Neurons). If `todayNeurons + 3000 > 7500`, the entire run is deferred with status `DEFERRED_NO_FREE_AI_CAPACITY` and **ZERO AI provider calls are made**.
+
+### Daily Generation Limits & Topic Cooldown
+- **Conservative Generation Ceiling**: Bounded to a default of 1 post/day (`posts_per_day = 1`).
+- **Topic Cooldown Filter**: Topics used within the last 7 days or matching recent titles are filtered out deterministically before AI calls occur.
+
+### Publication Lock Invariant
+- **Internal Scheduling Only**: Approved posts are assigned status `'scheduled'` and queued in `schedules`. No Facebook Page API or Meta Publisher calls occur in Phase 3.
+
 
 ## Deployment Security
 - CI must pass all checks before merge (typecheck, lint, tests, security scan, audit)
