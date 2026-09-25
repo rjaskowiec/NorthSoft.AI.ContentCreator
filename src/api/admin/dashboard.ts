@@ -117,7 +117,7 @@ dashboardRouter.get('/dashboard', async (c) => {
       worker: 'Healthy',
       database: dbConnected ? 'Connected' : 'Error',
       aiProvider: aiProviderStatus,
-      facebookPublisher: fbConfig.configured ? 'Configured' : 'Not configured',
+      facebookPublisher: fbConfig.state,
       metaPublisherStatus: fbConfig,
       publishing: fbEnabled ? 'Enabled' : 'Disabled',
     },

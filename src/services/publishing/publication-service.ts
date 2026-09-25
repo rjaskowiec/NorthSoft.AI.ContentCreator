@@ -1,18 +1,6 @@
-/**
- * Autonomous Publication Service
- *
- * Coordinates internal scheduling and Facebook publishing via IMetaPublisher.
- *
- * Critical Invariants:
- * 1. SERVER-SIDE QUALITY GATE ENFORCEMENT: Only posts with status 'approved' can be published.
- * 2. IDEMPOTENCY: Duplicate calls for an already published version return the existing published record.
- * 3. D1 CONCURRENCY LOCKING: Atomic status transitions ('scheduled' -> 'publishing') prevent parallel workers from publishing twice.
- * 4. ZERO AI CALLS: Publishing is deterministic and consumes zero Neurons.
- * 5. SAFE DEGRADATION: Handles META_NOT_CONFIGURED gracefully without crashing.
- */
-
+import { CONTENT_INVARIANTS } from '../../core/constants.js';
 import type { IAuditLogger } from '../../core/audit.js';
-import type { IMetaPublisher } from '../../publishing/meta-publisher.js';
+import type { IMetaPublisher, MetaPublisherConfigStatus } from '../../publishing/meta-publisher.js';
 
 export interface PublicationRecord {
   id: string;
@@ -47,6 +35,41 @@ export interface PublishResult {
   retryable?: boolean;
 }
 
+export interface PublicationHealthSummary {
+  configStatus: MetaPublisherConfigStatus;
+  stats: {
+    scheduled: number;
+    publishing: number;
+    published: number;
+    failed: number;
+    retryable: number;
+    blocked: number;
+  };
+  lastSuccessfulPublication?: {
+    id: string;
+    postId: string;
+    facebookPostId: string;
+    publishedAt: string;
+    postTitle?: string;
+  } | null;
+  lastFailedPublication?: {
+    id: string;
+    postId: string;
+    errorCode: string;
+    errorMessage: string;
+    httpStatus?: number;
+    failedAt: string;
+    postTitle?: string;
+  } | null;
+  lastPublicationAttempt?: {
+    id: string;
+    postId: string;
+    status: string;
+    attemptedAt: string;
+    postTitle?: string;
+  } | null;
+}
+
 export class PublicationService {
   constructor(
     private db: D1Database,
@@ -55,8 +78,58 @@ export class PublicationService {
   ) {}
 
   /**
+   * Recovers stale publication locks ('publishing' status older than threshold minutes).
+   * Prevents crashed Worker instances from permanently blocking future publication attempts.
+   */
+  public async recoverStaleLocks(thresholdMinutes = 15): Promise<number> {
+    try {
+      const staleRows = await this.db
+        .prepare(
+          `SELECT id, post_id, post_version_id, attempt_count
+           FROM publications
+           WHERE status = 'publishing'
+             AND updated_at <= datetime('now', '-' || ? || ' minutes')`,
+        )
+        .bind(thresholdMinutes)
+        .all<{ id: string; post_id: string; post_version_id: string; attempt_count: number }>();
+
+      const staleList = staleRows.results || [];
+      if (staleList.length === 0) return 0;
+
+      for (const item of staleList) {
+        await this.db
+          .prepare(
+            `UPDATE publications
+             SET status = 'failed', error_code = 'STALE_LOCK_TIMEOUT', error_message = 'Publication lock timed out due to worker interruption.', updated_at = datetime('now')
+             WHERE id = ? AND status = 'publishing'`,
+          )
+          .bind(item.id)
+          .run();
+
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_FAILED',
+          entityType: 'publication',
+          entityId: item.id,
+          actor: 'system',
+          details: {
+            reason: 'STALE_LOCK_TIMEOUT',
+            postId: item.post_id,
+            postVersionId: item.post_version_id,
+            attemptCount: item.attempt_count,
+            staleThresholdMinutes: thresholdMinutes,
+          },
+        });
+      }
+
+      return staleList.length;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
    * Publish an approved post version.
-   * Enforces server-side Quality Gate approval, idempotency, and atomic D1 lock.
+   * Enforces server-side Quality Gate approval, publisher status check, idempotency, retry bounds, and atomic D1 lock.
    */
   public async publishPost(
     postId: string,
@@ -64,7 +137,30 @@ export class PublicationService {
   ): Promise<PublishResult> {
     const actor = options?.actor || 'system';
 
-    // 1. Fetch Post & active Post Version from D1
+    // 1. Check Publisher Control Plane Readiness State
+    const publisherConfig = this.publisher.getConfigStatus();
+    if (publisherConfig.state === 'NOT_CONFIGURED') {
+      return {
+        success: false,
+        code: 'META_NOT_CONFIGURED',
+        message: publisherConfig.statusMessage,
+        retryable: false,
+      };
+    }
+
+    if (publisherConfig.state === 'DISABLED') {
+      return {
+        success: false,
+        code: 'META_PUBLISH_DISABLED',
+        message: publisherConfig.statusMessage,
+        retryable: false,
+      };
+    }
+
+    // 2. Automatically recover any stale locks before proceeding
+    await this.recoverStaleLocks();
+
+    // 3. Fetch Post & active Post Version from D1
     const postRow = await this.db
       .prepare(
         `SELECT p.id, p.title, p.status as post_status,
@@ -92,10 +188,10 @@ export class PublicationService {
       };
     }
 
-    // 2. CRITICAL SERVER-SIDE QUALITY GATE CHECK
+    // 4. CRITICAL SERVER-SIDE QUALITY GATE CHECK
     if (postRow.version_status !== 'approved') {
       await this.auditLogger?.log({
-        eventType: 'PUBLICATION_FAILED',
+        eventType: 'PUBLICATION_BLOCKED',
         entityType: 'post',
         entityId: postId,
         actor,
@@ -113,7 +209,7 @@ export class PublicationService {
       };
     }
 
-    // 3. IDEMPOTENCY CHECK
+    // 5. IDEMPOTENCY CHECK
     const existingPub = await this.db
       .prepare(
         `SELECT id, status, facebook_post_id, published_at
@@ -138,11 +234,10 @@ export class PublicationService {
       };
     }
 
-    // 4. ATOMIC CONCURRENCY LOCK
+    // 6. ATOMIC CONCURRENCY LOCK & RETRY LIMIT ENFORCEMENT
     const idempotencyKey = `pub_${postId}_${postRow.version_id}`;
     let publicationId = crypto.randomUUID();
 
-    // Check if there is an in-progress or pending publication record
     const pendingPub = await this.db
       .prepare(
         `SELECT id, status, attempt_count FROM publications WHERE idempotency_key = ? OR (post_id = ? AND post_version_id = ?)`,
@@ -158,6 +253,32 @@ export class PublicationService {
           message: 'Publication for this post version is currently in progress.',
         };
       }
+
+      // Check max retries bound for automatic system runs
+      if (
+        actor === 'system' &&
+        pendingPub.attempt_count >= CONTENT_INVARIANTS.MAX_PUBLISH_ATTEMPTS
+      ) {
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_BLOCKED',
+          entityType: 'publication',
+          entityId: pendingPub.id,
+          actor,
+          details: {
+            reason: 'MAX_RETRIES_EXCEEDED',
+            attemptCount: pendingPub.attempt_count,
+            maxAllowed: CONTENT_INVARIANTS.MAX_PUBLISH_ATTEMPTS,
+          },
+        });
+
+        return {
+          success: false,
+          code: 'MAX_RETRIES_EXCEEDED',
+          message: `Publication has reached maximum automatic retry limit (${CONTENT_INVARIANTS.MAX_PUBLISH_ATTEMPTS} attempts). Manual intervention required.`,
+          retryable: false,
+        };
+      }
+
       publicationId = pendingPub.id;
 
       // Atomic state transition to 'publishing'
@@ -206,7 +327,7 @@ export class PublicationService {
       },
     });
 
-    // 5. INVOKE META PUBLISHER
+    // 7. INVOKE META PUBLISHER (0 AI calls, exact approved post content)
     const pubResult = await this.publisher.publish({
       postId,
       postVersionId: postRow.version_id,
@@ -214,7 +335,7 @@ export class PublicationService {
       idempotencyKey,
     });
 
-    // 6. HANDLE PUBLISH RESULT
+    // 8. HANDLE PUBLISH RESULT
     if (pubResult.success) {
       const publishedAt = pubResult.publishedAt || new Date().toISOString();
 
@@ -277,7 +398,7 @@ export class PublicationService {
       .bind(
         finalStatus,
         pubResult.httpStatus || null,
-        pubResult.errorCode || 'UNKNOWN_ERROR',
+        pubResult.errorCode || pubResult.errorCategory || 'UNKNOWN_ERROR',
         pubResult.errorMessage || 'Facebook publish failed',
         publicationId,
       )
@@ -292,6 +413,7 @@ export class PublicationService {
         postId,
         postVersionId: postRow.version_id,
         errorCode: pubResult.errorCode,
+        errorCategory: pubResult.errorCategory,
         errorMessage: pubResult.errorMessage,
         retryable: isRetryable,
       },
@@ -308,12 +430,27 @@ export class PublicationService {
 
   /**
    * Process and publish all scheduled posts that are due for publication.
+   * If publisher is disabled or not configured, skips gracefully without loops or failing records.
    */
   public async publishScheduledDuePosts(): Promise<{
     processed: number;
     succeeded: number;
     failed: number;
+    skippedReason?: string;
   }> {
+    const publisherConfig = this.publisher.getConfigStatus();
+    if (publisherConfig.state === 'DISABLED' || publisherConfig.state === 'NOT_CONFIGURED') {
+      return {
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        skippedReason: publisherConfig.state,
+      };
+    }
+
+    // Clear stale locks before processing queue
+    await this.recoverStaleLocks();
+
     const dueSchedules = await this.db
       .prepare(
         `SELECT s.id as schedule_id, s.post_id
@@ -344,6 +481,131 @@ export class PublicationService {
     }
 
     return { processed, succeeded, failed };
+  }
+
+  /**
+   * Query full publication health summary including stats, 4-tier state, and recent health indicators.
+   */
+  public async getPublicationHealth(): Promise<PublicationHealthSummary> {
+    const configStatus = this.publisher.getConfigStatus();
+
+    // Stats
+    const statsRes = await this.db
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM schedules WHERE status = 'pending') as scheduled,
+           (SELECT COUNT(*) FROM publications WHERE status = 'publishing') as publishing,
+           (SELECT COUNT(*) FROM publications WHERE status = 'published') as published,
+           (SELECT COUNT(*) FROM publications WHERE status = 'failed') as failed,
+           (SELECT COUNT(*) FROM publications WHERE status = 'failed' AND (http_status IN (429, 500, 502, 503, 504) OR error_code IN ('RATE_LIMITED', 'REMOTE_SERVER_ERROR', 'NETWORK_ERROR'))) as retryable,
+           (SELECT COUNT(*) FROM publications WHERE status = 'blocked') as blocked`,
+      )
+      .first<{
+        scheduled: number;
+        publishing: number;
+        published: number;
+        failed: number;
+        retryable: number;
+        blocked: number;
+      }>();
+
+    const stats = {
+      scheduled: statsRes?.scheduled || 0,
+      publishing: statsRes?.publishing || 0,
+      published: statsRes?.published || 0,
+      failed: statsRes?.failed || 0,
+      retryable: statsRes?.retryable || 0,
+      blocked: statsRes?.blocked || 0,
+    };
+
+    // Last Successful Publication
+    const lastSuccessRow = await this.db
+      .prepare(
+        `SELECT pub.id, pub.post_id, pub.facebook_post_id, pub.published_at, p.title
+         FROM publications pub
+         JOIN posts p ON pub.post_id = p.id
+         WHERE pub.status = 'published'
+         ORDER BY pub.published_at DESC
+         LIMIT 1`,
+      )
+      .first<{
+        id: string;
+        post_id: string;
+        facebook_post_id: string;
+        published_at: string;
+        title?: string;
+      }>();
+
+    // Last Failed Publication
+    const lastFailedRow = await this.db
+      .prepare(
+        `SELECT pub.id, pub.post_id, pub.error_code, pub.error_message, pub.http_status, pub.updated_at, p.title
+         FROM publications pub
+         JOIN posts p ON pub.post_id = p.id
+         WHERE pub.status = 'failed'
+         ORDER BY pub.updated_at DESC
+         LIMIT 1`,
+      )
+      .first<{
+        id: string;
+        post_id: string;
+        error_code: string;
+        error_message: string;
+        http_status?: number;
+        updated_at: string;
+        title?: string;
+      }>();
+
+    // Last Publication Attempt
+    const lastAttemptRow = await this.db
+      .prepare(
+        `SELECT pub.id, pub.post_id, pub.status, pub.updated_at, p.title
+         FROM publications pub
+         JOIN posts p ON pub.post_id = p.id
+         ORDER BY pub.updated_at DESC
+         LIMIT 1`,
+      )
+      .first<{
+        id: string;
+        post_id: string;
+        status: string;
+        updated_at: string;
+        title?: string;
+      }>();
+
+    return {
+      configStatus,
+      stats,
+      lastSuccessfulPublication: lastSuccessRow
+        ? {
+            id: lastSuccessRow.id,
+            postId: lastSuccessRow.post_id,
+            facebookPostId: lastSuccessRow.facebook_post_id,
+            publishedAt: lastSuccessRow.published_at,
+            postTitle: lastSuccessRow.title,
+          }
+        : null,
+      lastFailedPublication: lastFailedRow
+        ? {
+            id: lastFailedRow.id,
+            postId: lastFailedRow.post_id,
+            errorCode: lastFailedRow.error_code,
+            errorMessage: lastFailedRow.error_message,
+            httpStatus: lastFailedRow.http_status,
+            failedAt: lastFailedRow.updated_at,
+            postTitle: lastFailedRow.title,
+          }
+        : null,
+      lastPublicationAttempt: lastAttemptRow
+        ? {
+            id: lastAttemptRow.id,
+            postId: lastAttemptRow.post_id,
+            status: lastAttemptRow.status,
+            attemptedAt: lastAttemptRow.updated_at,
+            postTitle: lastAttemptRow.title,
+          }
+        : null,
+    };
   }
 
   /**

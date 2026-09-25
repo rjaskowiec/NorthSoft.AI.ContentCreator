@@ -422,16 +422,27 @@ export function getAdminScripts(): string {
 
         // Config Status Cards
         const cfgBadge = document.getElementById('meta-config-badge');
-        if (config.configured) {
-          cfgBadge.innerHTML = '<span class="status-badge status-healthy">CONFIGURED</span>';
-        } else {
-          cfgBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
+        const st = (config.state || (config.configured ? 'READY' : 'NOT_CONFIGURED')).toUpperCase();
+        let badgeClass = 'status-disabled';
+        if (st === 'READY') badgeClass = 'status-healthy';
+        else if (st === 'DEGRADED') badgeClass = 'status-alert';
+        else if (st === 'DISABLED') badgeClass = 'status-active';
+
+        if (cfgBadge) {
+          cfgBadge.innerHTML = '<span class="status-badge ' + badgeClass + '">' + st.replace('_', ' ') + '</span>';
         }
 
-        document.getElementById('meta-pageid-val').textContent = config.pageIdConfigured ? 'Configured (Set)' : 'Missing';
-        document.getElementById('meta-token-val').textContent = config.tokenConfigured ? 'Configured (Set)' : 'Missing';
-        document.getElementById('meta-version-val').textContent = config.apiVersion || 'v19.0';
-        document.getElementById('meta-lock-val').textContent = config.publishEnabled ? 'ENABLED' : 'DISABLED';
+        const pageIdEl = document.getElementById('meta-pageid-val');
+        if (pageIdEl) pageIdEl.textContent = config.pageIdConfigured ? 'Configured (Set)' : 'Missing';
+
+        const tokenEl = document.getElementById('meta-token-val');
+        if (tokenEl) tokenEl.textContent = config.tokenConfigured ? 'Configured (Set)' : 'Missing';
+
+        const verEl = document.getElementById('meta-version-val');
+        if (verEl) verEl.textContent = config.apiVersion || 'v19.0';
+
+        const lockEl = document.getElementById('meta-lock-val');
+        if (lockEl) lockEl.textContent = config.publishEnabled ? 'ENABLED' : 'DISABLED';
 
         // Publications Table
         const pubBody = document.getElementById('publications-table-body');
@@ -439,21 +450,27 @@ export function getAdminScripts(): string {
           pubBody.innerHTML = data.publications.map(pub => {
             const isApproved = pub.qualityGateStatus === 'approved' || pub.qualityGateStatus === 'PASS';
             const statusClass = pub.status === 'published' ? 'status-healthy' : pub.status === 'publishing' ? 'status-active' : pub.status === 'failed' ? 'status-alert' : 'status-disabled';
+            const errCategory = pub.errorCode ? pub.errorCode : '';
 
             return \`
               <tr>
                 <td>
                   <strong>\${pub.postTitle || 'Untitled Post'}</strong>
                   <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${pub.postBody || ''}</div>
+                  \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-red); margin-top:2px;">\${pub.errorMessage}</div>\` : ''}
                 </td>
                 <td><span class="code-tag">\${pub.provider}</span></td>
                 <td><span class="status-badge \${isApproved ? 'status-healthy' : 'status-alert'}">\${isApproved ? 'PASS' : 'UNAPPROVED'}</span></td>
-                <td><span class="status-badge \${statusClass}">\${pub.status.toUpperCase()}</span></td>
+                <td>
+                  <span class="status-badge \${statusClass}">\${pub.status.toUpperCase()}</span>
+                  \${errCategory ? \`<div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">\${errCategory}</div>\` : ''}
+                </td>
                 <td class="code-tag">\${pub.facebookPostId || '—'}</td>
                 <td class="code-tag">\${pub.publishedAt ? new Date(pub.publishedAt).toLocaleString() : '—'}</td>
                 <td>
                   \${isApproved && pub.status !== 'published' && pub.status !== 'publishing' ? \`
                     <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${pub.postId}')">Publish Now</button>
+                    \${pub.status === 'failed' ? \`<button class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.8rem; margin-left:4px;" onclick="retryPub('\${pub.id}')">Retry</button>\` : ''}
                   \` : pub.status === 'published' ? \`
                     <span style="color:var(--accent-green); font-weight:600; font-size:0.85rem;">Published</span>
                   \` : \`
@@ -501,6 +518,44 @@ export function getAdminScripts(): string {
       } catch (err) {
         if (alertEl) {
           alertEl.textContent = 'An unexpected connection error occurred during publishing.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        loadPublicationsData();
+      }
+    }
+
+    async function retryPub(pubId) {
+      const alertEl = document.getElementById('publication-alert');
+      if (alertEl) alertEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/publications/' + pubId + '/retry', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          }
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (alertEl) {
+            alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + (data.result?.externalPostId || 'Success');
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          if (alertEl) {
+            alertEl.textContent = 'Publication retry failed: ' + (data.error || data.result?.message || 'Error retrying publication');
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected connection error occurred during retry.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
