@@ -116,11 +116,33 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
   HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400
   ```
 - **Password Hashing**: PBKDF2-HMAC-SHA256 with 60,000 iterations and a 16-byte random salt per user.
+  - *Workers CPU Budget Rationale*: 60,000 iterations executes in ~2-4ms CPU time using native Web Crypto C++ bindings, staying safely within the Cloudflare Workers Free plan 10ms CPU time limit per request while providing strong security against brute force.
 - **CSRF Protection**: All state-changing endpoints (`POST`, `PUT`, `PATCH`, `DELETE`) require an `X-CSRF-Token` header matching the session's CSRF secret (verified in constant time).
 - **Brute-Force Rate Limiting**: D1-backed attempt tracking limits failed logins to 5 attempts per 15-minute window per IP/username.
 - **Generic Error Responses**: Login failures always return generic "Invalid credentials." messages to prevent username enumeration.
 - **Security Headers**: Admin responses set Content-Security-Policy, X-Frame-Options (`DENY`), X-Content-Type-Options (`nosniff`), Referrer-Policy (`strict-origin-when-cross-origin`), and Permissions-Policy.
 - **Secure Provisioning**: No default administrator account or hardcoded password exists in code or database migrations. Initial creation uses `npm run admin:provision`.
+
+## Research & AI Security Controls (Phase 3A)
+
+### Zero-Cost AI Policy Enforcement
+- **Constraint**: `MAX_ALLOWED_AI_COST = 0` enforced by `QuotaManager`.
+- **Allowed Providers**: Cloudflare Workers AI (`env.AI`) and local development mocks exclusively.
+- **Paid Provider Prohibition**: Automatic or explicit fallback to paid AI APIs (OpenAI, Anthropic, Google, OpenRouter) is strictly prohibited and blocked at the provider factory layer.
+- **Quota Accounting**: Tracks daily/monthly request limits in D1 (`ai_usage`). If limits are reached, research analysis defers (`DEFERRED_NO_FREE_AI_CAPACITY`) without data loss.
+
+### SSRF Protection
+- **Protocol Restriction**: Only `http:` and `https:` schemes allowed.
+- **Private IP Rejection**: Rejects loopback (`127.0.0.1`, `::1`), private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`), and Cloudflare internal metadata hostnames.
+- **Fetch Guards**: Strict request timeouts (10 seconds) and maximum response size limits (2MB).
+
+### Prompt Injection Defense
+- External source data is treated as UNTRUSTED DATA and NEVER as instructions.
+- Source material is sanitized, truncated (max 10,000 characters), and wrapped in `<untrusted_source_content>` XML boundary tags.
+- Explicit system instructions forbid the AI model from ignoring directives or exposing internal secrets.
+
+### Structured AI Output Schema Validation
+- All AI JSON outputs are validated runtime against expected schemas (`validateCandidateTopicOutput`). Malformed or manipulated responses are rejected immediately (`status = 'FAILED'`).
 
 ## Deployment Security
 - CI must pass all checks before merge (typecheck, lint, tests, security scan, audit)
@@ -132,3 +154,4 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 - If a secret is accidentally committed: rotate immediately, force-push removal, update Cloudflare secrets
 - If unauthorized content is published: immediately disable `FACEBOOK_PUBLISH_ENABLED`, investigate audit log
 - If AI produces harmful content: Quality Gate should catch; if it doesn't, update validation rules and investigate
+
