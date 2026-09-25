@@ -72,8 +72,13 @@ NorthSoft.AI.ContentCreator/
 │   │   ├── audit.ts                # Audit log types
 │   │   └── middleware/
 │   │       └── logger.ts           # Request logging (secret-safe)
-│   └── publishing/
-│       └── meta-publisher.ts       # IMetaPublisher abstraction
+│   ├── publishing/
+│   │   ├── meta-publisher.ts       # IMetaPublisher abstraction
+│   │   ├── facebook-publisher.ts   # Meta Graph API v19.0 Publisher
+│   │   └── mock-publisher.ts       # Deterministic mock publisher for tests
+│   └── services/
+│       └── publishing/
+│           └── publication-service.ts # Publication state machine & Quality Gate check
 ├── tests/
 │   ├── unit/                       # Unit tests
 │   └── security/                   # Secret scanning, .gitignore checks

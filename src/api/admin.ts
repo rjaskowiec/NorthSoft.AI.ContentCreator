@@ -13,9 +13,11 @@ import { D1AuditLogger } from '../core/audit';
 import { csrfProtection } from '../core/auth/csrf';
 import { getEnvironment, isFacebookPublishEnabled } from '../core/environment';
 import { requireAdmin } from '../core/middleware/auth';
+import { FacebookPublisher } from '../publishing/facebook-publisher';
 import { QuotaManager } from '../services/ai/quota-manager';
 import { ContentOrchestrator } from '../services/content/content-orchestrator';
 import { ContentPlannerService } from '../services/content/content-planner-service';
+import { PublicationService } from '../services/publishing/publication-service';
 import { ResearchService } from '../services/research/research-service';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -31,6 +33,8 @@ adminRoutes.get('/dashboard', async (c) => {
   const db = c.env.DB;
   const envName = getEnvironment(c.env?.ENVIRONMENT);
   const fbEnabled = isFacebookPublishEnabled(c.env?.FACEBOOK_PUBLISH_ENABLED, envName);
+  const fbPublisher = new FacebookPublisher(c.env);
+  const fbConfig = fbPublisher.getConfigStatus();
   const quotaManager = new QuotaManager();
   const aiUsage = await quotaManager.getUsageSummary(db);
 
@@ -132,7 +136,8 @@ adminRoutes.get('/dashboard', async (c) => {
       worker: 'Healthy',
       database: dbConnected ? 'Connected' : 'Error',
       aiProvider: aiProviderStatus,
-      facebookPublisher: 'Not configured',
+      facebookPublisher: fbConfig.configured ? 'Configured' : 'Not configured',
+      metaPublisherStatus: fbConfig,
       publishing: fbEnabled ? 'Enabled' : 'Disabled',
     },
     pipeline: pipelineCounts,
@@ -354,5 +359,104 @@ adminRoutes.get('/schedules', async (c) => {
 
   return c.json({
     schedules: schedulesRes.results || [],
+  });
+});
+
+/**
+ * GET /api/admin/publications
+ * Returns recent publication attempts and statuses.
+ */
+adminRoutes.get('/publications', async (c) => {
+  const db = c.env.DB;
+  const publisher = new FacebookPublisher(c.env);
+  const pubService = new PublicationService(db, publisher);
+
+  const publications = await pubService.getPublications(50, 0);
+  const configStatus = publisher.getConfigStatus();
+
+  return c.json({
+    publications,
+    configStatus,
+  });
+});
+
+/**
+ * GET /api/admin/publications/:id
+ * Returns detailed publication record including post preview, version details, and error diagnostics.
+ */
+adminRoutes.get('/publications/:id', async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id') || '';
+  const publisher = new FacebookPublisher(c.env);
+  const pubService = new PublicationService(db, publisher);
+
+  const publication = await pubService.getPublicationById(id);
+  if (!publication) {
+    return c.json({ error: 'Publication record not found' }, 404);
+  }
+
+  return c.json({
+    publication,
+    configStatus: publisher.getConfigStatus(),
+  });
+});
+
+/**
+ * POST /api/admin/publications/:id/publish
+ * Manually triggers publication for an approved post.
+ * Protected by requireAdmin and csrfProtection.
+ */
+adminRoutes.post('/publications/:id/publish', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id') || '';
+  const auditLogger = new D1AuditLogger(db);
+  const publisher = new FacebookPublisher(c.env);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+
+  // Read post_id from publications or check if id is a post_id
+  let postId = id;
+  const existingPub = await pubService.getPublicationById(id);
+  if (existingPub) {
+    postId = existingPub.postId;
+  }
+
+  const result = await pubService.publishPost(postId, { actor: 'admin' });
+
+  if (!result.success && result.code === 'POST_NOT_APPROVED') {
+    return c.json({ error: result.message, code: result.code }, 403);
+  }
+
+  return c.json({
+    success: result.success,
+    result,
+  });
+});
+
+/**
+ * POST /api/admin/publications/:id/retry
+ * Manually retries a failed publication attempt.
+ * Protected by requireAdmin and csrfProtection.
+ */
+adminRoutes.post('/publications/:id/retry', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id') || '';
+  const auditLogger = new D1AuditLogger(db);
+  const publisher = new FacebookPublisher(c.env);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+
+  const publication = await pubService.getPublicationById(id);
+  if (!publication) {
+    return c.json({ error: 'Publication record not found' }, 404);
+  }
+
+  const result = await pubService.publishPost(publication.postId, { actor: 'admin' });
+
+  if (!result.success && result.code === 'POST_NOT_APPROVED') {
+    return c.json({ error: result.message, code: result.code }, 403);
+  }
+
+  return c.json({
+    success: result.success,
+    result,
   });
 });

@@ -534,6 +534,7 @@ export function renderAdminHtml(): string {
           <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">Research <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3A</span></a></li>
           <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">Content <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3B</span></a></li>
           <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">Schedules <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3C</span></a></li>
+          <li class="nav-item" id="nav-publications"><a href="#publications" onclick="switchTab('publications')">Publications <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 4</span></a></li>
           <li class="nav-item disabled"><a href="#settings">Settings <span class="badge-disabled">Phase 3C</span></a></li>
           <li class="nav-item disabled"><a href="#audit">Audit Log <span class="badge-disabled">Phase 3C</span></a></li>
         </ul>
@@ -896,6 +897,67 @@ export function renderAdminHtml(): string {
             </div>
           </div>
 
+          <!-- TAB 5: PUBLICATIONS & META ADAPTER -->
+          <div id="tab-publications" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Meta / Facebook Publications</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Official Meta Graph API Facebook Page publication management, idempotency status, and retry controls.</p>
+              </div>
+            </div>
+
+            <div id="publication-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
+
+            <!-- Meta Configuration Status Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Meta Graph API Configuration Status</div>
+                <div id="meta-config-badge"><span class="status-badge status-disabled">NOT CONFIGURED</span></div>
+              </div>
+              <div class="section-grid" style="margin-bottom:0;">
+                <div>
+                  <div class="card-label">Page ID</div>
+                  <div style="font-weight:600;" id="meta-pageid-val">Missing</div>
+                </div>
+                <div>
+                  <div class="card-label">Page Access Token</div>
+                  <div style="font-weight:600;" id="meta-token-val">Missing</div>
+                </div>
+                <div>
+                  <div class="card-label">Graph API Version</div>
+                  <div style="font-weight:600; color:var(--accent-blue);" id="meta-version-val">v19.0</div>
+                </div>
+                <div>
+                  <div class="card-label">Publishing Safety Lock</div>
+                  <div style="font-weight:600;" id="meta-lock-val">DISABLED</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Publications Table -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Facebook Publications Log</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Post Title & Version Preview</th>
+                    <th>Provider</th>
+                    <th>Quality Gate</th>
+                    <th>Publication Status</th>
+                    <th>Facebook Post ID</th>
+                    <th>Published At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="publications-table-body">
+                  <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading publication history...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
@@ -954,6 +1016,8 @@ export function renderAdminHtml(): string {
         loadContentData();
       } else if (tabName === 'schedules') {
         loadSchedulesData();
+      } else if (tabName === 'publications') {
+        loadPublicationsData();
       }
     }
 
@@ -1363,6 +1427,107 @@ export function renderAdminHtml(): string {
         }
       } catch (err) {
         console.error('Failed to load schedules:', err);
+      }
+    }
+
+    // Load Publications Tab Data
+    async function loadPublicationsData() {
+      try {
+        const res = await fetch('/api/admin/publications');
+        if (!res.ok) {
+          if (res.status === 401) showLogin();
+          return;
+        }
+
+        const data = await res.json();
+        const config = data.configStatus || {};
+
+        // Config Status Cards
+        const cfgBadge = document.getElementById('meta-config-badge');
+        if (config.configured) {
+          cfgBadge.innerHTML = '<span class="status-badge status-healthy">CONFIGURED</span>';
+        } else {
+          cfgBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
+        }
+
+        document.getElementById('meta-pageid-val').textContent = config.pageIdConfigured ? 'Configured (Set)' : 'Missing';
+        document.getElementById('meta-token-val').textContent = config.tokenConfigured ? 'Configured (Set)' : 'Missing';
+        document.getElementById('meta-version-val').textContent = config.apiVersion || 'v19.0';
+        document.getElementById('meta-lock-val').textContent = config.publishEnabled ? 'ENABLED' : 'DISABLED';
+
+        // Publications Table
+        const pubBody = document.getElementById('publications-table-body');
+        if (data.publications && data.publications.length > 0) {
+          pubBody.innerHTML = data.publications.map(pub => {
+            const isApproved = pub.qualityGateStatus === 'approved' || pub.qualityGateStatus === 'PASS';
+            const statusClass = pub.status === 'published' ? 'status-healthy' : pub.status === 'publishing' ? 'status-active' : pub.status === 'failed' ? 'status-alert' : 'status-disabled';
+
+            return \`
+              <tr>
+                <td>
+                  <strong>\${pub.postTitle || 'Untitled Post'}</strong>
+                  <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${pub.postBody || ''}</div>
+                </td>
+                <td><span class="code-tag">\${pub.provider}</span></td>
+                <td><span class="status-badge \${isApproved ? 'status-healthy' : 'status-alert'}">\${isApproved ? 'PASS' : 'UNAPPROVED'}</span></td>
+                <td><span class="status-badge \${statusClass}">\${pub.status.toUpperCase()}</span></td>
+                <td class="code-tag">\${pub.facebookPostId || '—'}</td>
+                <td class="code-tag">\${pub.publishedAt ? new Date(pub.publishedAt).toLocaleString() : '—'}</td>
+                <td>
+                  \${isApproved && pub.status !== 'published' && pub.status !== 'publishing' ? \`
+                    <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${pub.postId}')">Publish Now</button>
+                  \` : pub.status === 'published' ? \`
+                    <span style="color:var(--accent-green); font-weight:600; font-size:0.85rem;">Published</span>
+                  \` : \`
+                    <span style="color:var(--text-muted); font-size:0.85rem;">—</span>
+                  \`}
+                </td>
+              </tr>
+            \`;
+          }).join('');
+        } else {
+          pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No publication records found. Approved scheduled posts will automatically publish via Meta Graph API.</td></tr>';
+        }
+      } catch (err) {
+        console.error('Failed to load publications:', err);
+      }
+    }
+
+    async function publishNow(postId) {
+      const alertEl = document.getElementById('publication-alert');
+      if (alertEl) alertEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/publications/' + postId + '/publish', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          }
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (alertEl) {
+            alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + (data.result?.externalPostId || 'Success');
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          if (alertEl) {
+            alertEl.textContent = 'Publication failed: ' + (data.error || data.result?.message || 'Error publishing post');
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected connection error occurred during publishing.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        loadPublicationsData();
       }
     }
   </script>
