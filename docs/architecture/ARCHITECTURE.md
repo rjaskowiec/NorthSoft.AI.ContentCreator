@@ -88,6 +88,28 @@ Quota Capacity Check (MAX_AI_COST = 0)
                                     Candidate Topic (D1)
 ```
 
+### Content Pipeline & Quality Gate (`src/services/content/`)
+```text
+Candidate Topic (content_ideas)
+       ↓
+Neuron Budget Pre-flight Check (Hard Ceiling: 7,500 Neurons/day)
+       ├── Insufficient Budget → DEFERRED_NO_FREE_AI_CAPACITY
+       └── Budget Available → Writer Service (Writer AI)
+                                     ↓
+                             Post Draft v1 (post_versions)
+                                     ↓
+                             Static Content Validator (Rule-based)
+                                     ↓
+                             Independent QA Reviewer (QA AI)
+                                     ↓
+                             Policy Compliance Review (Rule-based)
+                                     ↓
+                             Central Quality Gate (evaluatePipelineGate)
+                                     ├── FAIL & attempts < 3 → Bounded Regeneration (v2, v3)
+                                     ├── BLOCKED → Permanent Stop (post status = blocked)
+                                     └── PASS → APPROVED (post status = approved)
+```
+
 ### Core (`src/core/`)
 - Domain types matching D1 schema
 - Quality gate evaluation (deterministic + AI)
