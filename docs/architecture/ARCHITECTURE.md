@@ -40,8 +40,28 @@ NorthSoft.AI.ContentCreator is an autonomous AI content pipeline running on Clou
 
 ### API Layer (`src/api/`)
 - Hono-based HTTP routes
-- Health/readiness endpoints
-- Future: Admin API, webhook endpoints
+- Health & readiness endpoints (`/api/health`)
+- Auth endpoints (`/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, `/api/auth/csrf`)
+- Admin endpoints (`/api/admin/dashboard`, `/api/admin/settings`)
+- Admin UI Dashboard (`/admin`)
+
+### Admin Request Flow
+
+```
+Browser
+  ↓
+Authentication (POST /api/auth/login)
+  ↓
+HttpOnly Session Cookie (admin_session)
+  ↓
+Authorization Guard (requireAdmin middleware)
+  ↓
+CSRF Protection (X-CSRF-Token validation)
+  ↓
+Admin API (/api/admin/*)
+  ↓
+D1 Database (admin_users, admin_sessions, audit_log)
+```
 
 ### AI Layer (`src/ai/`)
 - `IAIProvider` — Provider-agnostic AI abstraction
