@@ -139,4 +139,52 @@ describe('Auth API Integration', () => {
     const data = (await res.json()) as SessionCheckResponse;
     expect(data.authenticated).toBe(false);
   });
+
+  it('handles /api/auth/forgot-password with generic response regardless of user existence', async () => {
+    const runMock = vi.fn().mockResolvedValue({ success: true });
+    const prepareMock = vi.fn().mockReturnValue({
+      bind: vi.fn().mockReturnValue({
+        first: vi.fn().mockResolvedValue(null),
+        run: runMock,
+      }),
+    });
+
+    const mockEnv = {
+      DB: { prepare: prepareMock } as unknown as D1Database,
+      ENVIRONMENT: 'staging',
+      FACEBOOK_PUBLISH_ENABLED: 'false',
+      LOG_LEVEL: 'debug',
+    };
+
+    const res = await app.request(
+      '/api/auth/forgot-password',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin@northsoft.is' }),
+      },
+      mockEnv,
+    );
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { success: boolean; message: string };
+    expect(data.success).toBe(true);
+    expect(data.message).toBe(
+      'If an account matches this information, a password reset email has been sent.',
+    );
+  });
+
+  it('rejects unauthenticated POST /api/auth/change-password with 401', async () => {
+    const res = await app.request('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentPassword: 'CurrentPassword123!',
+        newPassword: 'NewPassword12345!',
+        confirmPassword: 'NewPassword12345!',
+      }),
+    });
+
+    expect(res.status).toBe(401);
+  });
 });

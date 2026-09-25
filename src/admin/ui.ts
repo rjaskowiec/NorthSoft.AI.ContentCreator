@@ -43,11 +43,49 @@ export function renderAdminHtml(): string {
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="password">Password</label>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+            <label class="form-label" for="password" style="margin-bottom:0;">Password</label>
+            <a href="#" id="forgot-password-link" style="color:var(--accent-blue); font-size:0.85rem; text-decoration:none;">Forgot password?</a>
+          </div>
           <input type="password" id="password" class="form-input" required autocomplete="current-password">
         </div>
 
         <button type="submit" id="login-btn" class="btn-primary" style="width:100%;">Authenticate</button>
+      </form>
+
+      <!-- FORGOT PASSWORD FORM -->
+      <form id="forgot-form" style="display:none;">
+        <div id="forgot-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
+
+        <div class="form-group">
+          <label class="form-label" for="forgot-email">Administrator Email Address</label>
+          <input type="email" id="forgot-email" class="form-input" required placeholder="admin@northsoft.is" autocomplete="email">
+        </div>
+
+        <button type="submit" id="forgot-btn" class="btn-primary" style="width:100%; margin-bottom:1rem;">Request Password Reset Link</button>
+        <div style="text-align:center;">
+          <a href="#" id="back-to-login-link" style="color:var(--text-muted); font-size:0.85rem; text-decoration:none;">&larr; Back to Sign In</a>
+        </div>
+      </form>
+
+      <!-- RESET PASSWORD FORM -->
+      <form id="reset-form" style="display:none;">
+        <div id="reset-alert" class="alert-error" style="display:none; margin-bottom:1rem;"></div>
+
+        <div class="form-group">
+          <label class="form-label" for="reset-new-password">New Password (min. 12 characters)</label>
+          <input type="password" id="reset-new-password" class="form-input" required minlength="12" autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reset-confirm-password">Confirm New Password</label>
+          <input type="password" id="reset-confirm-password" class="form-input" required minlength="12" autocomplete="new-password">
+        </div>
+
+        <button type="submit" id="reset-btn" class="btn-primary" style="width:100%; margin-bottom:1rem;">Reset Password</button>
+        <div style="text-align:center;">
+          <a href="#" id="reset-to-login-link" style="color:var(--text-muted); font-size:0.85rem; text-decoration:none;">&larr; Back to Sign In</a>
+        </div>
       </form>
     </div>
   </div>
@@ -73,6 +111,7 @@ export function renderAdminHtml(): string {
           <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">Content <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3B</span></a></li>
           <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">Schedules <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3C</span></a></li>
           <li class="nav-item" id="nav-publications"><a href="#publications" onclick="switchTab('publications')">Publications <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 4</span></a></li>
+          <li class="nav-item" id="nav-security"><a href="#security" onclick="switchTab('security')">Account & Security <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 5.3</span></a></li>
         </ul>
       </aside>
 
@@ -466,6 +505,44 @@ export function renderAdminHtml(): string {
                   <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading publication history...</td></tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- TAB 6: ACCOUNT SECURITY & PASSWORD MANAGEMENT -->
+          <div id="tab-security" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Account & Password Security</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Rotate administrator password, manage active sessions, and review security invariants.</p>
+              </div>
+            </div>
+
+            <div id="security-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
+
+            <!-- Change Password Panel -->
+            <div class="panel" style="max-width: 600px;">
+              <div class="panel-header">
+                <div class="panel-title">Change Password</div>
+              </div>
+
+              <form id="change-password-form">
+                <div class="form-group">
+                  <label class="form-label" for="change-current-password">Current Password</label>
+                  <input type="password" id="change-current-password" class="form-input" required autocomplete="current-password">
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="change-new-password">New Password (min. 12 characters)</label>
+                  <input type="password" id="change-new-password" class="form-input" required minlength="12" autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="change-confirm-password">Confirm New Password</label>
+                  <input type="password" id="change-confirm-password" class="form-input" required minlength="12" autocomplete="new-password">
+                </div>
+
+                <button type="submit" id="change-password-btn" class="btn-primary" style="margin-top:0.5rem;">Update Password</button>
+              </form>
             </div>
           </div>
 
