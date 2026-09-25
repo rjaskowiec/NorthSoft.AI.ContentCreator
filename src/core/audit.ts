@@ -61,7 +61,12 @@ export type AuditEventType =
   | 'ORCHESTRATOR_RUN_STARTED'
   | 'ORCHESTRATOR_RUN_COMPLETED'
   | 'ORCHESTRATOR_RUN_DEFERRED'
-  | 'WORKFLOW_FAILED';
+  | 'WORKFLOW_FAILED'
+  | 'PUBLICATION_CREATED'
+  | 'PUBLICATION_STARTED'
+  | 'PUBLICATION_SUCCEEDED'
+  | 'PUBLICATION_FAILED'
+  | 'PUBLICATION_RETRY';
 
 /**
  * An entry in the audit log.
@@ -113,6 +118,10 @@ const SENSITIVE_KEYS = new Set([
   'authorization',
   'secret',
   'admin_auth_secret',
+  'access_token',
+  'page_access_token',
+  'meta_page_access_token',
+  'meta_secret',
 ]);
 
 /**

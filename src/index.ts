@@ -16,7 +16,9 @@ import { healthRoutes } from './api/health';
 import type { AdminSession, AdminUser } from './core/auth/session';
 import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
+import { FacebookPublisher } from './publishing/facebook-publisher';
 import { ContentOrchestrator } from './services/content/content-orchestrator';
+import { PublicationService } from './services/publishing/publication-service';
 
 export type AppEnv = {
   Bindings: Env;
@@ -70,7 +72,7 @@ app.get('/admin/*', (c) => c.html(renderAdminHtml()));
 app.get('/', (c) => {
   return c.json({
     name: 'NorthSoft.AI.ContentCreator',
-    version: '0.3.0',
+    version: '0.4.0',
     status: 'operational',
     admin: 'https://ai.northsoft.is/admin',
     docs: 'https://github.com/rjaskowiec/NorthSoft.AI.ContentCreator',
@@ -94,6 +96,11 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const orchestrator = new ContentOrchestrator(env.DB, env);
-    ctx.waitUntil(orchestrator.runPipeline('cron'));
+    const publisher = new FacebookPublisher(env);
+    const pubService = new PublicationService(env.DB, publisher);
+
+    ctx.waitUntil(
+      Promise.all([orchestrator.runPipeline('cron'), pubService.publishScheduledDuePosts()]),
+    );
   },
 };
