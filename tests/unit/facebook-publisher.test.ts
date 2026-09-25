@@ -43,7 +43,7 @@ describe('FacebookPublisher Unit Tests', () => {
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'test_page_access_token',
       META_GRAPH_API_VERSION: 'v19.0',
-      META_PUBLISH_ENABLED: 'true',
+      FACEBOOK_PUBLISH_ENABLED: 'true',
     });
 
     expect(publisher.getConfigStatus().configured).toBe(true);
@@ -79,7 +79,7 @@ describe('FacebookPublisher Unit Tests', () => {
     const publisher = new FacebookPublisher({
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'test_token',
-      META_PUBLISH_ENABLED: 'true',
+      FACEBOOK_PUBLISH_ENABLED: 'true',
     });
 
     const res = await publisher.publish({
@@ -113,7 +113,7 @@ describe('FacebookPublisher Unit Tests', () => {
     const publisher = new FacebookPublisher({
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'expired_token',
-      META_PUBLISH_ENABLED: 'true',
+      FACEBOOK_PUBLISH_ENABLED: 'true',
     });
 
     const res = await publisher.publish({
@@ -130,11 +130,11 @@ describe('FacebookPublisher Unit Tests', () => {
     vi.unstubAllGlobals();
   });
 
-  it('should report DISABLED when credentials exist but META_PUBLISH_ENABLED is false', async () => {
+  it('should report DISABLED when credentials exist but FACEBOOK_PUBLISH_ENABLED is false', async () => {
     const publisher = new FacebookPublisher({
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'valid_token',
-      META_PUBLISH_ENABLED: 'false',
+      FACEBOOK_PUBLISH_ENABLED: 'false',
     });
     const status = publisher.getConfigStatus();
 
@@ -155,11 +155,11 @@ describe('FacebookPublisher Unit Tests', () => {
     expect(result.retryable).toBe(false);
   });
 
-  it('should report READY state when credentials exist and META_PUBLISH_ENABLED is true', () => {
+  it('should report READY state when credentials exist and FACEBOOK_PUBLISH_ENABLED is true', () => {
     const publisher = new FacebookPublisher({
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'valid_token',
-      META_PUBLISH_ENABLED: 'true',
+      FACEBOOK_PUBLISH_ENABLED: 'true',
     });
     const status = publisher.getConfigStatus();
 
@@ -180,7 +180,7 @@ describe('FacebookPublisher Unit Tests', () => {
     const publisher = new FacebookPublisher({
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'valid_token',
-      META_PUBLISH_ENABLED: 'true',
+      FACEBOOK_PUBLISH_ENABLED: 'true',
     });
 
     const result = await publisher.publish({
@@ -195,11 +195,11 @@ describe('FacebookPublisher Unit Tests', () => {
     vi.unstubAllGlobals();
   });
 
-  it('should enforce DISABLED state when ENVIRONMENT is staging even if META_PUBLISH_ENABLED is true', async () => {
+  it('should enforce DISABLED state when ENVIRONMENT is staging even if FACEBOOK_PUBLISH_ENABLED is true', async () => {
     const publisher = new FacebookPublisher({
       META_PAGE_ID: '123456789',
       META_PAGE_ACCESS_TOKEN: 'valid_token',
-      META_PUBLISH_ENABLED: 'true',
+      FACEBOOK_PUBLISH_ENABLED: 'true',
       ENVIRONMENT: 'staging',
     });
     const status = publisher.getConfigStatus();
@@ -216,6 +216,19 @@ describe('FacebookPublisher Unit Tests', () => {
 
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('META_PUBLISH_DISABLED');
+  });
+
+  it('should ignore legacy META_PUBLISH_ENABLED binding completely', () => {
+    const publisher = new FacebookPublisher({
+      META_PAGE_ID: '123456789',
+      META_PAGE_ACCESS_TOKEN: 'valid_token',
+      // @ts-expect-error legacy flag test
+      META_PUBLISH_ENABLED: 'true',
+    });
+    const status = publisher.getConfigStatus();
+
+    expect(status.state).toBe('DISABLED');
+    expect(status.publishEnabled).toBe(false);
   });
 
   it('MockMetaPublisher should behave deterministically without HTTP requests', async () => {

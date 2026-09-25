@@ -19,8 +19,8 @@ export const dashboardRouter = new Hono<AppEnv>();
 dashboardRouter.get('/dashboard', async (c) => {
   const db = c.env.DB;
   const envName = getEnvironment(c.env?.ENVIRONMENT);
-  const metaFlag = c.env?.META_PUBLISH_ENABLED;
-  const fbEnabled = isFacebookPublishEnabled(metaFlag, envName);
+  const fbFlag = c.env?.FACEBOOK_PUBLISH_ENABLED;
+  const fbEnabled = isFacebookPublishEnabled(fbFlag, envName);
   const fbPublisher = new FacebookPublisher(c.env);
   const fbConfig = fbPublisher.getConfigStatus();
 

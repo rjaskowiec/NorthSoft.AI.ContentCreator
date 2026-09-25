@@ -12,7 +12,7 @@
  */
 
 import { META_API } from '../core/constants.js';
-import { getEnvironment, isMetaPublishEnabled, type Environment } from '../core/environment.js';
+import { getEnvironment, isFacebookPublishEnabled, type Environment } from '../core/environment.js';
 import type {
   FacebookPublishRequest,
   FacebookPublishResult,
@@ -27,7 +27,6 @@ export interface FacebookPublisherEnv {
   META_PAGE_ID?: string;
   META_PAGE_ACCESS_TOKEN?: string;
   META_GRAPH_API_VERSION?: string;
-  META_PUBLISH_ENABLED?: string | boolean;
   FACEBOOK_PUBLISH_ENABLED?: string | boolean;
   ENVIRONMENT?: string;
 }
@@ -104,12 +103,15 @@ export class FacebookPublisher implements IMetaPublisher {
     this.apiVersion = (env.META_GRAPH_API_VERSION || META_API.DEFAULT_GRAPH_API_VERSION).trim();
     this.environmentName = getEnvironment(env.ENVIRONMENT);
 
-    const rawEnabled = env.META_PUBLISH_ENABLED ?? env.FACEBOOK_PUBLISH_ENABLED;
+    const rawEnabled = env.FACEBOOK_PUBLISH_ENABLED;
     const rawBool = rawEnabled === true || rawEnabled === 'true' || rawEnabled === '1';
 
     // If ENVIRONMENT binding is explicitly passed, enforce non-production disable safety.
     if (env.ENVIRONMENT !== undefined) {
-      this.publishEnabled = isMetaPublishEnabled(rawBool ? 'true' : 'false', this.environmentName);
+      this.publishEnabled = isFacebookPublishEnabled(
+        rawBool ? 'true' : 'false',
+        this.environmentName,
+      );
     } else {
       this.publishEnabled = rawBool;
     }
@@ -137,7 +139,7 @@ export class FacebookPublisher implements IMetaPublisher {
         statusMessage = `DISABLED: Facebook publishing is disabled in ${this.environmentName} environment (ENVIRONMENT !== production).`;
       } else {
         statusMessage =
-          'DISABLED: Meta credentials exist but META_PUBLISH_ENABLED is set to false.';
+          'DISABLED: Meta credentials exist but FACEBOOK_PUBLISH_ENABLED is set to false.';
       }
     } else if (
       this.lastErrorCategory === 'RATE_LIMITED' ||
@@ -234,7 +236,7 @@ export class FacebookPublisher implements IMetaPublisher {
         errorCode: 'META_PUBLISH_DISABLED',
         errorCategory: 'UNKNOWN_EXTERNAL_ERROR',
         errorMessage:
-          'Facebook publishing is disabled in environment settings (META_PUBLISH_ENABLED is false).',
+          'Facebook publishing is disabled in environment settings (FACEBOOK_PUBLISH_ENABLED is false).',
         retryable: false,
       };
     }

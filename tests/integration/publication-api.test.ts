@@ -42,7 +42,7 @@ describe('Publication API Integration Tests', () => {
       }),
     } as unknown as D1Database,
     ENVIRONMENT: 'staging',
-    META_PUBLISH_ENABLED: 'false',
+    FACEBOOK_PUBLISH_ENABLED: 'false',
     META_PAGE_ID: '',
     META_PAGE_ACCESS_TOKEN: '',
   };

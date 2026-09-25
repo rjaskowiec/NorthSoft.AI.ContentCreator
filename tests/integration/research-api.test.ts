@@ -69,7 +69,7 @@ describe('Research Admin API Integration', () => {
     const mockEnv = {
       DB: { prepare: prepareMock } as unknown as D1Database,
       ENVIRONMENT: 'staging',
-      META_PUBLISH_ENABLED: 'false',
+      FACEBOOK_PUBLISH_ENABLED: 'false',
     };
 
     const res = await app.request(
@@ -145,7 +145,7 @@ describe('Research Admin API Integration', () => {
     const mockEnv = {
       DB: { prepare: prepareMock } as unknown as D1Database,
       ENVIRONMENT: 'staging',
-      META_PUBLISH_ENABLED: 'false',
+      FACEBOOK_PUBLISH_ENABLED: 'false',
     };
 
     const res = await app.request(

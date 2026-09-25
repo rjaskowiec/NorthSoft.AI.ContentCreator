@@ -29,7 +29,7 @@ The solution must operate safely without exposing access tokens, risking duplica
    - D1-backed state transitions (`scheduled` -> `publishing` -> `published`) with unique idempotency keys (`pub_{post_id}_{post_version_id}`) guarantee duplicate prevention even under network timeouts or concurrent Worker executions.
 
 5. **Secrets & Environment Degradation**:
-   - Credentials come from Cloudflare environment bindings (`META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, `META_GRAPH_API_VERSION`, `META_PUBLISH_ENABLED`).
+   - Credentials come from Cloudflare environment bindings (`META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, `META_GRAPH_API_VERSION`, `FACEBOOK_PUBLISH_ENABLED`).
    - If credentials are absent or publishing is disabled, the app safely defaults to `META_NOT_CONFIGURED` without crashing.
 
 6. **Sanitization**:
