@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.npm
+
+# Build output
+dist/
+
+# Wrangler
+.wrangler/
+.dev.vars
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Production data exports
+*.dump
+*.sql.gz
+*.db
+
+# Secret/credential files
+*.pem
+*.key
+*.cert
+*.p12
+secrets.json
+credentials.json
