@@ -265,20 +265,22 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">System Audit Log</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Event Type</th>
-                    <th>Actor</th>
-                    <th>Entity</th>
-                    <th>Details</th>
-                    <th>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody id="recent-activity-body">
-                  <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit log...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Event Type</th>
+                      <th>Actor</th>
+                      <th>Entity</th>
+                      <th>Details</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recent-activity-body">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit log...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -320,20 +322,22 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">Discovered Candidate Topics</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Title & Description</th>
-                    <th>Category</th>
-                    <th>Relevance Score</th>
-                    <th>Status</th>
-                    <th>Date Discovered</th>
-                  </tr>
-                </thead>
-                <tbody id="topics-table-body">
-                  <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading discovered candidate topics...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Title & Description</th>
+                      <th>Category</th>
+                      <th>Relevance Score</th>
+                      <th>Status</th>
+                      <th>Date Discovered</th>
+                    </tr>
+                  </thead>
+                  <tbody id="topics-table-body">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading discovered candidate topics...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <!-- Research Sources Table -->
@@ -341,20 +345,22 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">Configured Research Sources</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Source Name</th>
-                    <th>Category</th>
-                    <th>Feed URL</th>
-                    <th>Status</th>
-                    <th>Last Checked</th>
-                  </tr>
-                </thead>
-                <tbody id="sources-table-body">
-                  <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading research sources...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Source Name</th>
+                      <th>Category</th>
+                      <th>Feed URL</th>
+                      <th>Status</th>
+                      <th>Last Checked</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sources-table-body">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading research sources...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <!-- Execution Log -->
@@ -362,21 +368,23 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">Research Pipeline Execution History</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Started At</th>
-                    <th>Trigger</th>
-                    <th>Status</th>
-                    <th>Sources Checked</th>
-                    <th>Items Found</th>
-                    <th>Topics Created</th>
-                  </tr>
-                </thead>
-                <tbody id="runs-table-body">
-                  <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading execution log...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Started At</th>
+                      <th>Trigger</th>
+                      <th>Status</th>
+                      <th>Sources Checked</th>
+                      <th>Items Found</th>
+                      <th>Topics Created</th>
+                    </tr>
+                  </thead>
+                  <tbody id="runs-table-body">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading execution log...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -396,21 +404,23 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">Generated Post Drafts & Quality Gate Status</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Post Title & Version Body</th>
-                    <th>Status</th>
-                    <th>Current Version</th>
-                    <th>QA Score</th>
-                    <th>Quality Decision</th>
-                    <th>Created At</th>
-                  </tr>
-                </thead>
-                <tbody id="posts-table-body">
-                  <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading generated post drafts...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Post Title & Version Body</th>
+                      <th>Status</th>
+                      <th>Current Version</th>
+                      <th>QA Score</th>
+                      <th>Quality Decision</th>
+                      <th>Created At</th>
+                    </tr>
+                  </thead>
+                  <tbody id="posts-table-body">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading generated post drafts...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -428,22 +438,24 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">Scheduled Publications Queue</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Post Title</th>
-                    <th>Scheduled Time (UTC)</th>
-                    <th>Status</th>
-                    <th>Version</th>
-                    <th>QA Score</th>
-                    <th>Quality Decision</th>
-                    <th>Created At</th>
-                  </tr>
-                </thead>
-                <tbody id="schedules-table-body">
-                  <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading scheduled publications...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Post Title</th>
+                      <th>Scheduled Time (UTC)</th>
+                      <th>Status</th>
+                      <th>Version</th>
+                      <th>QA Score</th>
+                      <th>Quality Decision</th>
+                      <th>Created At</th>
+                    </tr>
+                  </thead>
+                  <tbody id="schedules-table-body">
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading scheduled publications...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -489,22 +501,24 @@ export function renderAdminHtml(): string {
               <div class="panel-header">
                 <div class="panel-title">Facebook Publications Log</div>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Post Title & Version Preview</th>
-                    <th>Provider</th>
-                    <th>Quality Gate</th>
-                    <th>Publication Status</th>
-                    <th>Facebook Post ID</th>
-                    <th>Published At</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="publications-table-body">
-                  <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading publication history...</td></tr>
-                </tbody>
-              </table>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Post Title & Version Preview</th>
+                      <th>Provider</th>
+                      <th>Quality Gate</th>
+                      <th>Publication Status</th>
+                      <th>Facebook Post ID</th>
+                      <th>Published At</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="publications-table-body">
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading publication history...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
