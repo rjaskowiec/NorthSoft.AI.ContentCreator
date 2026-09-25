@@ -532,11 +532,11 @@ export function renderAdminHtml(): string {
         <ul class="nav-list">
           <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">Dashboard</a></li>
           <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">Research <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3A</span></a></li>
-          <li class="nav-item disabled"><a href="#content">Content <span class="badge-disabled">Phase 3B</span></a></li>
-          <li class="nav-item disabled"><a href="#ideas">Ideas <span class="badge-disabled">Phase 3B</span></a></li>
-          <li class="nav-item disabled"><a href="#calendar">Calendar <span class="badge-disabled">Phase 3B</span></a></li>
-          <li class="nav-item disabled"><a href="#settings">Settings <span class="badge-disabled">Phase 3B</span></a></li>
-          <li class="nav-item disabled"><a href="#audit">Audit Log <span class="badge-disabled">Phase 3B</span></a></li>
+          <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">Content <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3B</span></a></li>
+          <li class="nav-item disabled"><a href="#ideas">Ideas <span class="badge-disabled">Phase 3C</span></a></li>
+          <li class="nav-item disabled"><a href="#calendar">Calendar <span class="badge-disabled">Phase 3C</span></a></li>
+          <li class="nav-item disabled"><a href="#settings">Settings <span class="badge-disabled">Phase 3C</span></a></li>
+          <li class="nav-item disabled"><a href="#audit">Audit Log <span class="badge-disabled">Phase 3C</span></a></li>
         </ul>
       </aside>
 
@@ -656,8 +656,11 @@ export function renderAdminHtml(): string {
             <!-- AI Usage & Free Quota Accounting Panel -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">AI Usage & Free Quota Accounting</div>
-                <span id="ai-quota-badge" class="status-badge status-healthy">FREE CAPACITY AVAILABLE</span>
+                <div class="panel-title">ContentCreator AI Neuron Budget & Usage Accounting</div>
+                <div>
+                  <span id="ai-budget-state-badge" class="status-badge status-healthy" style="margin-right:6px;">NORMAL</span>
+                  <span id="ai-quota-badge" class="status-badge status-healthy">FREE CAPACITY AVAILABLE</span>
+                </div>
               </div>
               <div class="section-grid" style="margin-bottom:0.5rem;">
                 <div>
@@ -666,17 +669,18 @@ export function renderAdminHtml(): string {
                   <div style="font-size:0.8rem; color:var(--text-muted);">Zero Paid Inference Policy</div>
                 </div>
                 <div>
+                  <div class="card-label">ContentCreator Neuron Budget (Today)</div>
+                  <div style="font-weight:600;" id="ai-neurons-text">0 / 7,500 Neurons (Hard Stop)</div>
+                  <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:8px; width:100%; margin-top:6px; overflow:hidden;">
+                    <div id="ai-neurons-bar" style="background:linear-gradient(90deg, var(--accent-blue), var(--accent-purple)); width:0%; height:100%;"></div>
+                  </div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Target: 5,000 | Soft: 6,000 | Ceiling: 7,500</div>
+                </div>
+                <div>
                   <div class="card-label">Today's Requests</div>
                   <div style="font-weight:600;" id="ai-today-text">0 / 50 requests</div>
                   <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:8px; width:100%; margin-top:6px; overflow:hidden;">
-                    <div id="ai-today-bar" style="background:var(--accent-blue); width:0%; height:100%;"></div>
-                  </div>
-                </div>
-                <div>
-                  <div class="card-label">Monthly Requests</div>
-                  <div style="font-weight:600;" id="ai-month-text">0 / 1000 requests</div>
-                  <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:8px; width:100%; margin-top:6px; overflow:hidden;">
-                    <div id="ai-month-bar" style="background:var(--accent-purple); width:0%; height:100%;"></div>
+                    <div id="ai-today-bar" style="background:var(--accent-cyan); width:0%; height:100%;"></div>
                   </div>
                 </div>
               </div>
@@ -802,6 +806,40 @@ export function renderAdminHtml(): string {
             </div>
           </div>
 
+          <!-- TAB 3: CONTENT PIPELINE -->
+          <div id="tab-content" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Content Pipeline & Post Drafts</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Autonomous post draft generation, static checks, independent QA review, policy evaluation, and quality gate results.</p>
+              </div>
+            </div>
+
+            <div id="content-alert" class="alert-success"></div>
+
+            <!-- Posts List Table -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Generated Post Drafts & Quality Gate Status</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title & Content Body</th>
+                    <th>Status</th>
+                    <th>Version</th>
+                    <th>QA Score</th>
+                    <th>Quality Decision</th>
+                    <th>Date Generated</th>
+                  </tr>
+                </thead>
+                <tbody id="posts-table-body">
+                  <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading post drafts...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
@@ -856,6 +894,8 @@ export function renderAdminHtml(): string {
         loadDashboardData();
       } else if (tabName === 'research') {
         loadResearchData();
+      } else if (tabName === 'content') {
+        loadContentData();
       }
     }
 
@@ -936,13 +976,13 @@ export function renderAdminHtml(): string {
           const usage = data.aiUsage;
           document.getElementById('ai-provider-name').textContent = data.systemStatus.aiProvider || 'Cloudflare Workers AI';
           document.getElementById('ai-today-text').textContent = \`\${usage.todayRequests} / \${usage.dailyLimit} requests\`;
-          document.getElementById('ai-month-text').textContent = \`\${usage.monthRequests} / \${usage.monthlyLimit} requests\`;
+          document.getElementById('ai-neurons-text').textContent = \`\${usage.todayNeurons} / \${usage.hardNeuronLimit || 7500} Neurons (Hard Stop)\`;
 
           const todayPct = Math.min(100, Math.round((usage.todayRequests / usage.dailyLimit) * 100));
-          const monthPct = Math.min(100, Math.round((usage.monthRequests / usage.monthlyLimit) * 100));
+          const neuronPct = Math.min(100, Math.round((usage.todayNeurons / (usage.hardNeuronLimit || 7500)) * 100));
 
           document.getElementById('ai-today-bar').style.width = todayPct + '%';
-          document.getElementById('ai-month-bar').style.width = monthPct + '%';
+          document.getElementById('ai-neurons-bar').style.width = neuronPct + '%';
 
           const badgeEl = document.getElementById('ai-quota-badge');
           if (usage.status === 'FREE_CAPACITY_AVAILABLE') {
@@ -951,6 +991,14 @@ export function renderAdminHtml(): string {
           } else {
             badgeEl.className = 'status-badge status-alert';
             badgeEl.textContent = 'DEFERRED — QUOTA EXHAUSTED';
+          }
+
+          const stateBadgeEl = document.getElementById('ai-budget-state-badge');
+          if (stateBadgeEl && usage.budgetState) {
+            stateBadgeEl.textContent = usage.budgetState;
+            if (usage.budgetState === 'NORMAL') stateBadgeEl.className = 'status-badge status-healthy';
+            else if (usage.budgetState === 'CONTROLLED') stateBadgeEl.className = 'status-badge status-active';
+            else stateBadgeEl.className = 'status-badge status-alert';
           }
         }
 
@@ -1003,7 +1051,11 @@ export function renderAdminHtml(): string {
               <td><span class="code-tag">\${topic.category}</span></td>
               <td><span class="status-badge status-healthy">\${topic.priority}/100</span></td>
               <td><span class="status-badge status-active">\${topic.status.toUpperCase()}</span></td>
-              <td class="code-tag">\${new Date(topic.created_at).toLocaleString()}</td>
+              <td>
+                <button class="btn-primary" style="padding:4px 8px; font-size:0.75rem;" onclick="generateDraftFromTopic('\${topic.id}')">
+                  Generate Draft
+                </button>
+              </td>
             </tr>
           \`).join('');
         } else {
@@ -1045,6 +1097,77 @@ export function renderAdminHtml(): string {
 
       } catch (err) {
         console.error('Failed to load research data:', err);
+      }
+    }
+
+    // Load Content Tab Data
+    async function loadContentData() {
+      try {
+        const res = await fetch('/api/admin/content/posts');
+        if (!res.ok) {
+          if (res.status === 401) showLogin();
+          return;
+        }
+
+        const data = await res.json();
+        const postsBody = document.getElementById('posts-table-body');
+
+        if (data.posts && data.posts.length > 0) {
+          postsBody.innerHTML = data.posts.map(post => \`
+            <tr>
+              <td>
+                <div style="font-weight:600; font-size:0.95rem; margin-bottom:4px;">\${post.title}</div>
+                <div style="font-size:0.85rem; color:var(--text-muted); max-width:450px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${post.latest_body || 'Generating...'}</div>
+              </td>
+              <td><span class="status-badge \${post.status === 'approved' ? 'status-healthy' : post.status === 'blocked' ? 'status-alert' : 'status-active'}">\${post.status.toUpperCase()}</span></td>
+              <td><span class="code-tag">v\${post.current_version}</span></td>
+              <td><span class="status-badge status-healthy">\${post.quality_score || 0}/100</span></td>
+              <td><span class="status-badge \${post.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${post.quality_decision || 'PENDING'}</span></td>
+              <td class="code-tag">\${new Date(post.created_at).toLocaleString()}</td>
+            </tr>
+          \`).join('');
+        } else {
+          postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No post drafts generated yet. Click "Generate Draft" on a topic in the Research tab.</td></tr>';
+        }
+      } catch (err) {
+        console.error('Failed to load content posts:', err);
+      }
+    }
+
+    // Trigger Manual Post Generation from Topic
+    async function generateDraftFromTopic(topicId) {
+      const alertEl = document.getElementById('research-alert');
+      if (alertEl) {
+        alertEl.textContent = 'Generating post draft... Please wait.';
+        alertEl.className = 'alert-success';
+        alertEl.style.display = 'block';
+      }
+
+      try {
+        const res = await fetch('/api/admin/content/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          },
+          body: JSON.stringify({ topicId })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (alertEl) alertEl.textContent = \`Post draft generated successfully! Decision: \${data.result.qualityDecision} (Score: \${data.result.qualityScore}/100)\`;
+          switchTab('content');
+        } else {
+          if (alertEl) {
+            alertEl.textContent = data.result?.errorMessage || 'Draft generation failed or was deferred by quota.';
+            alertEl.className = 'alert-error';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected error occurred during draft generation.';
+          alertEl.className = 'alert-error';
+        }
       }
     }
 
