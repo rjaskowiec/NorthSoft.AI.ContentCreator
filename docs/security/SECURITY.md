@@ -70,7 +70,7 @@ npx wrangler secret put ADMIN_AUTH_SECRET --env production
 ### Publishing Safety
 Facebook publishing requires **two independent conditions**:
 1. `ENVIRONMENT === 'production'` (set in wrangler.jsonc, not user input)
-2. `FACEBOOK_PUBLISH_ENABLED === 'true'` (explicit flag)
+2. `META_PUBLISH_ENABLED === 'true'` (explicit flag)
 
 If EITHER condition is false, publishing is blocked. Staging and development environments can NEVER publish to the real Facebook Page, regardless of any flag setting.
 
@@ -184,6 +184,6 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 
 ## Incident Response
 - If a secret is accidentally committed: rotate immediately, force-push removal, update Cloudflare secrets
-- If unauthorized content is published: immediately disable `FACEBOOK_PUBLISH_ENABLED`, investigate audit log
+- If unauthorized content is published: immediately disable `META_PUBLISH_ENABLED`, investigate audit log
 - If AI produces harmful content: Quality Gate should catch; if it doesn't, update validation rules and investigate
 

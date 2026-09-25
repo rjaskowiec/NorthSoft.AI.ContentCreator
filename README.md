@@ -189,7 +189,7 @@ See `.env.example` for the complete list of required secrets.
 | `staging` | ❌ Disabled | Staging D1 | Pre-production testing |
 | `production` | Configurable | Production D1 | Live system |
 
-**Safety**: Facebook publishing requires BOTH `FACEBOOK_PUBLISH_ENABLED=true` AND `ENVIRONMENT=production`. Staging/development can never publish regardless of flag state.
+**Safety**: Facebook publishing requires BOTH `META_PUBLISH_ENABLED=true` AND `ENVIRONMENT=production`. Staging/development can never publish regardless of flag state.
 
 ---
 
