@@ -46,7 +46,7 @@ describe('Auth API Integration', () => {
     const mockEnv = {
       DB: { prepare: prepareMock } as unknown as D1Database,
       ENVIRONMENT: 'staging',
-      FACEBOOK_PUBLISH_ENABLED: 'false',
+      META_PUBLISH_ENABLED: 'false',
       LOG_LEVEL: 'debug',
     };
 
@@ -105,7 +105,7 @@ describe('Auth API Integration', () => {
     const mockEnv = {
       DB: { prepare: prepareMock } as unknown as D1Database,
       ENVIRONMENT: 'staging',
-      FACEBOOK_PUBLISH_ENABLED: 'false',
+      META_PUBLISH_ENABLED: 'false',
       LOG_LEVEL: 'debug',
     };
 

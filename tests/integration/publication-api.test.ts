@@ -42,7 +42,7 @@ describe('Publication API Integration Tests', () => {
       }),
     } as unknown as D1Database,
     ENVIRONMENT: 'staging',
-    FACEBOOK_PUBLISH_ENABLED: 'false',
+    META_PUBLISH_ENABLED: 'false',
     META_PAGE_ID: '',
     META_PAGE_ACCESS_TOKEN: '',
   };
@@ -53,6 +53,37 @@ describe('Publication API Integration Tests', () => {
     });
 
     expect(res.status).toBe(401);
+  });
+
+  it('allows authenticated GET /api/admin/meta/status and returns safe diagnostic metadata', async () => {
+    const res = await app.request(
+      '/api/admin/meta/status',
+      {
+        method: 'GET',
+        headers: {
+          Cookie: 'admin_session=valid_test_session_id',
+        },
+      },
+      mockEnv as unknown as Record<string, unknown>,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      environment: string;
+      pageConfigured: boolean;
+      accessTokenConfigured: boolean;
+      publishingEnabled: boolean;
+      graphApiVersion: string;
+      statusMessage: string;
+    };
+    expect(body.status).toBe('NOT_CONFIGURED');
+    expect(body.environment).toBe('staging');
+    expect(body.pageConfigured).toBe(false);
+    expect(body.accessTokenConfigured).toBe(false);
+    expect(body.publishingEnabled).toBe(false);
+    expect(body.graphApiVersion).toBe('v19.0');
+    expect(body.statusMessage).toContain('NOT CONFIGURED');
   });
 
   it('blocks authenticated POST /api/admin/publications/pub-1/publish without CSRF token with 403', async () => {
