@@ -81,6 +81,8 @@ export function getAdminScripts(): string {
 
       if (tabName === 'dashboard') {
         loadDashboardData();
+      } else if (tabName === 'manual-publisher') {
+        loadManualPublisherData();
       } else if (tabName === 'research') {
         loadResearchData();
       } else if (tabName === 'content') {
@@ -904,6 +906,210 @@ export function getAdminScripts(): string {
         }
       } finally {
         loadPublicationsData();
+      }
+    }
+
+    // Manual Publisher Handlers & Live Preview
+    function initManualPublisherEvents() {
+      const contentEl = document.getElementById('manual-post-content');
+      const linkEl = document.getElementById('manual-post-link');
+
+      if (contentEl) {
+        contentEl.addEventListener('input', updateManualPreview);
+      }
+      if (linkEl) {
+        linkEl.addEventListener('input', updateManualPreview);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initManualPublisherEvents);
+
+    function updateManualPreview() {
+      const content = (document.getElementById('manual-post-content')?.value || '').trim();
+      const link = (document.getElementById('manual-post-link')?.value || '').trim();
+      const charCounter = document.getElementById('manual-char-counter');
+      const previewText = document.getElementById('preview-text');
+      const previewCard = document.getElementById('preview-link-card');
+      const previewDomain = document.getElementById('preview-link-domain');
+      const previewUrl = document.getElementById('preview-link-url');
+
+      const len = content.length;
+      if (charCounter) {
+        charCounter.textContent = len.toLocaleString() + ' / 63,206 characters';
+        if (len > 63206) {
+          charCounter.style.color = 'var(--accent-red)';
+          charCounter.style.fontWeight = '700';
+        } else if (len > 60000) {
+          charCounter.style.color = '#f59e0b';
+          charCounter.style.fontWeight = '600';
+        } else {
+          charCounter.style.color = 'var(--text-muted)';
+          charCounter.style.fontWeight = 'normal';
+        }
+      }
+
+      if (previewText) {
+        previewText.textContent = content || 'Write your Facebook post...';
+      }
+
+      if (link && previewCard && previewUrl && previewDomain) {
+        try {
+          const urlObj = new URL(link);
+          previewDomain.textContent = urlObj.hostname.toUpperCase();
+          previewUrl.textContent = link;
+          previewCard.style.display = 'block';
+        } catch {
+          previewCard.style.display = 'none';
+        }
+      } else if (previewCard) {
+        previewCard.style.display = 'none';
+      }
+    }
+
+    async function loadManualPublisherData() {
+      initManualPublisherEvents();
+      updateManualPreview();
+      try {
+        const res = await fetch('/api/admin/meta/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const badge = document.getElementById('manual-meta-status-badge');
+        if (badge) {
+          const st = (data.status || 'NOT_CONFIGURED').toUpperCase();
+          let cls = 'status-disabled';
+          if (st === 'READY') cls = 'status-healthy';
+          else if (st === 'DEGRADED') cls = 'status-alert';
+          else if (st === 'DISABLED') cls = 'status-active';
+          badge.innerHTML = '<span class="status-badge ' + cls + '">META ' + st.replace('_', ' ') + '</span>';
+        }
+      } catch (err) {
+        console.error('Failed to load Meta status for Manual Publisher:', err);
+      }
+    }
+
+    function validateManualForm() {
+      const alertEl = document.getElementById('manual-pub-alert');
+      const content = (document.getElementById('manual-post-content')?.value || '').trim();
+      const link = (document.getElementById('manual-post-link')?.value || '').trim();
+
+      if (!content) {
+        if (alertEl) {
+          alertEl.textContent = 'Validation error: Post content cannot be empty.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+        return false;
+      }
+
+      if (content.length > 63206) {
+        if (alertEl) {
+          alertEl.textContent = 'Validation error: Post content exceeds Meta Graph API maximum limit of 63,206 characters (' + content.length + ' entered).';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+        return false;
+      }
+
+      if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
+        if (alertEl) {
+          alertEl.textContent = 'Validation error: Link must be a valid URL starting with http:// or https://';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+        return false;
+      }
+
+      if (alertEl) {
+        alertEl.textContent = 'Post content passed static validation and character limit checks! Ready for publication.';
+        alertEl.className = 'alert-success';
+        alertEl.style.display = 'block';
+      }
+      return true;
+    }
+
+    function clearManualForm() {
+      const contentEl = document.getElementById('manual-post-content');
+      const linkEl = document.getElementById('manual-post-link');
+      const alertEl = document.getElementById('manual-pub-alert');
+
+      if (contentEl) contentEl.value = '';
+      if (linkEl) linkEl.value = '';
+      if (alertEl) alertEl.style.display = 'none';
+
+      updateManualPreview();
+    }
+
+    function openPublishConfirmation() {
+      if (!validateManualForm()) return;
+      const modal = document.getElementById('publish-modal');
+      if (modal) modal.style.display = 'flex';
+    }
+
+    function closePublishConfirmation() {
+      const modal = document.getElementById('publish-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function submitManualPublication() {
+      const content = (document.getElementById('manual-post-content')?.value || '').trim();
+      const link = (document.getElementById('manual-post-link')?.value || '').trim();
+      const alertEl = document.getElementById('manual-pub-alert');
+      const confirmBtn = document.getElementById('confirm-publish-btn');
+      const publishBtn = document.getElementById('manual-publish-btn');
+
+      closePublishConfirmation();
+
+      if (alertEl) alertEl.style.display = 'none';
+      if (confirmBtn) confirmBtn.disabled = true;
+      if (publishBtn) {
+        publishBtn.disabled = true;
+        publishBtn.textContent = 'Publishing to Meta...';
+      }
+
+      try {
+        const res = await fetch('/api/admin/publications/manual', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          },
+          body: JSON.stringify({ content, link: link || undefined })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          if (alertEl) {
+            const pubDate = data.publishedAt ? new Date(data.publishedAt).toUTCString() : new Date().toUTCString();
+            alertEl.innerHTML = '<strong>Publication successful!</strong><br>' +
+              'Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + (data.externalPostId || 'Confirmed') + '</code><br>' +
+              'Published: ' + pubDate + '<br><br>' +
+              '<button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="switchTab(\\'publications\\')">View in Publication History &rarr;</button>';
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+          clearManualForm();
+        } else {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>Facebook rejected the publication.</strong><br>' +
+              'Reason: ' + (data.error || data.result?.message || 'Meta API returned an error.') + '<br>' +
+              'No post was confirmed as published.';
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected network error occurred while publishing.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (publishBtn) {
+          publishBtn.disabled = false;
+          publishBtn.textContent = 'Publish to Facebook';
+        }
       }
     }
   `;

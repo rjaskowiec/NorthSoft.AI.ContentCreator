@@ -107,6 +107,7 @@ export function renderAdminHtml(): string {
 
         <ul class="nav-list">
           <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">Dashboard</a></li>
+          <li class="nav-item" id="nav-manual-publisher"><a href="#manual-publisher" onclick="switchTab('manual-publisher')">Manual Publisher <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Meta</span></a></li>
           <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">Research <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3A</span></a></li>
           <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">Content <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3B</span></a></li>
           <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">Schedules <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3C</span></a></li>
@@ -280,6 +281,101 @@ export function renderAdminHtml(): string {
                     <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit log...</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: MANUAL FACEBOOK PUBLISHER -->
+          <div id="tab-manual-publisher" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Manual Facebook Publisher</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Publish content directly to the configured NorthSoft Facebook Page via official Meta Publisher.</p>
+              </div>
+              <div id="manual-meta-status-badge">
+                <span class="status-badge status-healthy">META READY</span>
+              </div>
+            </div>
+
+            <div id="manual-pub-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+
+            <div class="manual-publisher-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items:start;">
+              <!-- Left Column: Composer Form -->
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Post content</div>
+                </div>
+
+                <form id="manual-post-form" onsubmit="return false;">
+                  <div class="form-group">
+                    <label class="form-label" for="manual-post-content">Facebook post content</label>
+                    <textarea id="manual-post-content" class="form-input" style="min-height: 180px; resize: vertical; font-family: inherit; line-height: 1.5;" placeholder="Write your Facebook post..." required maxlength="63206"></textarea>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">
+                      <span>Meta Graph API limit</span>
+                      <span id="manual-char-counter">0 / 63206 characters</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group" style="margin-top: 1.25rem;">
+                    <label class="form-label" for="manual-post-link">Attachment Link (Optional)</label>
+                    <input type="url" id="manual-post-link" class="form-input" placeholder="https://northsoft.is/article">
+                    <div class="card-sub" style="margin-top:0.3rem;">Attach an external website or article link to the post.</div>
+                  </div>
+
+                  <!-- Media Capability Notice -->
+                  <div style="background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--border-color); border-radius: 8px; padding: 1rem; margin-top: 1.25rem;">
+                    <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
+                      <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                      Media (Images / Video)
+                    </div>
+                    <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+                      <strong>Video &amp; direct file upload: Not available in the current publisher configuration.</strong><br>
+                      Direct binary file upload requires Cloudflare R2 media storage and Meta <code>pages_manage_posts</code> photos/videos permissions. URL Link attachments are supported above.
+                    </div>
+                  </div>
+
+                  <!-- Composer Controls -->
+                  <div style="display:flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
+                    <button type="button" id="manual-clear-btn" class="btn-logout" onclick="clearManualForm()">Clear</button>
+                    <button type="button" id="manual-validate-btn" class="btn-primary" style="background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color);" onclick="validateManualForm()">Validate</button>
+                    <button type="button" id="manual-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="openPublishConfirmation()">Publish to Facebook</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Right Column: Live Facebook Post Preview -->
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Preview</div>
+                  <span class="status-badge status-healthy" style="font-size:0.7rem;">FACEBOOK POST PREVIEW</span>
+                </div>
+
+                <div class="fb-preview-card" style="background: #18191a; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.25rem; color: #e4e6eb;">
+                  <!-- Header -->
+                  <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.85rem;">
+                    <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #00c6ff, #0072ff); display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 0.95rem; flex-shrink:0;">
+                      NS
+                    </div>
+                    <div>
+                      <div style="font-weight: 600; font-size: 0.95rem; color: #e4e6eb;">NorthSoft</div>
+                      <div style="font-size: 0.75rem; color: #b0b3b8; display: flex; align-items: center; gap: 0.25rem;">
+                        <span>Just now</span> &middot; <span>🌐</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Body Text -->
+                  <div id="preview-text" style="font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; line-height: 1.45; color: #e4e6eb; margin-bottom: 0.75rem; min-height: 80px;">Write your Facebook post...</div>
+
+                  <!-- Link Attachment Card Preview -->
+                  <div id="preview-link-card" style="display: none; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; overflow: hidden; background: #242526; margin-top: 0.75rem;">
+                    <div style="padding: 0.75rem;">
+                      <div style="font-size: 0.75rem; color: #b0b3b8; text-transform: uppercase;" id="preview-link-domain">NORTHSOFT.IS</div>
+                      <div style="font-weight: 600; font-size: 0.9rem; color: #e4e6eb; margin-top: 0.2rem;" id="preview-link-title">Attached External Link</div>
+                      <div style="font-size: 0.8rem; color: #b0b3b8; margin-top: 0.2rem;" id="preview-link-url">https://northsoft.is</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -583,6 +679,20 @@ export function renderAdminHtml(): string {
 
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- CONFIRMATION MODAL -->
+  <div id="publish-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; max-width:480px; width:90%; padding:1.75rem; box-shadow:0 20px 40px rgba(0,0,0,0.6);">
+      <h3 style="font-size:1.2rem; font-weight:600; margin-bottom:0.75rem; color:var(--text-primary);">Publish to Facebook?</h3>
+      <p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.5; margin-bottom:1.5rem;">
+        This will publish the prepared content directly to the configured NorthSoft Facebook Page.
+      </p>
+      <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+        <button type="button" class="btn-logout" onclick="closePublishConfirmation()">Cancel</button>
+        <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="submitManualPublication()">Publish</button>
+      </div>
     </div>
   </div>
 

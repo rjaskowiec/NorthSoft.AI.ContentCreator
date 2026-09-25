@@ -122,4 +122,80 @@ describe('Publication API Integration Tests', () => {
     expect(body.configStatus).toBeDefined();
     expect(body.configStatus.configured).toBe(false);
   });
+
+  it('blocks unauthenticated POST /api/admin/publications/manual with 401', async () => {
+    const res = await app.request('/api/admin/publications/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Test post content' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('blocks authenticated POST /api/admin/publications/manual without CSRF token with 403', async () => {
+    const res = await app.request(
+      '/api/admin/publications/manual',
+      {
+        method: 'POST',
+        headers: {
+          Cookie: 'admin_session=valid_test_session_id',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: 'Test post content' }),
+      },
+      mockEnv as unknown as Record<string, unknown>,
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it('validates empty content on POST /api/admin/publications/manual with 400', async () => {
+    const enabledEnv = {
+      ...mockEnv,
+      FACEBOOK_PUBLISH_ENABLED: 'true',
+      META_PAGE_ID: 'page_123',
+      META_PAGE_ACCESS_TOKEN: 'token_123',
+      ENVIRONMENT: 'production',
+    };
+
+    const res = await app.request(
+      '/api/admin/publications/manual',
+      {
+        method: 'POST',
+        headers: {
+          Cookie: 'admin_session=valid_test_session_id',
+          'x-csrf-token': 'csrf_secret_key_123',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: '   ' }),
+      },
+      enabledEnv as unknown as Record<string, unknown>,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('Post content cannot be empty');
+  });
+
+  it('handles manual publish when publisher is NOT_CONFIGURED with 400', async () => {
+    const res = await app.request(
+      '/api/admin/publications/manual',
+      {
+        method: 'POST',
+        headers: {
+          Cookie: 'admin_session=valid_test_session_id',
+          'x-csrf-token': 'csrf_secret_key_123',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: 'Manual publication test message' }),
+      },
+      mockEnv as unknown as Record<string, unknown>,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe('META_NOT_CONFIGURED');
+    expect(body.error).toContain('NOT CONFIGURED');
+  });
 });
