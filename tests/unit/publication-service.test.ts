@@ -127,4 +127,50 @@ describe('PublicationService Unit Tests', () => {
     expect(result.externalPostId).toBe('fb_existing_112233');
     expect(mockPublisher.publishCalls.length).toBe(0); // Zero additional Meta calls!
   });
+
+  it('should recover stale locks in status publishing older than 15 minutes', async () => {
+    const runMock = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
+    const mockDb = {
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes("status = 'publishing'")) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            all: vi.fn().mockResolvedValue({
+              results: [
+                { id: 'pub-stale-1', post_id: 'p1', post_version_id: 'v1', attempt_count: 1 },
+              ],
+            }),
+            run: runMock,
+          };
+        }
+        return {
+          bind: vi.fn().mockReturnThis(),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          run: runMock,
+        };
+      }),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    const service = new PublicationService(mockDb, mockPublisher);
+
+    const recovered = await service.recoverStaleLocks(15);
+    expect(recovered).toBe(1);
+    expect(runMock).toHaveBeenCalled();
+  });
+
+  it('should skip publishing scheduled due posts gracefully when publisher is disabled or not configured', async () => {
+    const mockDb = {
+      prepare: vi.fn(),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    mockPublisher.isConfigured = false;
+
+    const service = new PublicationService(mockDb, mockPublisher);
+    const result = await service.publishScheduledDuePosts();
+
+    expect(result.processed).toBe(0);
+    expect(result.skippedReason).toBe('NOT_CONFIGURED');
+  });
 });

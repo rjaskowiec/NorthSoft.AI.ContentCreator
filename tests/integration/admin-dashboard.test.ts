@@ -152,7 +152,7 @@ describe('Admin Dashboard Integration & Security', () => {
     expect(data.systemStatus.worker).toBe('Healthy');
     expect(data.systemStatus.database).toBe('Connected');
     expect(data.systemStatus.aiProvider).toBe('Mock (Development)');
-    expect(data.systemStatus.facebookPublisher).toBe('Not configured');
+    expect(data.systemStatus.facebookPublisher).toBe('NOT_CONFIGURED');
     expect(data.systemStatus.publishing).toBe('Disabled');
 
     expect(data.pipeline.ideas).toBe(5);
