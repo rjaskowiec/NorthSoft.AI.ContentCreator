@@ -124,12 +124,152 @@ publicationsRouter.post('/publications/:id/retry', csrfProtection, async (c) => 
 
   const result = await pubService.publishPost(publication.postId, { actor: 'admin' });
 
-  if (!result.success && result.code === 'POST_NOT_APPROVED') {
-    return c.json({ error: result.message, code: result.code }, 403);
-  }
-
   return c.json({
     success: result.success,
     result,
+  });
+});
+
+/**
+ * POST /api/admin/publications/manual
+ * Creates a manual post version (MANUAL_ADMIN_APPROVED) and executes immediate publication
+ * through the existing PublicationService & MetaPublisher pipeline.
+ * Zero Workers AI neurons consumed.
+ * Protected by requireAdmin and csrfProtection.
+ */
+publicationsRouter.post('/publications/manual', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const auditLogger = new D1AuditLogger(db);
+  const publisher = new FacebookPublisher(c.env);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+
+  const configStatus = publisher.getConfigStatus();
+  if (configStatus.state === 'NOT_CONFIGURED') {
+    return c.json(
+      {
+        success: false,
+        error: configStatus.statusMessage,
+        code: 'META_NOT_CONFIGURED',
+      },
+      400,
+    );
+  }
+
+  if (configStatus.state === 'DISABLED') {
+    return c.json(
+      {
+        success: false,
+        error: configStatus.statusMessage,
+        code: 'META_PUBLISH_DISABLED',
+      },
+      403,
+    );
+  }
+
+  let body: { content?: string; link?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, error: 'Invalid JSON payload in request body.' }, 400);
+  }
+
+  const content = (body.content || '').trim();
+  const link = (body.link || '').trim();
+
+  // 1. Static Content Validation
+  if (!content) {
+    return c.json({ success: false, error: 'Post content cannot be empty.' }, 400);
+  }
+
+  if (content.length > 63206) {
+    return c.json(
+      {
+        success: false,
+        error: `Post content length (${content.length} characters) exceeds Meta Graph API maximum allowed limit of 63,206 characters.`,
+      },
+      400,
+    );
+  }
+
+  if (link && !/^https?:\/\//i.test(link)) {
+    return c.json(
+      {
+        success: false,
+        error: 'Invalid link URL. Must start with http:// or https://',
+      },
+      400,
+    );
+  }
+
+  // 2. Create Post & PostVersion in D1 with MANUAL_ADMIN_APPROVED status
+  const postId = crypto.randomUUID();
+  const versionId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
+  const title = content.length > 50 ? content.slice(0, 47) + '...' : content;
+
+  // Insert post
+  await db
+    .prepare(
+      `INSERT INTO posts (id, idea_id, title, status, current_version, quality_score, quality_decision, created_at, updated_at)
+       VALUES (?, NULL, ?, 'approved', 1, 100, 'PASS', ?, ?)`,
+    )
+    .bind(postId, title, nowIso, nowIso)
+    .run();
+
+  // Insert post_version
+  await db
+    .prepare(
+      `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+       VALUES (?, ?, 1, ?, ?, ?, 'manual-admin', 'admin', ?)`,
+    )
+    .bind(
+      versionId,
+      postId,
+      content,
+      link ? 'link' : 'text',
+      JSON.stringify({
+        manual: true,
+        actor: 'admin',
+        quality_gate: 'MANUAL_ADMIN_APPROVED',
+        link: link || null,
+      }),
+      nowIso,
+    )
+    .run();
+
+  await auditLogger.log({
+    eventType: 'POST_APPROVED',
+    entityType: 'post',
+    entityId: postId,
+    actor: 'admin',
+    details: {
+      reason: 'MANUAL_ADMIN_APPROVED',
+      versionId,
+      contentLength: content.length,
+      hasLink: Boolean(link),
+    },
+  });
+
+  // 3. Execute Publication via Existing PublicationService Flow
+  const pubResult = await pubService.publishPost(postId, { actor: 'admin' });
+
+  if (!pubResult.success) {
+    return c.json(
+      {
+        success: false,
+        error: pubResult.message || 'Publication failed via Meta Graph API.',
+        code: pubResult.code || 'PUBLISH_FAILED',
+        result: pubResult,
+      },
+      400,
+    );
+  }
+
+  return c.json({
+    success: true,
+    publicationId: pubResult.publicationId,
+    externalPostId: pubResult.externalPostId,
+    publishedAt: pubResult.publishedAt,
+    result: pubResult,
   });
 });
