@@ -107,11 +107,20 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 - A single AI inference cannot both generate and approve content
 - The QA reviewer receives the content without knowing it was AI-generated
 
-## Authentication (Planned)
-- Admin panel will require authentication
-- Session/JWT signing key stored as Cloudflare Worker Secret
-- Authentication tokens must be HttpOnly, Secure, SameSite
-- Rate limiting on authentication endpoints
+## Authentication & Session Security
+
+- **Server-Side Sessions**: Authenticated admin sessions use secure, non-guessable 32-byte tokens.
+- **D1 Token Hashing**: Plaintext session tokens are never stored in D1; only SHA-256 hashes (`token_hash`) are persisted.
+- **Strict Cookie Attributes**:
+  ```text
+  HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400
+  ```
+- **Password Hashing**: PBKDF2-HMAC-SHA256 with 60,000 iterations and a 16-byte random salt per user.
+- **CSRF Protection**: All state-changing endpoints (`POST`, `PUT`, `PATCH`, `DELETE`) require an `X-CSRF-Token` header matching the session's CSRF secret (verified in constant time).
+- **Brute-Force Rate Limiting**: D1-backed attempt tracking limits failed logins to 5 attempts per 15-minute window per IP/username.
+- **Generic Error Responses**: Login failures always return generic "Invalid credentials." messages to prevent username enumeration.
+- **Security Headers**: Admin responses set Content-Security-Policy, X-Frame-Options (`DENY`), X-Content-Type-Options (`nosniff`), Referrer-Policy (`strict-origin-when-cross-origin`), and Permissions-Policy.
+- **Secure Provisioning**: No default administrator account or hardcoded password exists in code or database migrations. Initial creation uses `npm run admin:provision`.
 
 ## Deployment Security
 - CI must pass all checks before merge (typecheck, lint, tests, security scan, audit)
