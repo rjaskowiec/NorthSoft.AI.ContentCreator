@@ -31,20 +31,51 @@ export class MockAIProvider implements IAIProvider {
       }
     }
 
-    // Default valid research JSON response if request role is researcher and no custom mock matched
-    if (request.role === 'researcher' && responseContent === 'Mock AI completion response') {
-      responseContent = JSON.stringify({
-        title: 'Mock AI Topic Analysis',
-        summary: 'A structured candidate topic derived from research sources.',
-        sourceUrl: 'https://blog.cloudflare.com/rss/',
-        sourceName: 'Cloudflare Blog',
-        publishedAt: new Date().toISOString(),
-        relevanceScore: 88,
-        categories: ['Cloudflare', 'AI'],
-        keyClaims: ['Claim 1', 'Claim 2'],
-        whyRelevant: 'Relevant to small business technology and modern cloud infrastructure.',
-        confidence: 0.95,
-      });
+    // Default valid JSON responses based on request role if no custom mock matched
+    if (responseContent === 'Mock AI completion response') {
+      if (request.role === 'researcher') {
+        responseContent = JSON.stringify({
+          title: 'Mock AI Topic Analysis',
+          summary: 'A structured candidate topic derived from research sources.',
+          sourceUrl: 'https://blog.cloudflare.com/rss/',
+          sourceName: 'Cloudflare Blog',
+          publishedAt: new Date().toISOString(),
+          relevanceScore: 88,
+          categories: ['Cloudflare', 'AI'],
+          keyClaims: ['Claim 1', 'Claim 2'],
+          whyRelevant: 'Relevant to small business technology and modern cloud infrastructure.',
+          confidence: 0.95,
+        });
+      } else if (request.role === 'writer') {
+        responseContent = JSON.stringify({
+          title: 'Edge Compute Optimization with Cloudflare Workers',
+          body:
+            'Cloudflare Workers enable serverless code execution directly at the network edge. ' +
+            'By deploying logic closer to users, applications achieve ultra-low latency and zero cold starts. ' +
+            'This architecture dramatically simplifies global deployment while reducing cloud infrastructure overhead.',
+          language: 'en',
+          tone: 'professional',
+          claims: [
+            {
+              text: 'Cloudflare Workers execute code at the network edge.',
+              sourceIds: ['src-100'],
+            },
+          ],
+          hashtags: ['#Cloudflare', '#Serverless'],
+          callToAction: 'Learn more about edge architecture.',
+        });
+      } else if (request.role === 'qa') {
+        responseContent = JSON.stringify({
+          verdict: 'PASS',
+          score: 92,
+          factualIssues: [],
+          unsupportedClaims: [],
+          policyConcerns: [],
+          styleIssues: [],
+          requiredChanges: [],
+          reasoning: 'Draft is factually accurate and grounded in research evidence.',
+        });
+      }
     }
 
     return {
