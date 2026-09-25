@@ -88,13 +88,23 @@ Quota Capacity Check (MAX_AI_COST = 0)
                                     Candidate Topic (D1)
 ```
 
-### Content Pipeline & Quality Gate (`src/services/content/`)
+### Content Pipeline & Autonomous Orchestrator (`src/services/content/`)
 ```text
-Candidate Topic (content_ideas)
+Cloudflare Cron / Admin Manual Trigger
        ↓
-Neuron Budget Pre-flight Check (Hard Ceiling: 7,500 Neurons/day)
-       ├── Insufficient Budget → DEFERRED_NO_FREE_AI_CAPACITY
-       └── Budget Available → Writer Service (Writer AI)
+ContentOrchestrator.runPipeline()
+       ↓
+D1 Execution Lock Check (orchestrator_runs status='running')
+       ↓
+Daily Post Count Limit Check (Default: 1 post/day)
+       ↓
+Topic Selection & Cooldown Filter (content_ideas)
+       ↓
+Workflow Neuron Budget Pre-flight Check (Hard Ceiling: 7,500 Neurons/day)
+       ├── Insufficient Budget → DEFERRED_NO_FREE_AI_CAPACITY (ZERO AI calls)
+       └── Budget Available → ContentPlannerService
+                                      ↓
+                              Writer Service (Writer AI)
                                      ↓
                              Post Draft v1 (post_versions)
                                      ↓

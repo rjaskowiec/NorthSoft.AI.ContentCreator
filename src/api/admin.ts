@@ -14,6 +14,7 @@ import { csrfProtection } from '../core/auth/csrf';
 import { getEnvironment, isFacebookPublishEnabled } from '../core/environment';
 import { requireAdmin } from '../core/middleware/auth';
 import { QuotaManager } from '../services/ai/quota-manager';
+import { ContentOrchestrator } from '../services/content/content-orchestrator';
 import { ContentPlannerService } from '../services/content/content-planner-service';
 import { ResearchService } from '../services/research/research-service';
 
@@ -106,6 +107,19 @@ adminRoutes.get('/dashboard', async (c) => {
     // Keep default empty array
   }
 
+  // 3. Fetch Last Orchestrator Run Metrics
+  let lastRun: Record<string, unknown> | null;
+  try {
+    const runRow = await db
+      .prepare(
+        'SELECT id, trigger_type, status, started_at, finished_at, topics_discovered, topics_selected, neurons_used, result_status, error_message FROM orchestrator_runs ORDER BY started_at DESC LIMIT 1',
+      )
+      .first<Record<string, unknown>>();
+    lastRun = runRow || null;
+  } catch {
+    lastRun = null;
+  }
+
   // AI Provider status
   const aiProvider = getAIProvider(c.env, 'researcher');
   const aiProviderStatus =
@@ -122,6 +136,7 @@ adminRoutes.get('/dashboard', async (c) => {
       publishing: fbEnabled ? 'Enabled' : 'Disabled',
     },
     pipeline: pipelineCounts,
+    lastRun,
     securityStatus: {
       authentication: 'Enabled',
       sessionType: 'HttpOnly Secure Cookie',
@@ -279,5 +294,65 @@ adminRoutes.get('/settings', async (c) => {
 
   return c.json({
     settings: rows.results || [],
+  });
+});
+
+/**
+ * POST /api/admin/pipeline/run
+ * Manually triggers the complete autonomous orchestration pipeline.
+ * Protected by requireAdmin and csrfProtection.
+ */
+adminRoutes.post('/pipeline/run', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const orchestrator = new ContentOrchestrator(db, c.env);
+
+  const result = await orchestrator.runPipeline('manual');
+
+  return c.json({
+    success: result.status === 'completed',
+    result,
+  });
+});
+
+/**
+ * GET /api/admin/pipeline/runs
+ * Returns recent autonomous pipeline execution runs.
+ */
+adminRoutes.get('/pipeline/runs', async (c) => {
+  const db = c.env.DB;
+  const runsRes = await db
+    .prepare(
+      `SELECT id, trigger_type, status, started_at, finished_at, topics_discovered, topics_eligible, topics_selected,
+              writer_calls, qa_calls, policy_calls, regenerations, neurons_used, result_status, post_id, error_message
+       FROM orchestrator_runs
+       ORDER BY started_at DESC
+       LIMIT 20`,
+    )
+    .all();
+
+  return c.json({
+    runs: runsRes.results || [],
+  });
+});
+
+/**
+ * GET /api/admin/schedules
+ * Returns scheduled posts awaiting future publication.
+ */
+adminRoutes.get('/schedules', async (c) => {
+  const db = c.env.DB;
+  const schedulesRes = await db
+    .prepare(
+      `SELECT s.id, s.post_id, s.scheduled_at, s.timezone, s.status, s.created_at,
+              p.title as post_title, p.quality_score, p.quality_decision, p.current_version
+       FROM schedules s
+       JOIN posts p ON s.post_id = p.id
+       ORDER BY s.scheduled_at ASC
+       LIMIT 20`,
+    )
+    .all();
+
+  return c.json({
+    schedules: schedulesRes.results || [],
   });
 });

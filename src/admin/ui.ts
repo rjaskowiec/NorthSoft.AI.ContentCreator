@@ -533,8 +533,7 @@ export function renderAdminHtml(): string {
           <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">Dashboard</a></li>
           <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">Research <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3A</span></a></li>
           <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">Content <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3B</span></a></li>
-          <li class="nav-item disabled"><a href="#ideas">Ideas <span class="badge-disabled">Phase 3C</span></a></li>
-          <li class="nav-item disabled"><a href="#calendar">Calendar <span class="badge-disabled">Phase 3C</span></a></li>
+          <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">Schedules <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3C</span></a></li>
           <li class="nav-item disabled"><a href="#settings">Settings <span class="badge-disabled">Phase 3C</span></a></li>
           <li class="nav-item disabled"><a href="#audit">Audit Log <span class="badge-disabled">Phase 3C</span></a></li>
         </ul>
@@ -625,6 +624,32 @@ export function renderAdminHtml(): string {
                 <div class="card-label">Blocked</div>
                 <div class="card-val" id="cnt-blocked" style="color:var(--accent-red);">0</div>
                 <div class="card-sub">Failed policy/QA check</div>
+              </div>
+            <!-- Autonomous Content Orchestrator Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Autonomous Content Orchestrator Pipeline</div>
+                <button id="run-pipeline-btn" class="btn-primary" onclick="runPipelineNow()">
+                  <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Pipeline Now
+                </button>
+              </div>
+              <div id="pipeline-run-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
+              <div class="section-grid" style="margin-bottom:0;">
+                <div>
+                  <div class="card-label">Last Pipeline Run</div>
+                  <div style="font-weight:600;" id="orch-last-time">Never</div>
+                  <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-last-trigger">Trigger: —</div>
+                </div>
+                <div>
+                  <div class="card-label">Execution Status</div>
+                  <div style="font-weight:600;" id="orch-status-val"><span class="status-badge status-healthy">IDLE</span></div>
+                  <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-result-val">Result: —</div>
+                </div>
+                <div>
+                  <div class="card-label">Neurons Consumed (Last Run)</div>
+                  <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Neurons</div>
+                  <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-topics-val">Topics selected: 0</div>
+                </div>
               </div>
             </div>
 
@@ -840,6 +865,37 @@ export function renderAdminHtml(): string {
             </div>
           </div>
 
+          <!-- TAB 4: SCHEDULES -->
+          <div id="tab-schedules" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Internal Content Schedules</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Approved content items scheduled for future publication. Publishing remains locked in Phase 3C (No Meta API calls).</p>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Scheduled Publications Queue</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Post Title</th>
+                    <th>Scheduled Time (UTC)</th>
+                    <th>Status</th>
+                    <th>Version</th>
+                    <th>QA Score</th>
+                    <th>Quality Decision</th>
+                    <th>Created At</th>
+                  </tr>
+                </thead>
+                <tbody id="schedules-table-body">
+                  <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading scheduled publications...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
@@ -896,6 +952,8 @@ export function renderAdminHtml(): string {
         loadResearchData();
       } else if (tabName === 'content') {
         loadContentData();
+      } else if (tabName === 'schedules') {
+        loadSchedulesData();
       }
     }
 
@@ -1000,6 +1058,26 @@ export function renderAdminHtml(): string {
             else if (usage.budgetState === 'CONTROLLED') stateBadgeEl.className = 'status-badge status-active';
             else stateBadgeEl.className = 'status-badge status-alert';
           }
+        }
+
+        // Orchestrator Last Run Panel
+        if (data.lastRun) {
+          const run = data.lastRun;
+          document.getElementById('orch-last-time').textContent = run.started_at ? new Date(run.started_at).toLocaleString() : 'Never';
+          document.getElementById('orch-last-trigger').textContent = 'Trigger: ' + (run.trigger_type || 'cron').toUpperCase();
+
+          const statusEl = document.getElementById('orch-status-val');
+          if (run.status === 'completed') {
+            statusEl.innerHTML = '<span class="status-badge status-healthy">COMPLETED</span>';
+          } else if (run.status === 'deferred') {
+            statusEl.innerHTML = '<span class="status-badge status-alert">DEFERRED</span>';
+          } else {
+            statusEl.innerHTML = '<span class="status-badge status-active">' + (run.status || 'RUNNING').toUpperCase() + '</span>';
+          }
+
+          document.getElementById('orch-result-val').textContent = 'Result: ' + (run.result_status || '—').toUpperCase();
+          document.getElementById('orch-neurons-val').textContent = (run.neurons_used || 0) + ' Neurons';
+          document.getElementById('orch-topics-val').textContent = 'Topics selected: ' + (run.topics_selected || 0);
         }
 
         // Audit Events Table
@@ -1208,6 +1286,85 @@ export function renderAdminHtml(): string {
         btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Run Manual Research';
       }
     });
+    async function runPipelineNow() {
+      const btn = document.getElementById('run-pipeline-btn');
+      const alertEl = document.getElementById('pipeline-run-alert');
+      if (alertEl) alertEl.style.display = 'none';
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Running Pipeline...';
+      }
+
+      try {
+        const res = await fetch('/api/admin/pipeline/run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          }
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (alertEl) {
+            alertEl.textContent = \`Autonomous pipeline completed successfully! Result: \${data.result.resultStatus?.toUpperCase()} (Neurons used: \${data.result.neuronsUsed})\`;
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+          loadDashboardData();
+        } else {
+          if (alertEl) {
+            alertEl.textContent = data.result?.errorMessage || 'Pipeline run encountered an issue or was deferred by quota.';
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected error occurred while executing the pipeline.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Pipeline Now';
+        }
+      }
+    }
+
+    // Load Scheduled Publications Tab Data
+    async function loadSchedulesData() {
+      try {
+        const res = await fetch('/api/admin/schedules');
+        if (!res.ok) {
+          if (res.status === 401) showLogin();
+          return;
+        }
+
+        const data = await res.json();
+        const schedBody = document.getElementById('schedules-table-body');
+
+        if (data.schedules && data.schedules.length > 0) {
+          schedBody.innerHTML = data.schedules.map(sched => \`
+            <tr>
+              <td><strong>\${sched.post_title}</strong></td>
+              <td class="code-tag">\${new Date(sched.scheduled_at).toUTCString()}</td>
+              <td><span class="status-badge status-healthy">\${sched.status.toUpperCase()}</span></td>
+              <td><span class="code-tag">v\${sched.current_version}</span></td>
+              <td><span class="status-badge status-healthy">\${sched.quality_score || 0}/100</span></td>
+              <td><span class="status-badge \${sched.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${sched.quality_decision || 'PASS'}</span></td>
+              <td class="code-tag">\${new Date(sched.created_at).toLocaleString()}</td>
+            </tr>
+          \`).join('');
+        } else {
+          schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No scheduled publications queue entries found. Approved posts will automatically appear here when scheduled.</td></tr>';
+        }
+      } catch (err) {
+        console.error('Failed to load schedules:', err);
+      }
+    }
   </script>
 </body>
 </html>`;

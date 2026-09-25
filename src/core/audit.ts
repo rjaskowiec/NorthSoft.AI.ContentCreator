@@ -57,7 +57,11 @@ export type AuditEventType =
   | 'POLICY_REVIEW_FAILED'
   | 'QA_STARTED'
   | 'QA_PASSED'
-  | 'QA_FAILED';
+  | 'QA_FAILED'
+  | 'ORCHESTRATOR_RUN_STARTED'
+  | 'ORCHESTRATOR_RUN_COMPLETED'
+  | 'ORCHESTRATOR_RUN_DEFERRED'
+  | 'WORKFLOW_FAILED';
 
 /**
  * An entry in the audit log.
