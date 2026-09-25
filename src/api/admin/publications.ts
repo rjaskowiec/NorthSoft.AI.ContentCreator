@@ -9,7 +9,30 @@ import { csrfProtection } from '../../core/auth/csrf';
 import { FacebookPublisher } from '../../publishing/facebook-publisher';
 import { PublicationService } from '../../services/publishing/publication-service';
 
+import { getEnvironment } from '../../core/environment';
+
 export const publicationsRouter = new Hono<AppEnv>();
+
+/**
+ * GET /api/admin/meta/status
+ * Returns safe diagnostic configuration status for Meta Graph API.
+ * Protected by requireAdmin. Never exposes tokens or secrets.
+ */
+publicationsRouter.get('/meta/status', async (c) => {
+  const publisher = new FacebookPublisher(c.env);
+  const config = publisher.getConfigStatus();
+  const envName = getEnvironment(c.env?.ENVIRONMENT);
+
+  return c.json({
+    status: config.state,
+    environment: envName,
+    pageConfigured: config.pageIdConfigured,
+    accessTokenConfigured: config.tokenConfigured,
+    publishingEnabled: config.publishEnabled,
+    graphApiVersion: config.apiVersion,
+    statusMessage: config.statusMessage,
+  });
+});
 
 /**
  * GET /api/admin/publications
