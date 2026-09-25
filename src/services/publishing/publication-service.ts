@@ -164,7 +164,7 @@ export class PublicationService {
     const postRow = await this.db
       .prepare(
         `SELECT p.id, p.title, p.status as post_status,
-                pv.id as version_id, COALESCE(pv.content, pv.body) as body, COALESCE(pv.status, p.status, 'approved') as version_status, pv.version_number
+                pv.id as version_id, pv.content as body, p.status as version_status, pv.version_number
          FROM posts p
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE p.id = ?`,
@@ -618,7 +618,7 @@ export class PublicationService {
                 pub.facebook_post_id, pub.provider, pub.status, pub.attempt_count,
                 pub.http_status, pub.error_code, pub.error_message, pub.idempotency_key,
                 pub.published_at, pub.created_at, pub.updated_at,
-                p.title as post_title, COALESCE(pv.content, pv.body) as post_body, COALESCE(pv.status, p.status, 'approved') as quality_gate_status
+                p.title as post_title, pv.content as post_body, p.status as quality_gate_status
          FROM publications pub
          JOIN posts p ON pub.post_id = p.id
          LEFT JOIN post_versions pv ON pub.post_version_id = pv.id
@@ -679,7 +679,7 @@ export class PublicationService {
                 pub.facebook_post_id, pub.provider, pub.status, pub.attempt_count,
                 pub.http_status, pub.error_code, pub.error_message, pub.idempotency_key,
                 pub.published_at, pub.created_at, pub.updated_at,
-                p.title as post_title, COALESCE(pv.content, pv.body) as post_body, COALESCE(pv.status, p.status, 'approved') as quality_gate_status
+                p.title as post_title, pv.content as post_body, p.status as quality_gate_status
          FROM publications pub
          JOIN posts p ON pub.post_id = p.id
          LEFT JOIN post_versions pv ON pub.post_version_id = pv.id
