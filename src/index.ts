@@ -9,7 +9,6 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 
-import { getAIProvider } from './ai/factory';
 import { renderAdminHtml } from './admin/ui';
 import { adminRoutes } from './api/admin';
 import { authRoutes } from './api/auth';
@@ -17,7 +16,7 @@ import { healthRoutes } from './api/health';
 import type { AdminSession, AdminUser } from './core/auth/session';
 import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
-import { ResearchService } from './services/research/research-service';
+import { ContentOrchestrator } from './services/content/content-orchestrator';
 
 export type AppEnv = {
   Bindings: Env;
@@ -94,8 +93,7 @@ export { app };
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    const aiProvider = getAIProvider(env, 'researcher');
-    const service = new ResearchService(env.DB, aiProvider);
-    ctx.waitUntil(service.runResearchPipeline('cron'));
+    const orchestrator = new ContentOrchestrator(env.DB, env);
+    ctx.waitUntil(orchestrator.runPipeline('cron'));
   },
 };
