@@ -24,6 +24,26 @@
     "binding": "AI"
   },
 
+  // Worker Previews (for Cloudflare Workers preview deployments)
+  "previews": {
+    "vars": {
+      "ENVIRONMENT": "staging",
+      "FACEBOOK_PUBLISH_ENABLED": "false",
+      "LOG_LEVEL": "debug"
+    },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "northsoft-ai-contentcreator-staging",
+        "database_id": "960c64cd-c450-47bc-a0e6-58552aa0d824",
+        "migrations_dir": "migrations"
+      }
+    ],
+    "ai": {
+      "binding": "AI"
+    }
+  },
+
   // Environment-specific overrides
   "env": {
     "staging": {
