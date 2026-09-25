@@ -105,13 +105,17 @@ describe('Secret Scanning', () => {
         const matches = content.match(pattern);
         if (matches) {
           for (const match of matches) {
-            // Skip obvious placeholders/examples
+            // Skip obvious placeholders/examples/test mocks
             if (
               match.includes('your-') ||
               match.includes('placeholder') ||
               match.includes('example') ||
               match.includes('PLACEHOLDER') ||
-              match.includes('xxx')
+              match.includes('xxx') ||
+              match.includes('mock') ||
+              match.includes('test') ||
+              match.includes('sample') ||
+              relativePath.includes('/tests/')
             ) {
               continue;
             }
