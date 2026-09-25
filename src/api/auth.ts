@@ -8,6 +8,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../index';
 import { D1AuditLogger } from '../core/audit';
 import { verifyPassword } from '../core/auth/crypto';
+import { csrfProtection } from '../core/auth/csrf';
 import {
   checkRateLimit,
   cleanupLoginAttempts,
@@ -21,6 +22,9 @@ import {
   setSessionCookie,
   validateSession,
 } from '../core/auth/session';
+import { requireAdmin } from '../core/middleware/auth';
+import { PasswordRecoveryService } from '../services/auth/password-recovery-service';
+import { NorthSoftMailGatewayClient } from '../services/mail/mail-service';
 
 export const authRoutes = new Hono<AppEnv>();
 
@@ -252,4 +256,144 @@ authRoutes.get('/csrf', async (c) => {
   }
 
   return c.json({ csrfToken: result.session.csrf_secret });
+});
+
+/**
+ * POST /api/auth/change-password
+ * Allows authenticated administrator to change their password.
+ * Requires active session and valid CSRF token.
+ */
+authRoutes.post('/change-password', requireAdmin, csrfProtection, async (c) => {
+  let body: { currentPassword?: string; newPassword?: string; confirmPassword?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const user = c.get('adminUser');
+  if (!user) {
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401);
+  }
+
+  const clientIp =
+    c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '127.0.0.1';
+  const userAgent = c.req.header('user-agent') || '';
+
+  const mailGateway = new NorthSoftMailGatewayClient(c.env);
+  const auditLogger = new D1AuditLogger(c.env.DB);
+  const recoveryService = new PasswordRecoveryService(c.env.DB, mailGateway, auditLogger);
+
+  const result = await recoveryService.changePassword({
+    userId: user.id,
+    currentPassword: body.currentPassword || '',
+    newPassword: body.newPassword || '',
+    confirmPassword: body.confirmPassword || '',
+    clientIp,
+    userAgent,
+  });
+
+  if (!result.success) {
+    return c.json({ error: 'Bad Request', message: result.message }, 400);
+  }
+
+  if (result.newSession) {
+    setSessionCookie(c, result.newSession.rawToken);
+    return c.json({
+      success: true,
+      message: result.message,
+      csrfToken: result.newSession.csrfSecret,
+    });
+  }
+
+  return c.json({ success: true, message: result.message });
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * Initiates email-based password recovery.
+ * Account Enumeration Protection: Always returns HTTP 200 with identical generic response.
+ */
+authRoutes.post('/forgot-password', async (c) => {
+  let body: { email?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const clientIp =
+    c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '127.0.0.1';
+  const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
+
+  // Rate Limiting
+  const rateLimit = await checkRateLimit(c.env.DB, clientIp, rawEmail || 'forgot-password-attempt');
+  if (!rateLimit.allowed) {
+    return c.json(
+      {
+        error: 'Too Many Requests',
+        message: 'Too many password recovery attempts. Please try again later.',
+      },
+      429,
+    );
+  }
+
+  const requestOrigin = new URL(c.req.url).origin;
+  const mailGateway = new NorthSoftMailGatewayClient(c.env);
+  const auditLogger = new D1AuditLogger(c.env.DB);
+  const recoveryService = new PasswordRecoveryService(c.env.DB, mailGateway, auditLogger);
+
+  const result = await recoveryService.requestPasswordReset({
+    email: rawEmail,
+    clientIp,
+    requestOrigin,
+  });
+
+  return c.json(result);
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Resets administrator password using single-use reset token.
+ */
+authRoutes.post('/reset-password', async (c) => {
+  let body: { token?: string; newPassword?: string; confirmPassword?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const clientIp =
+    c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '127.0.0.1';
+  const token = typeof body.token === 'string' ? body.token.trim() : '';
+
+  // Rate Limiting
+  const rateLimit = await checkRateLimit(c.env.DB, clientIp, 'reset-password-attempt');
+  if (!rateLimit.allowed) {
+    return c.json(
+      {
+        error: 'Too Many Requests',
+        message: 'Too many password reset attempts. Please try again later.',
+      },
+      429,
+    );
+  }
+
+  const mailGateway = new NorthSoftMailGatewayClient(c.env);
+  const auditLogger = new D1AuditLogger(c.env.DB);
+  const recoveryService = new PasswordRecoveryService(c.env.DB, mailGateway, auditLogger);
+
+  const result = await recoveryService.resetPassword({
+    token,
+    newPassword: body.newPassword || '',
+    confirmPassword: body.confirmPassword || '',
+    clientIp,
+  });
+
+  if (!result.success) {
+    return c.json({ error: 'Bad Request', message: result.message }, 400);
+  }
+
+  return c.json(result);
 });

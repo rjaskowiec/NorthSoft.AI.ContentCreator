@@ -11,6 +11,14 @@ export function getAdminScripts(): string {
     document.addEventListener('DOMContentLoaded', checkSession);
 
     async function checkSession() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const resetToken = urlParams.get('resetToken') || urlParams.get('token');
+
+      if (resetToken) {
+        showResetForm(resetToken);
+        return;
+      }
+
       try {
         const res = await fetch('/api/auth/session');
         const data = await res.json();
@@ -18,16 +26,39 @@ export function getAdminScripts(): string {
           csrfToken = data.csrfToken;
           showDashboard(data.user);
         } else {
-          showLogin();
+          showLoginForm();
         }
       } catch (err) {
-        showLogin();
+        showLoginForm();
       }
     }
 
-    function showLogin() {
+    function showLoginForm() {
       document.getElementById('login-screen').style.display = 'flex';
       document.getElementById('dashboard-screen').style.display = 'none';
+      document.getElementById('login-form').style.display = 'block';
+      document.getElementById('forgot-form').style.display = 'none';
+      document.getElementById('reset-form').style.display = 'none';
+    }
+
+    function showForgotForm() {
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('dashboard-screen').style.display = 'none';
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('forgot-form').style.display = 'block';
+      document.getElementById('reset-form').style.display = 'none';
+      document.getElementById('forgot-alert').style.display = 'none';
+    }
+
+    let activeResetToken = '';
+    function showResetForm(token) {
+      activeResetToken = token;
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('dashboard-screen').style.display = 'none';
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('forgot-form').style.display = 'none';
+      document.getElementById('reset-form').style.display = 'block';
+      document.getElementById('reset-alert').style.display = 'none';
     }
 
     function showDashboard(user) {
@@ -58,6 +89,8 @@ export function getAdminScripts(): string {
         loadSchedulesData();
       } else if (tabName === 'publications') {
         loadPublicationsData();
+      } else if (tabName === 'security') {
+        // Security tab active
       }
     }
 
@@ -86,6 +119,136 @@ export function getAdminScripts(): string {
           alertEl.style.display = 'block';
         }
       } catch (err) {
+        alertEl.textContent = 'An unexpected connection error occurred.';
+        alertEl.style.display = 'block';
+      }
+    });
+
+    // Toggle Navigation between Auth Views
+    document.getElementById('forgot-password-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      showForgotForm();
+    });
+
+    document.getElementById('back-to-login-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      showLoginForm();
+    });
+
+    document.getElementById('reset-to-login-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      showLoginForm();
+    });
+
+    // Forgot Password Form Handler
+    document.getElementById('forgot-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertEl = document.getElementById('forgot-alert');
+      alertEl.style.display = 'none';
+
+      const email = document.getElementById('forgot-email').value.trim();
+
+      try {
+        const res = await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+
+        const data = await res.json();
+        alertEl.className = 'alert-success';
+        alertEl.textContent = data.message || 'If an account matches this information, a password reset email has been sent.';
+        alertEl.style.display = 'block';
+        document.getElementById('forgot-email').value = '';
+      } catch (err) {
+        alertEl.className = 'alert-error';
+        alertEl.textContent = 'Failed to submit password recovery request.';
+        alertEl.style.display = 'block';
+      }
+    });
+
+    // Reset Password Form Handler
+    document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertEl = document.getElementById('reset-alert');
+      alertEl.style.display = 'none';
+
+      const newPassword = document.getElementById('reset-new-password').value;
+      const confirmPassword = document.getElementById('reset-confirm-password').value;
+
+      if (newPassword !== confirmPassword) {
+        alertEl.className = 'alert-error';
+        alertEl.textContent = 'Passwords do not match.';
+        alertEl.style.display = 'block';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: activeResetToken, newPassword, confirmPassword })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alertEl.className = 'alert-success';
+          alertEl.textContent = 'Password reset successfully! Redirecting to login...';
+          alertEl.style.display = 'block';
+          setTimeout(() => {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            showLoginForm();
+          }, 2000);
+        } else {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = data.message || 'Password reset link is invalid or expired.';
+          alertEl.style.display = 'block';
+        }
+      } catch (err) {
+        alertEl.className = 'alert-error';
+        alertEl.textContent = 'An error occurred resetting your password.';
+        alertEl.style.display = 'block';
+      }
+    });
+
+    // Change Password Form Handler (Authenticated Admin)
+    document.getElementById('change-password-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertEl = document.getElementById('security-alert');
+      alertEl.style.display = 'none';
+
+      const currentPassword = document.getElementById('change-current-password').value;
+      const newPassword = document.getElementById('change-new-password').value;
+      const confirmPassword = document.getElementById('change-confirm-password').value;
+
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({ currentPassword, newPassword, confirmPassword })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (data.csrfToken) {
+            csrfToken = data.csrfToken;
+          }
+          alertEl.className = 'alert-success';
+          alertEl.textContent = 'Password updated successfully! All other sessions were invalidated.';
+          alertEl.style.display = 'block';
+          document.getElementById('change-current-password').value = '';
+          document.getElementById('change-new-password').value = '';
+          document.getElementById('change-confirm-password').value = '';
+        } else {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = data.message || 'Failed to change password.';
+          alertEl.style.display = 'block';
+        }
+      } catch (err) {
+        alertEl.className = 'alert-error';
         alertEl.textContent = 'An unexpected connection error occurred.';
         alertEl.style.display = 'block';
       }

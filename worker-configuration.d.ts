@@ -39,4 +39,8 @@ interface Env {
   META_APP_ID?: string;
   META_APP_SECRET?: string;
   ADMIN_AUTH_SECRET?: string;
+  GATEWAY_TOKEN?: string;
+  NORTHSOFT_MAIL_API_KEY?: string;
+  NORTHSOFT_MAIL_GATEWAY_URL?: string;
+  ADMIN_RECOVERY_EMAIL?: string;
 }
