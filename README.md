@@ -4,7 +4,7 @@
 
 Built on Cloudflare Workers (Free plan) with independent AI quality control and safe automated Facebook publishing.
 
-> 🟢 **Status: Phase 3A Complete — Free AI Research Engine & Topic Pipeline** — Autonomous RSS ingestion, SSRF URL validation, prompt injection protection, schema-validated AI topic extraction, zero-cost AI quota accounting (`MAX_ALLOWED_AI_COST = 0`), daily Cron triggers, and Admin Research view at `/admin`.
+> 🟢 **Status: Phase 3B Complete — Autonomous Writer, Independent QA & Quality Gate Pipeline** — Autonomous post draft generation, research grounding, deterministic static validation, adversarial QA fact checking, policy compliance, central Quality Gate evaluation, bounded post regeneration (max 2 retries), post versioning (v1-v3), and hard daily Neuron budget ceiling of 7,500 Neurons/day (`CONTENT_CREATOR_DAILY_NEURON_HARD_LIMIT = 7500`). Facebook publishing remains strictly locked.
 
 ---
 

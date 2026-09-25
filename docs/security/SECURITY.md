@@ -144,6 +144,23 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 ### Structured AI Output Schema Validation
 - All AI JSON outputs are validated runtime against expected schemas (`validateCandidateTopicOutput`). Malformed or manipulated responses are rejected immediately (`status = 'FAILED'`).
 
+## Content Pipeline & Neuron Budget Security Controls (Phase 3B)
+
+### Daily Neuron Ceiling Protection
+- **Hard Safety Ceiling**: `CONTENT_CREATOR_DAILY_NEURON_HARD_LIMIT = 7500` Neurons/day.
+- **Shared Allocation Protection**: Reserves at least 2,500 Neurons/day for customer-facing AI and other NorthSoft AI services.
+- **Budget State Transitions**: `NORMAL` (0-5k), `CONTROLLED` (5k-6k), `RESTRICTED` (6k-7.5k), `HARD_STOP` (>= 7.5k).
+- **Pre-flight Estimation**: Checks budget before initiating expensive multi-stage workflows (Writer + QA). Defers gracefully if budget is insufficient.
+
+### Independent QA Fact Checker
+- **Self-Approval Prohibition**: The Writer AI never approves its own output. Generation and Review are logically isolated inference calls with independent role prompts (`writer` vs `qa`).
+- **Adversarial Verification**: QA model evaluates draft against ground-truth research evidence inside `<research_context>` tags.
+
+### Bounded Regeneration & Post Versioning
+- **Maximum Retries**: Bounded to a maximum of 2 retries (3 versions total) before permanent `BLOCKED` status.
+- **Audit Invariant**: Post versions are stored as immutable history in `post_versions` (v1, v2, v3). Existing versions are never overwritten.
+
+
 ## Deployment Security
 - CI must pass all checks before merge (typecheck, lint, tests, security scan, audit)
 - Production deployment is a separate, explicit step (`npm run deploy:production`)

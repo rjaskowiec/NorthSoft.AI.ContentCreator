@@ -14,6 +14,7 @@ import { csrfProtection } from '../core/auth/csrf';
 import { getEnvironment, isFacebookPublishEnabled } from '../core/environment';
 import { requireAdmin } from '../core/middleware/auth';
 import { QuotaManager } from '../services/ai/quota-manager';
+import { ContentPlannerService } from '../services/content/content-planner-service';
 import { ResearchService } from '../services/research/research-service';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -214,6 +215,50 @@ adminRoutes.post('/research/run', csrfProtection, async (c) => {
   return c.json({
     success: summary.status === 'completed',
     summary,
+  });
+});
+
+/**
+ * POST /api/admin/content/generate
+ * Manually triggers the autonomous Writer + QA + Policy pipeline for a candidate topic.
+ * Protected by requireAdmin and csrfProtection.
+ */
+adminRoutes.post('/content/generate', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as { topicId?: string };
+
+  if (!body.topicId || typeof body.topicId !== 'string') {
+    return c.json({ error: 'Missing required string field: topicId' }, 400);
+  }
+
+  const planner = new ContentPlannerService(db, c.env);
+  const result = await planner.generatePostFromTopic(body.topicId, 'admin');
+
+  return c.json({
+    success: result.status === 'approved',
+    result,
+  });
+});
+
+/**
+ * GET /api/admin/content/posts
+ * Returns recent generated posts, versions, QA scores, and quality decisions.
+ */
+adminRoutes.get('/content/posts', async (c) => {
+  const db = c.env.DB;
+  const postsRes = await db
+    .prepare(
+      `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at,
+              v.content as latest_body, v.ai_provider, v.ai_model
+       FROM posts p
+       LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
+       ORDER BY p.created_at DESC
+       LIMIT 20`,
+    )
+    .all();
+
+  return c.json({
+    posts: postsRes.results || [],
   });
 });
 
