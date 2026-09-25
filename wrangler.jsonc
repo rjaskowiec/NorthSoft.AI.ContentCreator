@@ -1,0 +1,65 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "northsoft-ai-contentcreator",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-25",
+
+  // D1 Database bindings
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "northsoft-ai-contentcreator-prod",
+      "database_id": "PLACEHOLDER_PRODUCTION_DB_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Environment-specific overrides
+  "env": {
+    "staging": {
+      "name": "northsoft-ai-contentcreator-staging",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "northsoft-ai-contentcreator-staging",
+          "database_id": "PLACEHOLDER_STAGING_DB_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "FACEBOOK_PUBLISH_ENABLED": "false",
+        "LOG_LEVEL": "debug"
+      }
+    },
+    "production": {
+      "name": "northsoft-ai-contentcreator",
+      "routes": [
+        {
+          "pattern": "ai.northsoft.is/*",
+          "zone_name": "northsoft.is"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "northsoft-ai-contentcreator-prod",
+          "database_id": "PLACEHOLDER_PRODUCTION_DB_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "FACEBOOK_PUBLISH_ENABLED": "false",
+        "LOG_LEVEL": "warn"
+      }
+    }
+  },
+
+  // Default vars (development)
+  "vars": {
+    "ENVIRONMENT": "development",
+    "FACEBOOK_PUBLISH_ENABLED": "false",
+    "LOG_LEVEL": "debug"
+  }
+}

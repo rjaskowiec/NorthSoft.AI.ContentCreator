@@ -1,0 +1,62 @@
+{
+  "name": "northsoft-ai-contentcreator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous AI-powered content pipeline for NorthSoft Facebook Page — Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:security": "vitest run tests/security/",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "security:audit": "npm audit --audit-level=high",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run test:security && npm run security:audit",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
+    "db:migrate:production": "wrangler d1 migrations apply DB --env production --remote"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rjaskowiec/NorthSoft.AI.ContentCreator.git"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "ai",
+    "content-creation",
+    "facebook",
+    "automation"
+  ],
+  "author": "rjaskowiec",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/rjaskowiec/NorthSoft.AI.ContentCreator/issues"
+  },
+  "homepage": "https://github.com/rjaskowiec/NorthSoft.AI.ContentCreator#readme",
+  "dependencies": {
+    "hono": "^4.13.9"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260925.2",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.2",
+    "@vitest/coverage-v8": "^5.0.2",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2",
+    "wrangler": "^4.140.0"
+  }
+}
