@@ -11,6 +11,7 @@
  * - Differentiates retryable (429, 5xx, network timeout) vs non-retryable (400, 401, 403) errors.
  */
 
+import { META_API } from '../core/constants.js';
 import type {
   FacebookPublishRequest,
   FacebookPublishResult,
@@ -46,7 +47,7 @@ export class FacebookPublisher implements IMetaPublisher {
   constructor(env: FacebookPublisherEnv) {
     this.pageId = (env.META_PAGE_ID || '').trim();
     this.accessToken = (env.META_PAGE_ACCESS_TOKEN || '').trim();
-    this.apiVersion = (env.META_GRAPH_API_VERSION || 'v19.0').trim();
+    this.apiVersion = (env.META_GRAPH_API_VERSION || META_API.DEFAULT_GRAPH_API_VERSION).trim();
     const rawEnabled = env.META_PUBLISH_ENABLED;
     this.publishEnabled = rawEnabled === true || rawEnabled === 'true' || rawEnabled === '1';
   }
@@ -80,7 +81,7 @@ export class FacebookPublisher implements IMetaPublisher {
     }
 
     try {
-      const url = `https://graph.facebook.com/${this.apiVersion}/debug_token?input_token=${encodeURIComponent(this.accessToken)}&access_token=${encodeURIComponent(this.accessToken)}`;
+      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/debug_token?input_token=${encodeURIComponent(this.accessToken)}&access_token=${encodeURIComponent(this.accessToken)}`;
       const res = await fetch(url, { method: 'GET' });
       const data = (await res.json()) as {
         data?: {
@@ -128,7 +129,7 @@ export class FacebookPublisher implements IMetaPublisher {
       };
     }
 
-    const graphUrl = `https://graph.facebook.com/${this.apiVersion}/${this.pageId}/feed`;
+    const graphUrl = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${this.pageId}/feed`;
 
     try {
       const bodyParams: Record<string, string> = {
