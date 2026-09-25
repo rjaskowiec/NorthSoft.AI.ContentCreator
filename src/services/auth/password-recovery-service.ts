@@ -25,6 +25,38 @@ export interface PasswordRecoveryResult {
   success: boolean;
   message: string;
   newSession?: CreatedSession;
+  email?: string | null;
+}
+
+export function validateRecoveryEmail(email: string): {
+  valid: boolean;
+  normalized?: string;
+  error?: string;
+} {
+  if (!email || typeof email !== 'string') {
+    return { valid: false, error: 'Email address is required.' };
+  }
+
+  const trimmed = email.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'Email address is required.' };
+  }
+
+  if (trimmed.length > 254) {
+    return { valid: false, error: 'Email address is too long (maximum 254 characters).' };
+  }
+
+  // Prevent email header injection or HTML injection
+  if (/[\r\n<>]/.test(trimmed)) {
+    return { valid: false, error: 'Invalid characters in email address.' };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmed)) {
+    return { valid: false, error: 'Please enter a valid email address.' };
+  }
+
+  return { valid: true, normalized: trimmed.toLowerCase() };
 }
 
 export class PasswordRecoveryService {
@@ -33,6 +65,81 @@ export class PasswordRecoveryService {
     private mailGateway: IMailGatewayClient,
     private auditLogger: IAuditLogger,
   ) {}
+
+  /**
+   * Returns current recovery email status for logged-in administrator.
+   */
+  public async getRecoveryEmail(
+    userId: string,
+  ): Promise<{ configured: boolean; email: string | null }> {
+    const row = await this.db
+      .prepare('SELECT email FROM admin_users WHERE id = ?')
+      .bind(userId)
+      .first<{ email: string | null }>();
+
+    const email = row?.email?.trim() || null;
+    return {
+      configured: Boolean(email),
+      email,
+    };
+  }
+
+  /**
+   * Updates recovery email for logged-in administrator.
+   */
+  public async updateRecoveryEmail(params: {
+    userId: string;
+    email: string;
+    clientIp: string;
+  }): Promise<{ success: boolean; message: string; email?: string }> {
+    const { userId, email, clientIp } = params;
+    const validation = validateRecoveryEmail(email);
+
+    if (!validation.valid || !validation.normalized) {
+      return {
+        success: false,
+        message: validation.error || 'Invalid email address.',
+      };
+    }
+
+    const normalizedEmail = validation.normalized;
+
+    // Check if another active user is already using this email address
+    const existing = await this.db
+      .prepare('SELECT id FROM admin_users WHERE LOWER(email) = ? AND id != ? AND status = ?')
+      .bind(normalizedEmail, userId, 'active')
+      .first<{ id: string }>();
+
+    if (existing) {
+      return {
+        success: false,
+        message: 'This recovery email address is already in use.',
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    await this.db
+      .prepare('UPDATE admin_users SET email = ?, updated_at = ? WHERE id = ?')
+      .bind(normalizedEmail, nowIso, userId)
+      .run();
+
+    await this.auditLogger.log({
+      eventType: 'ADMIN_RECOVERY_EMAIL_UPDATED',
+      entityType: 'admin_user',
+      entityId: userId,
+      actor: 'admin',
+      details: {
+        clientIp,
+        emailConfigured: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Password recovery email updated successfully.',
+      email: normalizedEmail,
+    };
+  }
 
   /**
    * Change password for an authenticated administrator.
@@ -155,14 +262,16 @@ export class PasswordRecoveryService {
       return genericResponse;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    const validation = validateRecoveryEmail(email);
+    if (!validation.valid || !validation.normalized) {
       return genericResponse;
     }
 
+    const normalizedEmail = validation.normalized;
+
     const user = await this.db
       .prepare(
-        'SELECT id, username, email, status FROM admin_users WHERE LOWER(email) = ? AND status = ?',
+        "SELECT id, username, email, status FROM admin_users WHERE LOWER(email) = ? AND email IS NOT NULL AND email != '' AND status = ?",
       )
       .bind(normalizedEmail, 'active')
       .first<{
@@ -172,8 +281,20 @@ export class PasswordRecoveryService {
         status: string;
       }>();
 
-    if (!user) {
-      // Account does not exist — do not reveal details to caller
+    if (!user || !user.email) {
+      // Account does not exist or recovery email is NOT configured (email IS NULL).
+      // Account enumeration defense: Return exact generic response. NO email sent. NO token generated.
+      await this.auditLogger.log({
+        eventType: 'ADMIN_PASSWORD_RESET_REQUESTED',
+        entityType: 'admin_user',
+        entityId: 'unconfigured_or_unknown',
+        actor: 'system',
+        details: {
+          clientIp,
+          emailConfigured: false,
+        },
+      });
+
       return genericResponse;
     }
 
@@ -237,6 +358,7 @@ NorthSoft AI Security Team`;
 </body>
 </html>`;
 
+    // Recipient address MUST come strictly from user.email (D1 database record)
     await this.mailGateway.sendEmail({
       to: user.email,
       subject: 'Reset your NorthSoft.AI.ContentCreator password',
@@ -252,6 +374,7 @@ NorthSoft AI Security Team`;
       details: {
         username: user.username,
         clientIp,
+        emailConfigured: true,
       },
     });
 

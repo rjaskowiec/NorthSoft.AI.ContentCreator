@@ -259,6 +259,62 @@ authRoutes.get('/csrf', async (c) => {
 });
 
 /**
+ * GET /api/auth/recovery-email
+ * Returns current password recovery email status for logged-in administrator.
+ */
+authRoutes.get('/recovery-email', requireAdmin, async (c) => {
+  const user = c.get('adminUser');
+  if (!user) {
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401);
+  }
+
+  const mailGateway = new NorthSoftMailGatewayClient(c.env);
+  const auditLogger = new D1AuditLogger(c.env.DB);
+  const recoveryService = new PasswordRecoveryService(c.env.DB, mailGateway, auditLogger);
+
+  const status = await recoveryService.getRecoveryEmail(user.id);
+  return c.json(status);
+});
+
+/**
+ * PUT /api/auth/recovery-email
+ * Updates recovery email for logged-in administrator.
+ * Requires active session and valid CSRF token.
+ */
+authRoutes.put('/recovery-email', requireAdmin, csrfProtection, async (c) => {
+  let body: { email?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const user = c.get('adminUser');
+  if (!user) {
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401);
+  }
+
+  const clientIp =
+    c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '127.0.0.1';
+
+  const mailGateway = new NorthSoftMailGatewayClient(c.env);
+  const auditLogger = new D1AuditLogger(c.env.DB);
+  const recoveryService = new PasswordRecoveryService(c.env.DB, mailGateway, auditLogger);
+
+  const result = await recoveryService.updateRecoveryEmail({
+    userId: user.id,
+    email: body.email || '',
+    clientIp,
+  });
+
+  if (!result.success) {
+    return c.json({ error: 'Bad Request', message: result.message }, 400);
+  }
+
+  return c.json(result);
+});
+
+/**
  * POST /api/auth/change-password
  * Allows authenticated administrator to change their password.
  * Requires active session and valid CSRF token.
