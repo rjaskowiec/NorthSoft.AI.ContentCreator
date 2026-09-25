@@ -12,6 +12,7 @@
  */
 
 import { META_API } from '../core/constants.js';
+import { getEnvironment, isMetaPublishEnabled, type Environment } from '../core/environment.js';
 import type {
   FacebookPublishRequest,
   FacebookPublishResult,
@@ -27,6 +28,8 @@ export interface FacebookPublisherEnv {
   META_PAGE_ACCESS_TOKEN?: string;
   META_GRAPH_API_VERSION?: string;
   META_PUBLISH_ENABLED?: string | boolean;
+  FACEBOOK_PUBLISH_ENABLED?: string | boolean;
+  ENVIRONMENT?: string;
 }
 
 /**
@@ -92,40 +95,59 @@ export class FacebookPublisher implements IMetaPublisher {
   private accessToken: string;
   private apiVersion: string;
   private publishEnabled: boolean;
+  private environmentName: Environment;
   private lastErrorCategory?: MetaErrorCategory;
 
   constructor(env: FacebookPublisherEnv) {
     this.pageId = (env.META_PAGE_ID || '').trim();
     this.accessToken = (env.META_PAGE_ACCESS_TOKEN || '').trim();
     this.apiVersion = (env.META_GRAPH_API_VERSION || META_API.DEFAULT_GRAPH_API_VERSION).trim();
-    const rawEnabled = env.META_PUBLISH_ENABLED;
-    this.publishEnabled = rawEnabled === true || rawEnabled === 'true' || rawEnabled === '1';
+    this.environmentName = getEnvironment(env.ENVIRONMENT);
+
+    const rawEnabled = env.META_PUBLISH_ENABLED ?? env.FACEBOOK_PUBLISH_ENABLED;
+    const rawBool = rawEnabled === true || rawEnabled === 'true' || rawEnabled === '1';
+
+    // If ENVIRONMENT binding is explicitly passed, enforce non-production disable safety.
+    if (env.ENVIRONMENT !== undefined) {
+      this.publishEnabled = isMetaPublishEnabled(rawBool ? 'true' : 'false', this.environmentName);
+    } else {
+      this.publishEnabled = rawBool;
+    }
   }
 
   public getConfigStatus(): MetaPublisherConfigStatus {
     const pageIdConfigured = this.pageId.length > 0;
     const tokenConfigured = this.accessToken.length > 0;
-    const credentialsPresent = pageIdConfigured && tokenConfigured;
 
     let state: PublisherReadinessState;
     let statusMessage: string;
 
-    if (!credentialsPresent) {
+    if (!pageIdConfigured && !tokenConfigured) {
       state = 'NOT_CONFIGURED';
-      statusMessage =
-        'Facebook publisher is not configured. Page ID or Page Access Token is missing.';
+      statusMessage = 'NOT CONFIGURED: Missing META_PAGE_ID and META_PAGE_ACCESS_TOKEN.';
+    } else if (!pageIdConfigured) {
+      state = 'NOT_CONFIGURED';
+      statusMessage = 'NOT CONFIGURED: Missing META_PAGE_ID.';
+    } else if (!tokenConfigured) {
+      state = 'NOT_CONFIGURED';
+      statusMessage = 'NOT CONFIGURED: Missing META_PAGE_ACCESS_TOKEN.';
     } else if (!this.publishEnabled) {
       state = 'DISABLED';
-      statusMessage = 'Facebook credentials are valid, but META_PUBLISH_ENABLED is set to false.';
+      if (this.environmentName !== 'production') {
+        statusMessage = `DISABLED: Facebook publishing is disabled in ${this.environmentName} environment (ENVIRONMENT !== production).`;
+      } else {
+        statusMessage =
+          'DISABLED: Meta credentials exist but META_PUBLISH_ENABLED is set to false.';
+      }
     } else if (
       this.lastErrorCategory === 'RATE_LIMITED' ||
       this.lastErrorCategory === 'REMOTE_SERVER_ERROR'
     ) {
       state = 'DEGRADED';
-      statusMessage = `Facebook publishing is enabled but temporary operational degradation was reported (${this.lastErrorCategory}).`;
+      statusMessage = `DEGRADED: Facebook publishing is enabled but temporary operational degradation was reported (${this.lastErrorCategory}).`;
     } else {
       state = 'READY';
-      statusMessage = 'Facebook publishing is fully configured, enabled, and operational.';
+      statusMessage = 'READY: Facebook publishing is fully configured, enabled, and operational.';
     }
 
     const configured = state === 'READY' || state === 'DEGRADED';

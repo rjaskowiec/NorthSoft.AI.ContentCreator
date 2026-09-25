@@ -28,7 +28,7 @@
   "previews": {
     "vars": {
       "ENVIRONMENT": "staging",
-      "FACEBOOK_PUBLISH_ENABLED": "false",
+      "META_PUBLISH_ENABLED": "false",
       "LOG_LEVEL": "debug"
     },
     "d1_databases": [
@@ -58,7 +58,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "staging",
-        "FACEBOOK_PUBLISH_ENABLED": "false",
+        "META_PUBLISH_ENABLED": "false",
         "LOG_LEVEL": "debug"
       }
     },
@@ -80,7 +80,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "production",
-        "FACEBOOK_PUBLISH_ENABLED": "false",
+        "META_PUBLISH_ENABLED": "false",
         "LOG_LEVEL": "warn"
       }
     }
@@ -89,7 +89,7 @@
   // Default vars (development)
   "vars": {
     "ENVIRONMENT": "development",
-    "FACEBOOK_PUBLISH_ENABLED": "false",
+    "META_PUBLISH_ENABLED": "false",
     "LOG_LEVEL": "debug"
   }
 }

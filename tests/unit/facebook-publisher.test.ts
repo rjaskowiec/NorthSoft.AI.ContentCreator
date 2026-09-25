@@ -195,6 +195,29 @@ describe('FacebookPublisher Unit Tests', () => {
     vi.unstubAllGlobals();
   });
 
+  it('should enforce DISABLED state when ENVIRONMENT is staging even if META_PUBLISH_ENABLED is true', async () => {
+    const publisher = new FacebookPublisher({
+      META_PAGE_ID: '123456789',
+      META_PAGE_ACCESS_TOKEN: 'valid_token',
+      META_PUBLISH_ENABLED: 'true',
+      ENVIRONMENT: 'staging',
+    });
+    const status = publisher.getConfigStatus();
+
+    expect(status.state).toBe('DISABLED');
+    expect(status.publishEnabled).toBe(false);
+    expect(status.statusMessage).toContain('ENVIRONMENT !== production');
+
+    const result = await publisher.publish({
+      postId: 'p1',
+      postVersionId: 'v1',
+      message: 'Test post',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('META_PUBLISH_DISABLED');
+  });
+
   it('MockMetaPublisher should behave deterministically without HTTP requests', async () => {
     const mockPub = new MockMetaPublisher();
     const res = await mockPub.publish({

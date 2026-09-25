@@ -21,14 +21,16 @@ export function getEnvironment(envValue: string | undefined): Environment {
 }
 
 /**
- * Check whether Facebook publishing is enabled.
+ * Check whether Meta/Facebook publishing is enabled.
+ * Canonical configuration variable: META_PUBLISH_ENABLED.
+ *
  * This requires BOTH:
- * 1. FACEBOOK_PUBLISH_ENABLED === 'true'
+ * 1. META_PUBLISH_ENABLED === 'true'
  * 2. Environment is explicitly 'production'
  *
  * Staging and development can NEVER publish to the real Facebook Page.
  */
-export function isFacebookPublishEnabled(
+export function isMetaPublishEnabled(
   publishFlag: string | undefined,
   environment: Environment,
 ): boolean {
@@ -37,6 +39,11 @@ export function isFacebookPublishEnabled(
   }
   return publishFlag === 'true';
 }
+
+/**
+ * Backward compatibility alias for isMetaPublishEnabled.
+ */
+export const isFacebookPublishEnabled = isMetaPublishEnabled;
 
 /**
  * Check if running in production.

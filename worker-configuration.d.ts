@@ -15,7 +15,7 @@ interface Env {
 
   // --- Environment Variables (set in wrangler.jsonc) ---
   ENVIRONMENT: 'development' | 'staging' | 'production';
-  FACEBOOK_PUBLISH_ENABLED: string;
+  META_PUBLISH_ENABLED: string;
   LOG_LEVEL: 'debug' | 'info' | 'warn' | 'error';
 
   // --- Cloudflare Worker Secrets ---
