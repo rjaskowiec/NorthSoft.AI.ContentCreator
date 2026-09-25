@@ -90,7 +90,7 @@ export function getAdminScripts(): string {
       } else if (tabName === 'publications') {
         loadPublicationsData();
       } else if (tabName === 'security') {
-        // Security tab active
+        loadSecurityData();
       }
     }
 
@@ -245,6 +245,64 @@ export function getAdminScripts(): string {
         } else {
           alertEl.className = 'alert-error';
           alertEl.textContent = data.message || 'Failed to change password.';
+          alertEl.style.display = 'block';
+        }
+      } catch (err) {
+        alertEl.className = 'alert-error';
+        alertEl.textContent = 'An unexpected connection error occurred.';
+        alertEl.style.display = 'block';
+      }
+    });
+
+    async function loadSecurityData() {
+      try {
+        const res = await fetch('/api/auth/recovery-email');
+        const data = await res.json();
+        const badgeEl = document.getElementById('recovery-email-badge');
+        const boxEl = document.getElementById('recovery-email-status-box');
+        const inputEl = document.getElementById('recovery-email-input');
+
+        if (data.configured && data.email) {
+          badgeEl.innerHTML = '<span class="status-badge status-healthy">Configured</span>';
+          boxEl.innerHTML = 'Password recovery email: <strong>' + data.email + '</strong><br><span style="color:var(--status-success-text); font-size:0.85rem;">Password recovery via email is currently <strong>enabled</strong>.</span>';
+          inputEl.value = data.email;
+        } else {
+          badgeEl.innerHTML = '<span class="status-badge status-disabled">Not configured</span>';
+          boxEl.innerHTML = 'Password recovery via email is currently <strong>unavailable</strong> because no recovery email address has been set.';
+          inputEl.value = '';
+        }
+      } catch (err) {
+        // Ignore
+      }
+    }
+
+    // Recovery Email Form Handler (Authenticated Admin)
+    document.getElementById('recovery-email-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertEl = document.getElementById('security-alert');
+      alertEl.style.display = 'none';
+
+      const email = document.getElementById('recovery-email-input').value.trim();
+
+      try {
+        const res = await fetch('/api/auth/recovery-email', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({ email })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alertEl.className = 'alert-success';
+          alertEl.textContent = 'Password recovery email updated successfully.';
+          alertEl.style.display = 'block';
+          loadSecurityData();
+        } else {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = data.message || 'Failed to update recovery email.';
           alertEl.style.display = 'block';
         }
       } catch (err) {

@@ -519,6 +519,27 @@ export function renderAdminHtml(): string {
 
             <div id="security-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
 
+            <!-- Password Recovery Email Panel -->
+            <div class="panel" style="max-width: 600px; margin-bottom: 2rem;">
+              <div class="panel-header">
+                <div class="panel-title">Password Recovery Email</div>
+                <div id="recovery-email-badge"><span class="status-badge status-disabled">Not configured</span></div>
+              </div>
+
+              <div id="recovery-email-status-box" style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--text-muted);">
+                Password recovery via email is currently <strong>unavailable</strong> because no recovery email address has been set.
+              </div>
+
+              <form id="recovery-email-form">
+                <div class="form-group">
+                  <label class="form-label" for="recovery-email-input">Recovery Email Address</label>
+                  <input type="email" id="recovery-email-input" class="form-input" required placeholder="admin@northsoft.is" autocomplete="email">
+                </div>
+
+                <button type="submit" id="save-recovery-email-btn" class="btn-primary" style="margin-top:0.5rem;">Save Recovery Email</button>
+              </form>
+            </div>
+
             <!-- Change Password Panel -->
             <div class="panel" style="max-width: 600px;">
               <div class="panel-header">
