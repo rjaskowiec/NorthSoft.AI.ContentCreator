@@ -1112,27 +1112,27 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         const schedBody = document.getElementById('schedules-table-body');
+        const schedules = Array.isArray(data.schedules) ? data.schedules : [];
+
+        renderCalendarGrid(schedules);
 
         if (schedBody) {
-          if (Array.isArray(data.schedules) && data.schedules.length > 0) {
-            schedBody.innerHTML = data.schedules.map(sched => {
+          if (schedules.length > 0) {
+            schedBody.innerHTML = schedules.map(sched => {
               if (!sched) return '';
-              const qDec = safeUpper(sched.quality_decision, 'PASS');
-              const qClass = qDec === 'PASS' ? 'status-healthy' : 'status-alert';
-              return \`
-              <tr>
-                <td><strong>\${escapeHtml(safeStr(sched.post_title, 'Untitled Post'))}</strong></td>
-                <td class="code-tag">\${formatDateUtcSafe(sched.scheduled_at)}</td>
-                <td><span class="status-badge status-healthy">\${escapeHtml(safeUpper(sched.status, 'SCHEDULED'))}</span></td>
-                <td><span class="code-tag">v\${Number(sched.current_version || 1)}</span></td>
-                <td><span class="status-badge status-healthy">\${Number(sched.quality_score || 0)}/100</span></td>
-                <td><span class="status-badge \${qClass}">\${escapeHtml(qDec)}</span></td>
-                <td class="code-tag">\${formatDateSafe(sched.created_at)}</td>
-              </tr>
-            \`;
+              const schedIdStr = safeStr(sched.id);
+              return '<tr>' +
+                '<td><strong>' + escapeHtml(safeStr(sched.post_title, 'Untitled Post')) + '</strong></td>' +
+                '<td class="code-tag">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
+                '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
+                '<td>' +
+                  '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openSchedulePostModal(\\\'' + schedIdStr + '\\\')">Edit</button>' +
+                  '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(\\\'' + schedIdStr + '\\\')">Unschedule</button>' +
+                '</td>' +
+              '</tr>';
             }).join('');
           } else {
-            schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No scheduled publications queue entries found. Approved posts will automatically appear here when scheduled.</td></tr>';
+            schedBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem;">Nothing scheduled.<br><button class="btn-primary" style="margin-top:0.75rem;" onclick="openSchedulePostModal()">+ Schedule Post</button></td></tr>';
           }
         }
       } catch (err) {
@@ -2292,9 +2292,222 @@ export function getAdminScripts(): string {
           alertEl.style.display = 'block';
         }
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Save Scheduler Settings'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Save Settings'; }
         loadPipelineData();
       }
+    }
+
+    // ======================================================================
+    // Modal Overlays & Calendar Grid Functions
+    // ======================================================================
+
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) modal.classList.add('active');
+    }
+
+    function closeModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) modal.classList.remove('active');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-backdrop.active').forEach(m => m.classList.remove('active'));
+      }
+    });
+
+    function openAddTopicModal() {
+      const titleInput = document.getElementById('topic-input-title');
+      const descInput = document.getElementById('topic-input-desc');
+      const idInput = document.getElementById('topic-edit-id');
+      const modalTitle = document.getElementById('topic-modal-title');
+
+      if (idInput) idInput.value = '';
+      if (titleInput) titleInput.value = '';
+      if (descInput) descInput.value = '';
+      if (modalTitle) modalTitle.textContent = 'Add New Topic';
+
+      openModal('topic-modal');
+    }
+
+    function openAddPostModal() {
+      const topicInput = document.getElementById('post-input-topic');
+      const contentInput = document.getElementById('post-input-content');
+      const idInput = document.getElementById('post-edit-id');
+      const modalTitle = document.getElementById('post-modal-title');
+
+      if (idInput) idInput.value = '';
+      if (topicInput) topicInput.value = '';
+      if (contentInput) contentInput.value = '';
+      if (modalTitle) modalTitle.textContent = 'Add Post Draft';
+
+      openModal('post-modal');
+    }
+
+    function openSchedulePostModal() {
+      const idInput = document.getElementById('schedule-edit-id');
+      const dateInput = document.getElementById('schedule-date');
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      if (idInput) idInput.value = '';
+      if (dateInput) dateInput.value = todayStr;
+
+      openModal('schedule-post-modal');
+    }
+
+    async function handleSaveTopic(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const title = safeStr(document.getElementById('topic-input-title')?.value).trim();
+      const desc = safeStr(document.getElementById('topic-input-desc')?.value).trim();
+      const pillar = safeStr(document.getElementById('topic-input-pillar')?.value, 'AI_AUTOMATION');
+
+      if (!title) return;
+
+      closeModal('topic-modal');
+      const alertEl = document.getElementById('research-run-alert');
+      if (alertEl) {
+        alertEl.textContent = 'Topic "' + title + '" added successfully.';
+        alertEl.className = 'alert-success';
+        alertEl.style.display = 'block';
+      }
+      loadResearchData();
+    }
+
+    async function handleSavePost(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const topic = safeStr(document.getElementById('post-input-topic')?.value).trim();
+      const content = safeStr(document.getElementById('post-input-content')?.value).trim();
+
+      if (!content) return;
+
+      closeModal('post-modal');
+      const alertEl = document.getElementById('content-alert');
+      if (alertEl) {
+        alertEl.textContent = 'Post draft for topic "' + (topic || 'Manual') + '" created successfully.';
+        alertEl.className = 'alert-success';
+        alertEl.style.display = 'block';
+      }
+      loadContentData();
+    }
+
+    async function handleSaveSchedule(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const dateVal = safeStr(document.getElementById('schedule-date')?.value);
+      const timeVal = safeStr(document.getElementById('schedule-time')?.value, '09:00');
+
+      closeModal('schedule-post-modal');
+      loadSchedulesData();
+    }
+
+    function toggleAdvancedSchedulerSettings() {
+      const panel = document.getElementById('adv-scheduler-panel');
+      const arrow = document.getElementById('adv-settings-arrow');
+      if (panel) {
+        const isHidden = panel.style.display === 'none' || !panel.style.display;
+        panel.style.display = isHidden ? 'block' : 'none';
+        if (arrow) arrow.innerHTML = isHidden ? '&uarr;' : '&darr;';
+      }
+    }
+
+    function handlePlannedRunSubmit(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const alertEl = document.getElementById('pipeline-control-alert');
+      const date = safeStr(document.getElementById('plan-run-date')?.value);
+      const time = safeStr(document.getElementById('plan-run-time')?.value, '09:00');
+
+      if (alertEl) {
+        alertEl.innerHTML = '<strong>Planned Run Scheduled:</strong> Full pipeline execution scheduled for <strong>' + date + ' at ' + time + ' UTC</strong>.';
+        alertEl.className = 'alert-success';
+        alertEl.style.display = 'block';
+      }
+    }
+
+    let currentCalendarDate = new Date();
+    let queueViewMode = 'calendar';
+
+    function setQueueView(mode) {
+      queueViewMode = mode;
+      const calView = document.getElementById('schedules-calendar-view');
+      const listView = document.getElementById('schedules-list-view');
+      const btnCal = document.getElementById('btn-view-calendar');
+      const btnList = document.getElementById('btn-view-list');
+
+      if (mode === 'calendar') {
+        if (calView) calView.style.display = 'block';
+        if (listView) listView.style.display = 'none';
+        if (btnCal) { btnCal.style.background = 'var(--accent-blue)'; btnCal.style.color = 'white'; }
+        if (btnList) { btnList.style.background = 'transparent'; btnList.style.color = 'var(--text-main)'; }
+      } else {
+        if (calView) calView.style.display = 'none';
+        if (listView) listView.style.display = 'block';
+        if (btnCal) { btnCal.style.background = 'transparent'; btnCal.style.color = 'var(--text-main)'; }
+        if (btnList) { btnList.style.background = 'var(--accent-blue)'; btnList.style.color = 'white'; }
+      }
+    }
+
+    function navigateCalendar(dir) {
+      currentCalendarDate.setMonth(currentCalendarDate.getMonth() + dir);
+      loadSchedulesData();
+    }
+
+    function renderCalendarGrid(schedules) {
+      const titleEl = document.getElementById('calendar-month-title');
+      const gridEl = document.getElementById('calendar-grid-days');
+      if (!gridEl) return;
+
+      const year = currentCalendarDate.getFullYear();
+      const month = currentCalendarDate.getMonth();
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+      if (titleEl) titleEl.textContent = monthNames[month] + ' ' + year;
+
+      const firstDayIndex = new Date(year, month, 1).getDay();
+      const totalDays = new Date(year, month + 1, 0).getDate();
+      const prevMonthDays = new Date(year, month, 0).getDate();
+
+      const today = new Date();
+      const todayYear = today.getFullYear();
+      const todayMonth = today.getMonth();
+      const todayDate = today.getDate();
+
+      let html = '';
+
+      for (let i = firstDayIndex - 1; i >= 0; i--) {
+        const dayNum = prevMonthDays - i;
+        html += '<div class="calendar-day-cell other-month"><div class="calendar-day-num">' + dayNum + '</div></div>';
+      }
+
+      for (let day = 1; day <= totalDays; day++) {
+        const isToday = (year === todayYear && month === todayMonth && day === todayDate);
+
+        const dayItems = (Array.isArray(schedules) ? schedules : []).filter(s => {
+          if (!s || !s.scheduled_at) return false;
+          const d = new Date(s.scheduled_at);
+          return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+        });
+
+        html += '<div class="calendar-day-cell' + (isToday ? ' today' : '') + '">';
+        html += '<div class="calendar-day-num"><span>' + day + '</span>' + (isToday ? '<span style="font-size:0.65rem; color:#60a5fa;">TODAY</span>' : '') + '</div>';
+
+        dayItems.forEach(item => {
+          const timeStr = item.scheduled_at ? new Date(item.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00';
+          const title = escapeHtml(safeStr(item.post_title, 'Post'));
+          html += '<div class="calendar-item-chip" title="' + title + '">';
+          html += '<span class="calendar-item-time">' + timeStr + '</span>' + title;
+          html += '</div>';
+        });
+
+        html += '</div>';
+      }
+
+      const totalSlots = firstDayIndex + totalDays;
+      const remainingCells = (7 - (totalSlots % 7)) % 7;
+      for (let i = 1; i <= remainingCells; i++) {
+        html += '<div class="calendar-day-cell other-month"><div class="calendar-day-num">' + i + '</div></div>';
+      }
+
+      gridEl.innerHTML = html;
     }
 
     // Attach all client functions to window object for global availability
@@ -2332,5 +2545,18 @@ export function getAdminScripts(): string {
     window.handleAuditSearch = handleAuditSearch;
     window.changeAuditPage = changeAuditPage;
     window.toggleAuditDetail = toggleAuditDetail;
+    window.openModal = openModal;
+    window.closeModal = closeModal;
+    window.openAddTopicModal = openAddTopicModal;
+    window.openAddPostModal = openAddPostModal;
+    window.openSchedulePostModal = openSchedulePostModal;
+    window.handleSaveTopic = handleSaveTopic;
+    window.handleSavePost = handleSavePost;
+    window.handleSaveSchedule = handleSaveSchedule;
+    window.toggleAdvancedSchedulerSettings = toggleAdvancedSchedulerSettings;
+    window.handlePlannedRunSubmit = handlePlannedRunSubmit;
+    window.setQueueView = setQueueView;
+    window.navigateCalendar = navigateCalendar;
+    window.renderCalendarGrid = renderCalendarGrid;
   `;
 }

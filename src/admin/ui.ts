@@ -180,206 +180,89 @@ export function renderAdminHtml(): string {
             </div>
             <button id="logout-btn" class="btn-logout">Sign Out</button>
           </div>
-        </header>
-
-        <div class="content-body">
+        </head        <div class="content-body">
 
           <!-- TAB 1: DASHBOARD OVERVIEW -->
           <div id="tab-dashboard" class="tab-section active-tab">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Dashboard</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">NorthSoft AI ContentCreator — Automated content research, generation, and publishing control panel.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">NorthSoft AI ContentCreator — System Overview &amp; Content Performance</p>
               </div>
-            </div>
-
-            <!-- Truthful System & Integration Status Grid -->
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
-              <h2 style="font-size:1.05rem; font-weight:700; color:var(--text-main);">System &amp; Integration Status</h2>
-              <span id="system-status-summary-badge" class="status-badge status-healthy">OPERATIONAL</span>
-            </div>
-
-            <div class="section-grid" id="status-grid">
-              <div class="card">
-                <div class="card-label">Cloudflare Worker</div>
-                <div class="card-val" id="val-worker"><span class="status-badge status-healthy">Healthy</span></div>
-                <div class="card-sub">Edge Runtime</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Database (D1)</div>
-                <div class="card-val" id="val-db"><span class="status-badge status-healthy">Connected</span></div>
-                <div class="card-sub">SQLite Database</div>
-              </div>
-              <div class="card">
-                <div class="card-label">AI Engine</div>
-                <div class="card-val" id="val-ai"><span class="status-badge status-active">Configured</span></div>
-                <div class="card-sub">Workers AI</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Facebook Configuration</div>
-                <div class="card-val" id="val-fb-config"><span class="status-badge status-disabled">Checking...</span></div>
-                <div class="card-sub">Page ID &amp; Token</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Facebook READ API</div>
-                <div class="card-val" id="val-fb-read"><span class="status-badge status-active">Checking...</span></div>
-                <div class="card-sub">Graph API v26.0 /posts</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Facebook Publishing</div>
-                <div class="card-val" id="val-fb-publishing"><span class="status-badge status-disabled">Disabled</span></div>
-                <div class="card-sub">FACEBOOK_PUBLISH_ENABLED</div>
-              </div>
-            </div>
-
-            <!-- Content Pipeline Summary Cards -->
-            <h2 style="font-size:1.05rem; font-weight:700; color:var(--text-main); margin-bottom:0.75rem;">Content Pipeline</h2>
-            <div class="section-grid" id="pipeline-grid">
-              <div class="card">
-                <div class="card-label">Ideas</div>
-                <div class="card-val" id="cnt-ideas">0</div>
-                <div class="card-sub">Discovered topics</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Drafts</div>
-                <div class="card-val" id="cnt-drafts">0</div>
-                <div class="card-sub">Generated drafts</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Awaiting QA</div>
-                <div class="card-val" id="cnt-qa">0</div>
-                <div class="card-sub">Quality check queue</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Approved</div>
-                <div class="card-val" id="cnt-approved">0</div>
-                <div class="card-sub">Ready for schedule</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Scheduled</div>
-                <div class="card-val" id="cnt-scheduled">0</div>
-                <div class="card-sub">Pending publication</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Published</div>
-                <div class="card-val" id="cnt-published">0</div>
-                <div class="card-sub">Successfully posted</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Blocked</div>
-                <div class="card-val" id="cnt-blocked" style="color:var(--accent-rose);">0</div>
-                <div class="card-sub">Failed policy/QA check</div>
-              </div>
-            </div>
-
-            <!-- Autonomous Content Orchestrator Panel -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Autonomous Content Orchestrator Pipeline</div>
-                <button id="run-pipeline-btn" class="btn-primary" onclick="runPipelineNow()">
-                  <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Pipeline Now
+              <div>
+                <button class="btn-primary" onclick="switchTab('pipeline', event)">
+                  <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Pipeline Control &rarr;
                 </button>
               </div>
-              <div id="pipeline-run-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
-              <div class="section-grid" style="margin-bottom:0;">
-                <div>
-                  <div class="card-label">Last Pipeline Run</div>
-                  <div style="font-weight:600;" id="orch-last-time">Never</div>
-                  <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-last-trigger">Trigger: —</div>
-                </div>
-                <div>
-                  <div class="card-label">Execution Status</div>
-                  <div style="font-weight:600;" id="orch-status-val"><span class="status-badge status-healthy">IDLE</span></div>
-                  <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-result-val">Result: —</div>
-                </div>
-                <div>
-                  <div class="card-label">Last Run Est. Tokens</div>
-                  <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Est. Tokens</div>
-                </div>
+            </div>
+
+            <!-- Overview KPI Cards -->
+            <div class="section-grid" id="pipeline-grid">
+              <div class="card">
+                <div class="card-label">Topics Available</div>
+                <div class="card-val" id="cnt-ideas">0</div>
+                <div class="card-sub">Discovered ideas</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Drafts Ready</div>
+                <div class="card-val" id="cnt-drafts">0</div>
+                <div class="card-sub">Pending QA / review</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Scheduled Posts</div>
+                <div class="card-val" id="cnt-scheduled" style="color:var(--accent-blue);">0</div>
+                <div class="card-sub">Queued for publication</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Published Posts</div>
+                <div class="card-val" id="cnt-published" style="color:var(--accent-emerald);">0</div>
+                <div class="card-sub">Live on Facebook</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Next Publication</div>
+                <div class="card-val" id="cnt-next-pub" style="font-size:1.1rem;">Tomorrow, 09:00</div>
+                <div class="card-sub">UTC Schedule</div>
               </div>
             </div>
 
-            <!-- Panel 1: Cloudflare Verified Telemetry (Official Cloudflare Analytics) -->
+            <!-- Automation Status Card -->
+            <div class="panel" style="border-left: 4px solid var(--accent-blue);">
+              <div class="panel-header" style="margin-bottom: 0.75rem;">
+                <div class="panel-title" style="display:flex; align-items:center; gap:0.5rem;">
+                  <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                  Automation Status
+                </div>
+                <div id="dashboard-automation-badge">
+                  <span class="status-badge status-healthy">● ON — ACTIVE</span>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                <div id="dashboard-automation-text" style="font-size:0.925rem; color:var(--text-main);">
+                  Automatic publishing is enabled. <strong>Next run:</strong> Tomorrow, 09:00 UTC.
+                </div>
+                <button class="btn-secondary" onclick="switchTab('pipeline', event)">Manage Automation &rarr;</button>
+              </div>
+            </div>
+
+            <!-- Next Actions Panel -->
+            <div class="panel" id="dashboard-next-actions-panel">
+              <div class="panel-header">
+                <div class="panel-title" style="display:flex; align-items:center; gap:0.5rem;">
+                  <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Items Requiring Attention
+                </div>
+              </div>
+              <div id="dashboard-actions-list" style="display:flex; flex-direction:column; gap:0.75rem;">
+                <div style="color:var(--text-muted); font-size:0.875rem;">✓ All systems operating normally. No pending alerts.</div>
+              </div>
+            </div>
+
+            <!-- Recent System Activity Log Preview -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Cloudflare Verified Telemetry (Official Cloudflare Analytics)</div>
-                <div id="cf-telemetry-badge"><span class="status-badge status-active">CHECKING API...</span></div>
-              </div>
-              <div class="section-grid" style="margin-bottom:0.75rem;">
-                <div>
-                  <div class="card-label">Actual Neurons Today</div>
-                  <div style="font-size:1.5rem; font-weight:700; color:var(--accent-cyan);" id="cf-neurons-val">Checking API...</div>
-                  <div class="card-sub" id="cf-period-sub">Period: Today (UTC)</div>
-                </div>
-                <div>
-                  <div class="card-label">Cloudflare Requests Today</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="cf-requests-val">—</div>
-                  <div class="card-sub" id="cf-synced-sub">Last Synced: —</div>
-                </div>
-                <div>
-                  <div class="card-label">Telemetry Source</div>
-                  <div style="font-size:0.95rem; font-weight:600;" id="cf-source-val">Cloudflare Analytics GraphQL API</div>
-                  <div class="card-sub"><a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:underline;">Open Cloudflare Dashboard ↗</a></div>
-                </div>
-              </div>
-              <div id="cf-notice-box" style="display:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border-radius:6px; font-size:0.85rem; color:var(--text-muted); border-left:3px solid var(--accent-orange);"></div>
-            </div>
-
-            <!-- Panel 2: Application Safety (Circuit Breaker) -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Application Safety (Circuit Breaker)</div>
-                <div id="ai-quota-badge"><span class="status-badge status-healthy">CIRCUIT BREAKER OK</span></div>
-              </div>
-              <div class="section-grid" style="margin-bottom:0;">
-                <div>
-                  <div class="card-label">AI Inference Engine</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-provider-name">Cloudflare Workers AI</div>
-                  <div class="card-sub">Zero Financial Cost Target</div>
-                </div>
-                <div>
-                  <div class="card-label">Requests Today (Circuit Breaker)</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-today-text">0 / 300 requests</div>
-                  <div class="progress-bar-container">
-                    <div id="ai-today-bar" class="progress-bar-fill" style="width: 0%;"></div>
-                  </div>
-                </div>
-                <div>
-                  <div class="card-label">Safety Purpose</div>
-                  <div style="font-size:0.9rem; font-weight:600; color:var(--text-muted);">Prevents runaway AI loops</div>
-                  <div class="card-sub" style="margin-top:0.25rem;">Independent application request cap.</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Panel 3: Internal Diagnostics (Application Metric Only) -->
-            <div class="panel" style="border-left: 3px solid var(--accent-cyan);">
-              <div class="panel-header">
-                <div class="panel-title">Internal Diagnostics (Application Metric Only)</div>
-                <div><span class="status-badge status-neutral">INTERNAL ONLY</span></div>
-              </div>
-              <div class="section-grid" style="margin-bottom:0;">
-                <div>
-                  <div class="card-label">Estimated Tokens Today</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 Est. Tokens</div>
-                </div>
-                <div>
-                  <div class="card-label">Estimation Method</div>
-                  <div style="font-size:0.9rem; font-weight:600;">character-length heuristic (char / 4)</div>
-                </div>
-                <div>
-                  <div class="card-label">Important Note</div>
-                  <div style="font-size:0.85rem; color:var(--text-muted);">This is an internal application metric. It is <strong>NOT Cloudflare usage</strong> and does NOT block AI calls.</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Recent System Audit Activity Log Preview -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Recent System Audit Activity</div>
+                <div class="panel-title">Recent System Activity</div>
                 <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="switchTab('audit', event)">
-                  View Full Audit Log &rarr;
+                  View Audit Log &rarr;
                 </button>
               </div>
               <div class="table-container">
@@ -389,24 +272,24 @@ export function renderAdminHtml(): string {
                       <th>Event Type</th>
                       <th>Actor</th>
                       <th>Entity</th>
-                      <th>Details</th>
+                      <th>Summary</th>
                       <th>Timestamp</th>
                     </tr>
                   </thead>
                   <tbody id="recent-activity-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit activity...</td></tr>
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading system activity...</td></tr>
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- TAB: PIPELINE CONTROL CENTER -->
+          <!-- TAB 2: PIPELINE CONTROL -->
           <div id="tab-pipeline" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
-                <h1 class="page-title">Content Automation &amp; Pipeline Control</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Manual triggers, 1-Click end-to-end pipeline execution, automatic scheduler configuration, and stage observability.</p>
+                <h1 class="page-title">Pipeline Control &amp; Automation</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Control content discovery, post generation, quality evaluation, and automated publishing.</p>
               </div>
               <button id="run-full-pipeline-btn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:0.95rem; padding:0.75rem 1.4rem;" onclick="runFullPipelineNow()">
                 🚀 RUN FULL PIPELINE NOW
@@ -415,300 +298,280 @@ export function renderAdminHtml(): string {
 
             <div id="pipeline-control-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
-            <!-- Manual Stage Triggers Panel -->
+            <!-- Live Progress Stepper Container -->
+            <div id="pipeline-stepper-box" style="display:none;" class="panel">
+              <div class="panel-header">
+                <div class="panel-title" style="color:#60a5fa;">● Pipeline Execution Live Progress</div>
+                <span class="status-badge badge-running">RUNNING</span>
+              </div>
+              <div class="pipeline-stepper">
+                <div class="stepper-step" id="step-1"><span class="stepper-icon">1</span> <span>Finding topics...</span></div>
+                <div class="stepper-step" id="step-2"><span class="stepper-icon">2</span> <span>Selecting candidate topic...</span></div>
+                <div class="stepper-step" id="step-3"><span class="stepper-icon">3</span> <span>Generating post draft...</span></div>
+                <div class="stepper-step" id="step-4"><span class="stepper-icon">4</span> <span>Quality &amp; Policy review...</span></div>
+                <div class="stepper-step" id="step-5"><span class="stepper-icon">5</span> <span>Publishing to Facebook...</span></div>
+              </div>
+            </div>
+
+            <!-- 4 Pipeline Stage Cards -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Manual Pipeline Stage Triggers</div>
-                <span class="status-badge status-healthy">DECOUPLED STAGES</span>
+                <div class="panel-title">Pipeline Execution Stages</div>
               </div>
 
-              <div class="section-grid" style="margin-bottom:0.5rem;">
+              <div class="section-grid" style="margin-bottom:0.5rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                <!-- Stage 1 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">Etap 1 — Content Discovery</div>
+                  <div class="card-label">1. Topic Research</div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Scouts RSS feeds for random inspiration, evaluates angles using Workers AI, and queues candidate topics into backlog.
+                    Find relevant content ideas and generate topic proposals from RSS sources.
                   </p>
                   <button id="stage-discovery-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runDiscoveryNow()">
-                    🔎 Run Content Discovery
+                    🔎 Run now
                   </button>
                 </div>
 
+                <!-- Stage 2 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">Etap 2 — Post Generation &amp; Quality</div>
+                  <div class="card-label">2. Content Generation</div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Generates short social post from queued topic idea, runs static checks, independent QA evaluation, and policy review.
+                    Generate posts from selected topics and evaluate their quality &amp; policy rules.
                   </p>
                   <button id="stage-generation-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPostGenerationNow()">
-                    ✍ Generate &amp; Process Selected
+                    ✍ Run now
                   </button>
                 </div>
 
+                <!-- Stage 3 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">Etap 3 — Facebook Publishing</div>
+                  <div class="card-label">3. Publishing</div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Publishes an approved post draft directly to the configured NorthSoft Facebook Page via official Meta Graph API.
+                    Publish approved content directly to the configured Facebook Page.
                   </p>
                   <button id="stage-publishing-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPublishNow()">
-                    📤 Publish Selected Post
+                    📤 Run now
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- Automatic Scheduler Configuration Panel -->
+            <!-- Automatic Publishing Master Switch & Schedule -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Automatic Scheduler Configuration</div>
+                <div class="panel-title">Automatic Publishing Settings</div>
                 <div id="scheduler-status-badge"><span class="status-badge status-disabled">SCHEDULER OFF</span></div>
               </div>
 
               <form id="scheduler-config-form" onsubmit="saveSchedulerConfig(event)">
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1.25rem; margin-bottom:1.25rem;">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.25rem; margin-bottom:1.25rem;">
                   <div>
-                    <label class="form-label">Automation Master Switch</label>
+                    <label class="form-label">Automatic Publishing</label>
                     <select id="sched-master-switch" class="form-input">
-                      <option value="0">Scheduler OFF (Manual Only)</option>
-                      <option value="1">Scheduler ON (Automated Execution)</option>
+                      <option value="1">ON (Automated Execution)</option>
+                      <option value="0">OFF (Manual Triggers Only)</option>
                     </select>
                   </div>
 
                   <div>
-                    <label class="form-label">Execution Frequency</label>
+                    <label class="form-label">Frequency</label>
                     <select id="sched-frequency" class="form-input">
-                      <option value="daily">Daily (Every 24 Hours)</option>
+                      <option value="daily">Daily</option>
                       <option value="12h">Every 12 Hours</option>
                       <option value="6h">Every 6 Hours</option>
                     </select>
                   </div>
 
                   <div>
-                    <label class="form-label">Target Publication Time (UTC)</label>
+                    <label class="form-label">Publication Time (UTC)</label>
                     <input type="text" id="sched-time" class="form-input" value="09:00" placeholder="09:00" />
                   </div>
 
                   <div>
-                    <label class="form-label">Timezone</label>
-                    <input type="text" id="sched-timezone" class="form-input" value="UTC" readonly />
+                    <label class="form-label">Days</label>
+                    <div style="display:flex; gap:0.35rem; margin-top:0.4rem;">
+                      <span class="status-badge status-active" style="font-size:0.75rem;">Mon - Sun</span>
+                    </div>
                   </div>
                 </div>
 
-                <div style="margin-bottom:1.25rem; padding:1rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px;">
-                  <label class="form-label" style="margin-bottom:0.75rem;">Automated Pipeline Stage Switches</label>
-                  <div style="display:flex; flex-wrap:wrap; gap:1.5rem; font-size:0.875rem;">
-                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                      <input type="checkbox" id="sched-stage-discovery" checked />
-                      <span>Stage 1: Content Discovery</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                      <input type="checkbox" id="sched-stage-generation" checked />
-                      <span>Stage 2: Post Generation</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                      <input type="checkbox" id="sched-stage-evaluation" checked />
-                      <span>Stage 3: Quality Evaluation</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                      <input type="checkbox" id="sched-stage-publishing" checked />
-                      <span>Stage 4: Facebook Publishing</span>
-                    </label>
+                <!-- Collapsible Advanced Settings -->
+                <div style="margin-bottom:1.25rem;">
+                  <button type="button" class="btn-secondary" style="font-size:0.8rem;" onclick="toggleAdvancedSchedulerSettings()">
+                    ⚙ Advanced Settings <span id="adv-settings-arrow">&darr;</span>
+                  </button>
+                  <div id="adv-scheduler-panel" style="display:none; margin-top:0.85rem; padding:1rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px;">
+                    <label class="form-label" style="margin-bottom:0.75rem;">Pipeline Stage Toggles</label>
+                    <div style="display:flex; flex-wrap:wrap; gap:1.5rem; font-size:0.875rem;">
+                      <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                        <input type="checkbox" id="sched-stage-discovery" checked />
+                        <span>Topic Research</span>
+                      </label>
+                      <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                        <input type="checkbox" id="sched-stage-generation" checked />
+                        <span>Post Generation</span>
+                      </label>
+                      <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                        <input type="checkbox" id="sched-stage-evaluation" checked />
+                        <span>Quality Review</span>
+                      </label>
+                      <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                        <input type="checkbox" id="sched-stage-publishing" checked />
+                        <span>Facebook Publishing</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
                 <button type="submit" id="save-scheduler-btn" class="btn-primary">
-                  Save Scheduler Settings
+                  Save Settings
                 </button>
               </form>
             </div>
 
-            <!-- Pipeline Execution History & Observability Ledger -->
+            <!-- Planned Runs Section -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Pipeline Execution &amp; Run History Ledger</div>
-                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="loadPipelineData()">
-                  🔄 Refresh Log
+                <div class="panel-title">Schedule a Planned Run</div>
+              </div>
+              <form id="planned-run-form" onsubmit="handlePlannedRunSubmit(event)" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.25rem; align-items:end;">
+                <div>
+                  <label class="form-label">Date</label>
+                  <input type="date" id="plan-run-date" class="form-input" required />
+                </div>
+                <div>
+                  <label class="form-label">Time (UTC)</label>
+                  <input type="time" id="plan-run-time" class="form-input" value="09:00" required />
+                </div>
+                <div>
+                  <button type="submit" class="btn-primary" style="width:100%;">
+                    📅 Schedule Planned Run
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- TAB 3: TOPIC RESEARCH -->
+          <div id="tab-research" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <h1 class="page-title">Topic Research</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Find and manage ideas for future Facebook posts.</p>
+              </div>
+              <div style="display:flex; gap:0.75rem;">
+                <button id="run-research-btn" class="btn-primary" onclick="runResearchNow()">
+                  🔎 Find new topics
+                </button>
+                <button class="btn-secondary" onclick="openAddTopicModal()">
+                  + Add topic
                 </button>
               </div>
-
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Started At</th>
-                      <th>Trigger</th>
-                      <th>Status</th>
-                      <th>Result</th>
-                      <th>Stage Details</th>
-                      <th>Cloudflare Neurons</th>
-                      <th>Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody id="pipeline-history-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Loading pipeline execution history...</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB: CONTENT DRAFTS -->
-          <div id="tab-content" class="tab-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-              <div>
-                <h1 class="page-title">Content Pipeline &amp; Post Drafts</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Autonomous post draft generation, static checks, independent QA review, policy evaluation, and quality gate results.</p>
-              </div>
-            </div>
-
-            <div id="content-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
-
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Generated Post Drafts &amp; Quality Gate Status</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Post Title &amp; Version Body</th>
-                      <th>Status</th>
-                      <th>Current Version</th>
-                      <th>QA Score</th>
-                      <th>Quality Decision</th>
-                      <th>Created At</th>
-                    </tr>
-                  </thead>
-                  <tbody id="posts-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading generated post drafts...</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB: TOPIC RESEARCH -->
-          <div id="tab-research" class="tab-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-              <div>
-                <h1 class="page-title">Research Engine &amp; Topic Discovery</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Autonomous discovery, curation, and prioritization of candidate tech topics.</p>
-              </div>
-              <button id="run-research-btn" class="btn-primary" onclick="runResearchNow()">
-                <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Research Pipeline Now
-              </button>
             </div>
 
             <div id="research-run-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
-            <div class="section-grid">
-              <div class="card">
-                <div class="card-label">Curated Sources</div>
-                <div class="card-val" id="res-sources-cnt">0</div>
-                <div class="card-sub" id="res-enabled-sub">0 Active Feeds</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Discovered Topics</div>
-                <div class="card-val" id="res-topics-cnt">0</div>
-                <div class="card-sub">Stored in Backlog</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Last Pipeline Run</div>
-                <div class="card-val" id="res-last-run" style="font-size:1.1rem;">Never</div>
-                <div class="card-sub">Cron / Manual Trigger</div>
-              </div>
-            </div>
-
-            <!-- Last Research Run Diagnostics Summary Card -->
-            <div class="panel" id="res-diag-panel" style="display:none;">
-              <div class="panel-header" style="margin-bottom:0.75rem;">
-                <div class="panel-title" style="font-size:0.95rem; font-weight:600;">Last Research Run Operational Diagnostics</div>
-                <span id="res-diag-status" class="status-badge status-healthy">COMPLETED</span>
-              </div>
-              <div style="display:flex; gap:1.5rem; flex-wrap:wrap; font-size:0.85rem;" id="res-diag-content">
-                <!-- Populated via JS -->
-              </div>
-            </div>
-
+            <!-- Topics Table -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Discovered Candidate Topics</div>
+                <div class="panel-title">Topic Backlog</div>
               </div>
               <div class="table-container">
                 <table>
                   <thead>
                     <tr>
-                      <th>Title &amp; Description</th>
-                      <th>Category / Pillar</th>
-                      <th>Relevance Score</th>
+                      <th>Topic</th>
+                      <th>Description</th>
                       <th>Status</th>
-                      <th>Date Discovered</th>
+                      <th>Created</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="topics-table-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading discovered candidate topics...</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Configured Research Sources</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Source Name</th>
-                      <th>Category</th>
-                      <th>Feed URL</th>
-                      <th>Status</th>
-                      <th>Last Checked</th>
-                    </tr>
-                  </thead>
-                  <tbody id="sources-table-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading research sources...</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Research Pipeline Execution History</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Started At</th>
-                      <th>Trigger</th>
-                      <th>Status</th>
-                      <th>Discovered</th>
-                      <th>Unique</th>
-                      <th>Filtered (Irr / Low Q / Dup)</th>
-                      <th>Final Candidates</th>
-                    </tr>
-                  </thead>
-                  <tbody id="runs-table-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading execution log...</td></tr>
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading topic proposals...</td></tr>
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- TAB: SCHEDULED QUEUE -->
-          <div id="tab-schedules" class="tab-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+          <!-- TAB 4: CONTENT DRAFTS -->
+          <div id="tab-content" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
-                <h1 class="page-title">Scheduled Content Queue</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Quality Gate approved content scheduled for future automated publication.</p>
+                <h1 class="page-title">Content Drafts</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Review and manage posts before they are scheduled or published.</p>
+              </div>
+              <button class="btn-primary" onclick="openAddPostModal()">
+                + Add post
+              </button>
+            </div>
+
+            <div id="content-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+
+            <!-- Drafts Table -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Generated Post Drafts</div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Topic Title</th>
+                      <th>Post Preview</th>
+                      <th>Status</th>
+                      <th>Scheduled</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="posts-table-body">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading post drafts...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: SCHEDULED QUEUE -->
+          <div id="tab-schedules" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <h1 class="page-title">Scheduled Queue</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Calendar and list view of upcoming automated publication posts.</p>
+              </div>
+              <div style="display:flex; gap:0.75rem; align-items:center;">
+                <!-- View Toggle Buttons -->
+                <div style="display:flex; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); border-radius:8px; padding:0.2rem;">
+                  <button id="btn-view-calendar" class="btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem; border:none; background:var(--accent-blue); color:white;" onclick="setQueueView('calendar')">Calendar</button>
+                  <button id="btn-view-list" class="btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem; border:none; background:transparent;" onclick="setQueueView('list')">List</button>
+                </div>
+                <button class="btn-primary" onclick="openSchedulePostModal()">
+                  + Schedule post
+                </button>
               </div>
             </div>
 
-            <div class="panel">
+            <!-- Calendar View Container -->
+            <div id="schedules-calendar-view" class="calendar-container">
+              <div class="calendar-controls">
+                <button class="btn-secondary" style="font-size:0.85rem;" onclick="navigateCalendar(-1)">&larr; Previous</button>
+                <div class="calendar-month-title" id="calendar-month-title">September 2026</div>
+                <button class="btn-secondary" style="font-size:0.85rem;" onclick="navigateCalendar(1)">Next &rarr;</button>
+              </div>
+
+              <div class="calendar-grid-header">
+                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+              </div>
+
+              <div class="calendar-grid" id="calendar-grid-days">
+                <!-- Rendered dynamically by JS -->
+              </div>
+            </div>
+
+            <!-- List View Container -->
+            <div id="schedules-list-view" class="panel" style="display:none;">
               <div class="panel-header">
-                <div class="panel-title">Scheduled Publications Queue</div>
+                <div class="panel-title">Scheduled Publications List</div>
               </div>
               <div class="table-container">
                 <table>
@@ -717,26 +580,23 @@ export function renderAdminHtml(): string {
                       <th>Post Title</th>
                       <th>Scheduled Time (UTC)</th>
                       <th>Status</th>
-                      <th>Version</th>
-                      <th>QA Score</th>
-                      <th>Quality Decision</th>
-                      <th>Created At</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="schedules-table-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading scheduled publications...</td></tr>
+                    <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading scheduled posts...</td></tr>
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- TAB: PUBLICATIONS -->
+          <!-- TAB 6: PUBLICATIONS -->
           <div id="tab-publications" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
-                <h1 class="page-title">Meta / Facebook Publications</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Official Meta Graph API Facebook Page publication management, idempotency status, and retry controls.</p>
+                <h1 class="page-title">Publications</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Published posts and performance history on Facebook.</p>
               </div>
             </div>
 
@@ -744,114 +604,72 @@ export function renderAdminHtml(): string {
 
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Meta Graph API Configuration Status</div>
-                <div id="meta-config-badge"><span class="status-badge status-disabled">NOT CONFIGURED</span></div>
-              </div>
-              <div class="section-grid" style="margin-bottom:0;">
-                <div>
-                  <div class="card-label">Page ID</div>
-                  <div style="font-weight:600;" id="meta-pageid-val">Missing</div>
-                </div>
-                <div>
-                  <div class="card-label">Page Access Token</div>
-                  <div style="font-weight:600;" id="meta-token-val">Missing</div>
-                </div>
-                <div>
-                  <div class="card-label">Graph API Version</div>
-                  <div style="font-weight:600; color:var(--accent-blue);" id="meta-version-val">v26.0</div>
-                </div>
-                <div>
-                  <div class="card-label">Publishing Safety Lock</div>
-                  <div style="font-weight:600;" id="meta-lock-val">DISABLED</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Facebook Publications Log</div>
+                <div class="panel-title">Publication History</div>
               </div>
               <div class="table-container">
                 <table>
                   <thead>
                     <tr>
-                      <th>Post Title &amp; Version Preview</th>
-                      <th>Provider</th>
-                      <th>Quality Gate</th>
-                      <th>Publication Status</th>
-                      <th>Facebook Post ID</th>
-                      <th>Published At</th>
+                      <th>Date</th>
+                      <th>Post Content</th>
+                      <th>Platform</th>
+                      <th>Status</th>
+                      <th>Engagement</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="publications-table-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading publication history...</td></tr>
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading publication history...</td></tr>
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- TAB: MANUAL FACEBOOK PUBLISHER -->
+          <!-- TAB 7: MANUAL FACEBOOK PUBLISHER -->
           <div id="tab-manual-publisher" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
-                <h1 class="page-title">Manual Facebook Publisher</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Publish content directly to the configured NorthSoft Facebook Page via official Meta Publisher.</p>
-              </div>
-              <div id="manual-meta-status-badge">
-                <span class="status-badge status-healthy">META READY</span>
+                <h1 class="page-title">Manual Publisher</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Compose and publish a post directly to Facebook.</p>
               </div>
             </div>
 
             <div id="manual-pub-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
             <div class="manual-publisher-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items:start;">
-              <!-- Left Column: Composer Form -->
               <div class="panel">
                 <div class="panel-header">
-                  <div class="panel-title">Post Content</div>
+                  <div class="panel-title">Compose Post</div>
                 </div>
 
                 <form id="manual-post-form" onsubmit="return false;">
                   <div class="form-group">
-                    <label class="form-label" for="manual-post-content">Facebook Post Content</label>
-                    <textarea id="manual-post-content" class="form-input" style="min-height: 180px; resize: vertical; font-family: inherit; line-height: 1.5;" placeholder="Write your Facebook post..." required maxlength="63206"></textarea>
+                    <label class="form-label" for="manual-post-content">Post Content (English)</label>
+                    <textarea id="manual-post-content" class="form-input" style="min-height: 180px; resize: vertical; font-family: inherit; line-height: 1.5;" placeholder="Write your Facebook post in English..." required maxlength="63206"></textarea>
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">
-                      <span>Meta Graph API limit</span>
-                      <span id="manual-char-counter">0 / 63206 characters</span>
+                      <span>Meta limit: 63,206 chars</span>
+                      <span id="manual-char-counter">0 / 63206</span>
                     </div>
                   </div>
 
                   <div class="form-group" style="margin-top: 1.25rem;">
                     <label class="form-label" for="manual-post-link">Attachment Link (Optional)</label>
                     <input type="url" id="manual-post-link" class="form-input" placeholder="https://northsoft.is/article">
-                    <div class="card-sub" style="margin-top:0.3rem;">Attach an external website or article link to the post.</div>
                   </div>
 
-                  <div style="background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--border-color); border-radius: 8px; padding: 1rem; margin-top: 1.25rem;">
-                    <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted);">
-                      <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                      Media Attachments
-                    </div>
-                    <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-                      URL link attachments supported. Direct binary file upload requires Cloudflare R2 media storage integration.
-                    </div>
-                  </div>
-
-                  <div style="display:flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
-                    <button type="button" id="manual-clear-btn" class="btn-logout" onclick="clearManualForm()">Clear</button>
-                    <button type="button" id="manual-validate-btn" class="btn-secondary" onclick="validateManualForm()">Validate</button>
+                  <div style="display:flex; gap: 0.75rem; justify-flex-end; margin-top: 1.5rem;">
+                    <button type="button" class="btn-logout" onclick="clearManualForm()">Clear</button>
                     <button type="button" id="manual-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="openPublishConfirmation()">Publish to Facebook</button>
                   </div>
                 </form>
               </div>
 
-              <!-- Right Column: Live Facebook Post Preview -->
+              <!-- Preview -->
               <div class="panel">
                 <div class="panel-header">
                   <div class="panel-title">Post Preview</div>
-                  <span class="status-badge status-healthy" style="font-size:0.7rem;">META PREVIEW</span>
+                  <span class="status-badge status-healthy" style="font-size:0.7rem;">FACEBOOK</span>
                 </div>
 
                 <div class="fb-preview-card" style="background: #18191a; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.25rem; color: #e4e6eb;">
@@ -868,74 +686,34 @@ export function renderAdminHtml(): string {
                   </div>
 
                   <div id="preview-text" style="font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; line-height: 1.45; color: #e4e6eb; margin-bottom: 0.75rem; min-height: 80px;">Write your Facebook post...</div>
-
-                  <div id="preview-link-card" style="display: none; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; overflow: hidden; background: #242526; margin-top: 0.75rem;">
-                    <div style="padding: 0.75rem;">
-                      <div style="font-size: 0.75rem; color: #b0b3b8; text-transform: uppercase;" id="preview-link-domain">NORTHSOFT.IS</div>
-                      <div style="font-weight: 600; font-size: 0.9rem; color: #e4e6eb; margin-top: 0.2rem;" id="preview-link-title">Attached External Link</div>
-                      <div style="font-size: 0.8rem; color: #b0b3b8; margin-top: 0.2rem;" id="preview-link-url">https://northsoft.is</div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- TAB: AUDIT LOG -->
+          <!-- TAB 8: AUDIT LOG -->
           <div id="tab-audit" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
               <div>
-                <h1 class="page-title">System Audit Log</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Operational ledger, security events, AI research &amp; execution metrics.</p>
+                <h1 class="page-title">Audit Log</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Technical audit ledger, security logs, and operational events.</p>
               </div>
               <button class="btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.85rem;" onclick="loadAuditData()">
                 🔄 Refresh
               </button>
             </div>
 
-            <!-- Operational Summary Statistics Cards -->
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-              <div class="panel" style="padding:1rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Total Events</div>
-                <div id="audit-stat-events" style="font-size:1.5rem; font-weight:700; color:var(--text-main); margin-top:0.25rem;">—</div>
-              </div>
-              <div class="panel" style="padding:1rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Errors</div>
-                <div id="audit-stat-errors" style="font-size:1.5rem; font-weight:700; color:var(--accent-rose); margin-top:0.25rem;">—</div>
-              </div>
-              <div class="panel" style="padding:1rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Warnings</div>
-                <div id="audit-stat-warnings" style="font-size:1.5rem; font-weight:700; color:var(--accent-amber); margin-top:0.25rem;">—</div>
-              </div>
-              <div class="panel" style="padding:1rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">AI Operations</div>
-                <div id="audit-stat-ai" style="font-size:1.5rem; font-weight:700; color:var(--accent-cyan); margin-top:0.25rem;">—</div>
-              </div>
-              <div class="panel" style="padding:1rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">System</div>
-                <div style="font-size:1.1rem; font-weight:700; color:var(--accent-emerald); margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem;">
-                  <span class="status-badge status-healthy">Healthy</span>
-                </div>
-              </div>
-            </div>
-
             <div class="panel">
-              <div class="panel-header" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color);">
-                <!-- Filter Buttons -->
+              <div class="panel-header" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:1rem;">
                 <div id="audit-category-filters" style="display:flex; flex-wrap:wrap; gap:0.4rem;">
                   <button class="btn-secondary audit-cat-btn active" data-category="all" onclick="setAuditCategory('all')">All</button>
                   <button class="btn-secondary audit-cat-btn" data-category="errors" onclick="setAuditCategory('errors')">Errors</button>
                   <button class="btn-secondary audit-cat-btn" data-category="warnings" onclick="setAuditCategory('warnings')">Warnings</button>
                   <button class="btn-secondary audit-cat-btn" data-category="ai" onclick="setAuditCategory('ai')">AI</button>
                   <button class="btn-secondary audit-cat-btn" data-category="facebook" onclick="setAuditCategory('facebook')">Facebook</button>
-                  <button class="btn-secondary audit-cat-btn" data-category="auth" onclick="setAuditCategory('auth')">Auth</button>
-                  <button class="btn-secondary audit-cat-btn" data-category="system" onclick="setAuditCategory('system')">System</button>
                 </div>
-
-                <!-- Search Input -->
                 <div style="display:flex; align-items:center; gap:0.5rem; min-width:240px;">
-                  <input type="text" id="audit-search-input" class="form-input" style="padding:0.4rem 0.75rem; font-size:0.85rem;" placeholder="Search events, operations..." onkeyup="handleAuditSearch(event)" />
-                  <button class="btn-secondary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="executeAuditSearch()">Search</button>
+                  <input type="text" id="audit-search-input" class="form-input" style="padding:0.4rem 0.75rem; font-size:0.85rem;" placeholder="Search audit logs..." onkeyup="handleAuditSearch(event)" />
                 </div>
               </div>
 
@@ -946,40 +724,24 @@ export function renderAdminHtml(): string {
                       <th style="width:110px;">Status</th>
                       <th style="width:150px;">Event</th>
                       <th>Operation</th>
-                      <th>Result / Summary</th>
+                      <th>Summary</th>
                       <th style="width:130px; text-align:right;">Time</th>
                     </tr>
                   </thead>
                   <tbody id="full-audit-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading full audit log records...</td></tr>
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading audit records...</td></tr>
                   </tbody>
                 </table>
-              </div>
-
-              <!-- Pagination Controls -->
-              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border-color);">
-                <div id="audit-pagination-info" style="font-size:0.825rem; color:var(--text-muted);">
-                  Showing 0 - 0 of 0 events
-                </div>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                  <button id="audit-prev-btn" class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="changeAuditPage(-1)" disabled>
-                    Previous
-                  </button>
-                  <span id="audit-page-indicator" style="font-size:0.825rem; color:var(--text-main); font-weight:600;">Page 1</span>
-                  <button id="audit-next-btn" class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="changeAuditPage(1)" disabled>
-                    Next
-                  </button>
-                </div>
               </div>
             </div>
           </div>
 
-          <!-- TAB: ACCOUNT SECURITY -->
+          <!-- TAB 9: ACCOUNT SECURITY -->
           <div id="tab-security" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
-                <h1 class="page-title">Account &amp; Password Security</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Rotate administrator password, manage active recovery email, and review security status.</p>
+                <h1 class="page-title">Account &amp; Security</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Manage administrator credentials, recovery configuration, and active sessions.</p>
               </div>
             </div>
 
@@ -993,7 +755,7 @@ export function renderAdminHtml(): string {
               </div>
 
               <div id="recovery-email-status-box" style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--text-muted);">
-                Password recovery via email is currently <strong>unavailable</strong> because no recovery email address has been set.
+                Recovery email address configuration.
               </div>
 
               <form id="recovery-email-form">
@@ -1002,7 +764,7 @@ export function renderAdminHtml(): string {
                   <input type="email" id="recovery-email-input" class="form-input" required placeholder="admin@northsoft.is" autocomplete="email">
                 </div>
 
-                <button type="submit" id="save-recovery-email-btn" class="btn-primary" style="margin-top:0.5rem;">Save Recovery Email</button>
+                <button type="submit" id="save-recovery-email-btn" class="btn-primary" style="margin-top:0.5rem;">Save Email</button>
               </form>
             </div>
 
@@ -1036,7 +798,7 @@ export function renderAdminHtml(): string {
         </div>
       </main>
 
-      <!-- 3. RIGHT FACEBOOK LIVE PREVIEW RAIL -->
+      <!-- 3. RIGHT FACEBOOK RAIL -->
       <aside class="facebook-rail">
         <div class="fb-rail-header">
           <div class="fb-rail-title">
@@ -1084,16 +846,114 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- CONFIRMATION MODAL -->
-  <div id="publish-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center;">
-    <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; max-width:480px; width:90%; padding:1.75rem; box-shadow:0 20px 40px rgba(0,0,0,0.6);">
-      <h3 style="font-size:1.2rem; font-weight:600; margin-bottom:0.75rem; color:var(--text-primary);">Publish to Facebook?</h3>
-      <p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.5; margin-bottom:1.5rem;">
-        This will publish the prepared content directly to the configured NorthSoft Facebook Page.
-      </p>
-      <div style="display:flex; gap:0.75rem; justify-flex-end;">
-        <button type="button" class="btn-logout" onclick="closePublishConfirmation()">Cancel</button>
-        <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="submitManualPublication()">Publish</button>
+  <!-- REUSABLE MODALS -->
+  <!-- 1. ADD / EDIT TOPIC MODAL -->
+  <div id="topic-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="topic-modal-title">Add New Topic</div>
+        <button class="modal-close-btn" onclick="closeModal('topic-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="topic-form" onsubmit="handleSaveTopic(event)">
+          <input type="hidden" id="topic-edit-id" value="" />
+          <div class="form-group">
+            <label class="form-label" for="topic-input-title">Topic Title (English)</label>
+            <input type="text" id="topic-input-title" class="form-input" required placeholder="e.g. The Best Time to See the Northern Lights in Iceland" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="topic-input-desc">Description / Notes (English)</label>
+            <textarea id="topic-input-desc" class="form-input" style="min-height:100px; font-family:inherit;" placeholder="Practical guidance for travelers..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="topic-input-pillar">Content Category / Pillar</label>
+            <select id="topic-input-pillar" class="form-input">
+              <option value="AI_AUTOMATION">AI &amp; Automation</option>
+              <option value="SMALL_BUSINESS">Small Business Tips</option>
+              <option value="WEB_TECHNOLOGY">Web Technology</option>
+              <option value="MARKETING">Marketing &amp; Growth</option>
+            </select>
+          </div>
+          <button type="submit" id="save-topic-btn" class="btn-primary" style="width:100%;">Save Topic</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. ADD / EDIT POST DRAFT MODAL -->
+  <div id="post-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="post-modal-title">Add Post Draft</div>
+        <button class="modal-close-btn" onclick="closeModal('post-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="post-form" onsubmit="handleSavePost(event)">
+          <input type="hidden" id="post-edit-id" value="" />
+          <div class="form-group">
+            <label class="form-label" for="post-input-topic">Associated Topic Title</label>
+            <input type="text" id="post-input-topic" class="form-input" required placeholder="e.g. Northern Lights Photography Guide" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="post-input-content">Post Content (English)</label>
+            <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write post content..."></textarea>
+          </div>
+          <button type="submit" id="save-post-btn" class="btn-primary" style="width:100%;">Save Draft</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. SCHEDULE POST MODAL -->
+  <div id="schedule-post-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Schedule Post</div>
+        <button class="modal-close-btn" onclick="closeModal('schedule-post-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="schedule-post-form" onsubmit="handleSaveSchedule(event)">
+          <input type="hidden" id="schedule-edit-id" value="" />
+          <div class="form-group">
+            <label class="form-label" for="schedule-post-select">Select Post Draft</label>
+            <select id="schedule-post-select" class="form-input" required>
+              <option value="">-- Select an approved draft --</option>
+            </select>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+            <div class="form-group">
+              <label class="form-label" for="schedule-date">Date</label>
+              <input type="date" id="schedule-date" class="form-input" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="schedule-time">Time (UTC)</label>
+              <input type="time" id="schedule-time" class="form-input" value="09:00" required />
+            </div>
+          </div>
+          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Schedule Post</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PUBLISH CONFIRMATION MODAL -->
+  <div id="publish-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <div class="modal-title">Publish to Facebook</div>
+        <button class="modal-close-btn" onclick="closeModal('publish-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.9rem; color:var(--text-muted); line-height:1.5;">
+          This will publish the post directly to your connected Facebook Page immediately.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-logout" onclick="closeModal('publish-modal')">Cancel</button>
+        <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="submitManualPublication()">Publish Now</button>
+      </div>
+    </div>
+  </div>n()">Publish</button>
       </div>
     </div>
   </div>
