@@ -22,6 +22,8 @@ export function getEnvironment(envValue: string | undefined): Environment {
 
 /**
  * Check whether Facebook publishing is enabled.
+ * Canonical configuration variable: FACEBOOK_PUBLISH_ENABLED.
+ *
  * This requires BOTH:
  * 1. FACEBOOK_PUBLISH_ENABLED === 'true'
  * 2. Environment is explicitly 'production'

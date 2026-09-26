@@ -40,13 +40,85 @@ NorthSoft.AI.ContentCreator is an autonomous AI content pipeline running on Clou
 
 ### API Layer (`src/api/`)
 - Hono-based HTTP routes
-- Health/readiness endpoints
-- Future: Admin API, webhook endpoints
+- Health & readiness endpoints (`/api/health`)
+- Auth endpoints (`/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, `/api/auth/csrf`)
+- Admin endpoints (`/api/admin/dashboard`, `/api/admin/settings`)
+- Admin UI Dashboard (`/admin`)
+
+### Admin Request Flow
+
+```
+Browser
+  ↓
+Authentication (POST /api/auth/login)
+  ↓
+HttpOnly Session Cookie (admin_session)
+  ↓
+Authorization Guard (requireAdmin middleware)
+  ↓
+CSRF Protection (X-CSRF-Token validation)
+  ↓
+Admin API (/api/admin/*)
+  ↓
+D1 Database (admin_users, admin_sessions, audit_log)
+```
 
 ### AI Layer (`src/ai/`)
 - `IAIProvider` — Provider-agnostic AI abstraction
-- Role-based model selection (writer, qa, researcher, policy)
-- Future: Provider implementations (OpenAI, Anthropic, Google)
+- `CloudflareWorkersAIProvider` — Free AI inference using native Workers AI binding (`env.AI`) with `@cf/meta/llama-3.1-8b-instruct`
+- `QuotaManager` — Enforces `MAX_ALLOWED_AI_COST = 0` and tracks daily/monthly request quotas in D1 (`ai_usage`)
+- Zero Paid AI Policy: OpenAI, Anthropic, or paid APIs are strictly prohibited from execution or automatic fallbacks
+
+### Research Engine (`src/services/research/`)
+```text
+Research Source (RSS/Atom)
+       ↓
+SSRF Safe Ingestion
+       ↓
+SHA-256 Deduplication (url_hash)
+       ↓
+Prompt Injection Escaping
+       ↓
+Quota Capacity Check (MAX_AI_COST = 0)
+       ├── Capacity Exceeded → DEFERRED_NO_FREE_AI_CAPACITY
+       └── Free Capacity Available → Cloudflare Workers AI
+                                             ↓
+                                    Schema Validation
+                                             ↓
+                                    Candidate Topic (D1)
+```
+
+### Content Pipeline & Autonomous Orchestrator (`src/services/content/`)
+```text
+Cloudflare Cron / Admin Manual Trigger
+       ↓
+ContentOrchestrator.runPipeline()
+       ↓
+D1 Execution Lock Check (orchestrator_runs status='running')
+       ↓
+Daily Post Count Limit Check (Default: 1 post/day)
+       ↓
+Topic Selection & Cooldown Filter (content_ideas)
+       ↓
+Workflow Neuron Budget Pre-flight Check (Hard Ceiling: 7,500 Neurons/day)
+       ├── Insufficient Budget → DEFERRED_NO_FREE_AI_CAPACITY (ZERO AI calls)
+       └── Budget Available → ContentPlannerService
+                                      ↓
+                              Writer Service (Writer AI)
+                                     ↓
+                             Post Draft v1 (post_versions)
+                                     ↓
+                             Static Content Validator (Rule-based)
+                                     ↓
+                             Independent QA Reviewer (QA AI)
+                                     ↓
+                             Policy Compliance Review (Rule-based)
+                                     ↓
+                             Central Quality Gate (evaluatePipelineGate)
+                                     ├── FAIL & attempts < 3 → Bounded Regeneration (v2, v3)
+                                     ├── BLOCKED → Permanent Stop (post status = blocked)
+                                     └── PASS → APPROVED (post status = approved)
+```
 
 ### Core (`src/core/`)
 - Domain types matching D1 schema

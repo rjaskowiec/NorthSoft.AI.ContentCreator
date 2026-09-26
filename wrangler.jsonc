@@ -4,6 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-25",
 
+  // Cron Triggers (Daily automated research run)
+  "triggers": {
+    "crons": ["0 8 * * *"]
+  },
+
   // D1 Database bindings
   "d1_databases": [
     {
@@ -13,6 +18,31 @@
       "migrations_dir": "migrations"
     }
   ],
+
+  // Cloudflare Workers AI binding (Free AI allocation)
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Worker Previews (for Cloudflare Workers preview deployments)
+  "previews": {
+    "vars": {
+      "ENVIRONMENT": "staging",
+      "FACEBOOK_PUBLISH_ENABLED": "false",
+      "LOG_LEVEL": "debug"
+    },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "northsoft-ai-contentcreator-staging",
+        "database_id": "960c64cd-c450-47bc-a0e6-58552aa0d824",
+        "migrations_dir": "migrations"
+      }
+    ],
+    "ai": {
+      "binding": "AI"
+    }
+  },
 
   // Environment-specific overrides
   "env": {
@@ -36,8 +66,8 @@
       "name": "northsoft-ai-contentcreator",
       "routes": [
         {
-          "pattern": "ai.northsoft.is/*",
-          "zone_name": "northsoft.is"
+          "pattern": "ai.northsoft.is",
+          "custom_domain": true
         }
       ],
       "d1_databases": [
@@ -48,9 +78,12 @@
           "migrations_dir": "migrations"
         }
       ],
+      "ai": {
+        "binding": "AI"
+      },
       "vars": {
         "ENVIRONMENT": "production",
-        "FACEBOOK_PUBLISH_ENABLED": "false",
+        "FACEBOOK_PUBLISH_ENABLED": "true",
         "LOG_LEVEL": "warn"
       }
     }

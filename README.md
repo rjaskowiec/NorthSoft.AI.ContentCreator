@@ -4,7 +4,7 @@
 
 Built on Cloudflare Workers (Free plan) with independent AI quality control and safe automated Facebook publishing.
 
-> ⚠️ **Status: Foundation Phase** — Architecture and infrastructure established. AI pipeline and Facebook publishing not yet implemented.
+> 🟢 **Status: Phase 3C Complete — Autonomous Content Orchestrator & Scheduling Engine** — Unifies Research Discovery, Topic Selection & Cooldown, Pre-flight Workflow Budget Checks, Writer Agent, Static Validation, Independent QA Fact-Checker, Policy Engine, Quality Gate, Bounded Regeneration, and Internal Scheduling into a single autonomous pipeline. Obeying strict 7,500 Neurons/day hard budget ceiling and D1 concurrency execution locking. Facebook publishing remains locked in this phase.
 
 ---
 
@@ -72,8 +72,13 @@ NorthSoft.AI.ContentCreator/
 │   │   ├── audit.ts                # Audit log types
 │   │   └── middleware/
 │   │       └── logger.ts           # Request logging (secret-safe)
-│   └── publishing/
-│       └── meta-publisher.ts       # IMetaPublisher abstraction
+│   ├── publishing/
+│   │   ├── meta-publisher.ts       # IMetaPublisher abstraction
+│   │   ├── facebook-publisher.ts   # Meta Graph API v19.0 Publisher
+│   │   └── mock-publisher.ts       # Deterministic mock publisher for tests
+│   └── services/
+│       └── publishing/
+│           └── publication-service.ts # Publication state machine & Quality Gate check
 ├── tests/
 │   ├── unit/                       # Unit tests
 │   └── security/                   # Secret scanning, .gitignore checks
@@ -245,30 +250,30 @@ npm run deploy:production
 
 ## Current Status
 
-### ✅ Completed (Foundation)
+### ✅ Completed (Foundation & Phase 2)
 - Project structure and TypeScript configuration
 - Cloudflare Workers + Hono framework setup
-- D1 database schema with migrations
-- Health/readiness endpoints
-- Core abstractions (IAIProvider, IMetaPublisher, IAuditLogger)
-- Quality gate evaluation logic
-- Environment safety utilities
-- Error handling and secure logging
-- Unit tests and security scanning tests
-- ESLint + Prettier configuration
-- GitHub Actions CI pipeline
-- Architecture documentation and ADRs
-- GitFlow branch structure
+- D1 database schema with migrations (`0001_initial_schema.sql`, `0002_admin_auth.sql`)
+- Health & readiness API (`/api/health`, `/api/health/ready`)
+- **Secure Admin Authentication**: Web Crypto PBKDF2 password hashing, salt generation
+- **Server-Side Session Management**: HttpOnly, Secure, SameSite=Strict cookies with token hashing in D1
+- **CSRF Protection**: Session-bound CSRF validation on all state-changing requests
+- **Brute-Force Rate Limiting**: D1-backed login attempt tracking (5 max attempts / 15 mins)
+- **Admin Authorization Middleware**: Protected `/api/admin/*` endpoints (`requireAdmin`)
+- **Admin Dashboard UI**: Served at `/admin` (System status, Content pipeline counts, Recent audit activity, Security status)
+- **Admin Provisioning Tool**: CLI script (`npm run admin:provision`)
+- **Audit Logging**: `D1AuditLogger` implementation with secret redaction
+- Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+- Unit, Integration, and Security test suites (102 tests passed)
+- GitHub Actions CI pipeline & GitFlow workflow
 
-### 🔲 Next Phases
+### 🔲 Next Phases (Phase 3+)
 - AI provider implementations (OpenAI, Anthropic)
-- Content generation pipeline
+- Autonomous content generation pipeline
 - Quality assurance pipeline
-- Admin panel (authentication + UI)
 - Facebook publishing via Meta API
 - Research agent
 - Cron-triggered scheduling
-- Full integration tests
 
 ---
 

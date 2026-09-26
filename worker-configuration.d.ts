@@ -10,6 +10,9 @@ interface Env {
   // --- Cloudflare D1 Database ---
   DB: D1Database;
 
+  // --- Cloudflare Workers AI Binding ---
+  AI?: { run(model: string, inputs: unknown): Promise<unknown> };
+
   // --- Environment Variables (set in wrangler.jsonc) ---
   ENVIRONMENT: 'development' | 'staging' | 'production';
   FACEBOOK_PUBLISH_ENABLED: string;
@@ -18,13 +21,26 @@ interface Env {
   // --- Cloudflare Worker Secrets ---
   // These are set via `npx wrangler secret put <KEY>`
   // NEVER hardcode these values in source code.
-  AI_PROVIDER_API_KEY: string;
-  AI_PROVIDER: string;
-  AI_MODEL_WRITER: string;
-  AI_MODEL_QA: string;
-  META_PAGE_ACCESS_TOKEN: string;
-  META_PAGE_ID: string;
-  META_APP_ID: string;
-  META_APP_SECRET: string;
-  ADMIN_AUTH_SECRET: string;
+  AI_PROVIDER_API_KEY?: string;
+  OPENAI_API_KEY?: string;
+  AI_PROVIDER?: string;
+  AI_RESEARCH_PROVIDER?: string;
+  AI_RESEARCH_MODEL?: string;
+  AI_WRITER_PROVIDER?: string;
+  AI_WRITER_MODEL?: string;
+  AI_QA_PROVIDER?: string;
+  AI_QA_MODEL?: string;
+  AI_POLICY_PROVIDER?: string;
+  AI_POLICY_MODEL?: string;
+  AI_MODEL_WRITER?: string;
+  AI_MODEL_QA?: string;
+  META_PAGE_ACCESS_TOKEN?: string;
+  META_PAGE_ID?: string;
+  META_APP_ID?: string;
+  META_APP_SECRET?: string;
+  ADMIN_AUTH_SECRET?: string;
+  GATEWAY_TOKEN?: string;
+  NORTHSOFT_MAIL_API_KEY?: string;
+  NORTHSOFT_MAIL_GATEWAY_URL?: string;
+  ADMIN_RECOVERY_EMAIL?: string;
 }

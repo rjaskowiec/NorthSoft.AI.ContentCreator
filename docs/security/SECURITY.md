@@ -107,11 +107,74 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 - A single AI inference cannot both generate and approve content
 - The QA reviewer receives the content without knowing it was AI-generated
 
-## Authentication (Planned)
-- Admin panel will require authentication
-- Session/JWT signing key stored as Cloudflare Worker Secret
-- Authentication tokens must be HttpOnly, Secure, SameSite
-- Rate limiting on authentication endpoints
+## Authentication & Session Security
+
+- **Server-Side Sessions**: Authenticated admin sessions use secure, non-guessable 32-byte tokens.
+- **D1 Token Hashing**: Plaintext session tokens are never stored in D1; only SHA-256 hashes (`token_hash`) are persisted.
+- **Strict Cookie Attributes**:
+  ```text
+  HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400
+  ```
+- **Password Hashing**: PBKDF2-HMAC-SHA256 with 60,000 iterations and a 16-byte random salt per user.
+  - *Workers CPU Budget Rationale*: 60,000 iterations executes in ~2-4ms CPU time using native Web Crypto C++ bindings, staying safely within the Cloudflare Workers Free plan 10ms CPU time limit per request while providing strong security against brute force.
+- **CSRF Protection**: All state-changing endpoints (`POST`, `PUT`, `PATCH`, `DELETE`) require an `X-CSRF-Token` header matching the session's CSRF secret (verified in constant time).
+- **Brute-Force Rate Limiting**: D1-backed attempt tracking limits failed logins to 5 attempts per 15-minute window per IP/username.
+- **Generic Error Responses**: Login failures always return generic "Invalid credentials." messages to prevent username enumeration.
+- **Security Headers**: Admin responses set Content-Security-Policy, X-Frame-Options (`DENY`), X-Content-Type-Options (`nosniff`), Referrer-Policy (`strict-origin-when-cross-origin`), and Permissions-Policy.
+- **Secure Provisioning**: No default administrator account or hardcoded password exists in code or database migrations. Initial creation uses `npm run admin:provision`.
+
+## Research & AI Security Controls (Phase 3A)
+
+### Zero-Cost AI Policy Enforcement
+- **Constraint**: `MAX_ALLOWED_AI_COST = 0` enforced by `QuotaManager`.
+- **Allowed Providers**: Cloudflare Workers AI (`env.AI`) and local development mocks exclusively.
+- **Paid Provider Prohibition**: Automatic or explicit fallback to paid AI APIs (OpenAI, Anthropic, Google, OpenRouter) is strictly prohibited and blocked at the provider factory layer.
+- **Quota Accounting**: Tracks daily/monthly request limits in D1 (`ai_usage`). If limits are reached, research analysis defers (`DEFERRED_NO_FREE_AI_CAPACITY`) without data loss.
+
+### SSRF Protection
+- **Protocol Restriction**: Only `http:` and `https:` schemes allowed.
+- **Private IP Rejection**: Rejects loopback (`127.0.0.1`, `::1`), private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`), and Cloudflare internal metadata hostnames.
+- **Fetch Guards**: Strict request timeouts (10 seconds) and maximum response size limits (2MB).
+
+### Prompt Injection Defense
+- External source data is treated as UNTRUSTED DATA and NEVER as instructions.
+- Source material is sanitized, truncated (max 10,000 characters), and wrapped in `<untrusted_source_content>` XML boundary tags.
+- Explicit system instructions forbid the AI model from ignoring directives or exposing internal secrets.
+
+### Structured AI Output Schema Validation
+- All AI JSON outputs are validated runtime against expected schemas (`validateCandidateTopicOutput`). Malformed or manipulated responses are rejected immediately (`status = 'FAILED'`).
+
+## Content Pipeline & Neuron Budget Security Controls (Phase 3B)
+
+### Daily Neuron Ceiling Protection
+- **Hard Safety Ceiling**: `CONTENT_CREATOR_DAILY_NEURON_HARD_LIMIT = 7500` Neurons/day.
+- **Shared Allocation Protection**: Reserves at least 2,500 Neurons/day for customer-facing AI and other NorthSoft AI services.
+- **Budget State Transitions**: `NORMAL` (0-5k), `CONTROLLED` (5k-6k), `RESTRICTED` (6k-7.5k), `HARD_STOP` (>= 7.5k).
+- **Pre-flight Estimation**: Checks budget before initiating expensive multi-stage workflows (Writer + QA). Defers gracefully if budget is insufficient.
+
+### Independent QA Fact Checker
+- **Self-Approval Prohibition**: The Writer AI never approves its own output. Generation and Review are logically isolated inference calls with independent role prompts (`writer` vs `qa`).
+- **Adversarial Verification**: QA model evaluates draft against ground-truth research evidence inside `<research_context>` tags.
+
+### Bounded Regeneration & Post Versioning
+- **Maximum Retries**: Bounded to a maximum of 2 retries (3 versions total) before permanent `BLOCKED` status.
+- **Audit Invariant**: Post versions are stored as immutable history in `post_versions` (v1, v2, v3). Existing versions are never overwritten.
+
+## Autonomous Orchestration & Concurrency Security Controls (Phase 3C)
+
+### Execution Concurrency Locking
+- **Active Run Lock**: Before executing an autonomous pipeline run, `ContentOrchestrator` checks `orchestrator_runs` for any active run (`status = 'running'`) started within the last 5 minutes. Concurrent execution attempts are immediately deferred (`status = 'deferred'`).
+
+### Workflow Pre-flight Budget Reservation
+- **Pre-flight Check**: Before making any AI API invocation, `ContentOrchestrator` evaluates remaining daily neuron capacity against worst-case estimated workflow cost (Writer + QA = ~3,000 Neurons). If `todayNeurons + 3000 > 7500`, the entire run is deferred with status `DEFERRED_NO_FREE_AI_CAPACITY` and **ZERO AI provider calls are made**.
+
+### Daily Generation Limits & Topic Cooldown
+- **Conservative Generation Ceiling**: Bounded to a default of 1 post/day (`posts_per_day = 1`).
+- **Topic Cooldown Filter**: Topics used within the last 7 days or matching recent titles are filtered out deterministically before AI calls occur.
+
+### Publication Lock Invariant
+- **Internal Scheduling Only**: Approved posts are assigned status `'scheduled'` and queued in `schedules`. No Facebook Page API or Meta Publisher calls occur in Phase 3.
+
 
 ## Deployment Security
 - CI must pass all checks before merge (typecheck, lint, tests, security scan, audit)
@@ -123,3 +186,4 @@ This is enforced in code (`src/core/environment.ts`) and tested (`tests/unit/env
 - If a secret is accidentally committed: rotate immediately, force-push removal, update Cloudflare secrets
 - If unauthorized content is published: immediately disable `FACEBOOK_PUBLISH_ENABLED`, investigate audit log
 - If AI produces harmful content: Quality Gate should catch; if it doesn't, update validation rules and investigate
+
