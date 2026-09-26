@@ -13,7 +13,7 @@ INSERT OR IGNORE INTO research_sources (id, name, url, type, category, enabled, 
   ('src-web-dev', 'Google Web.dev', 'https://web.dev/feed.xml', 'rss', 'WEB_TECHNOLOGY', 1, 10),
   ('src-smashing', 'Smashing Magazine', 'https://www.smashingmagazine.com/feed/', 'rss', 'WEB_TECHNOLOGY', 1, 9),
   ('src-search-engine-journal', 'Search Engine Journal', 'https://www.searchenginejournal.com/feed/', 'rss', 'MARKETING', 1, 10),
-  ('src-google-search-blog', 'Google Search Central', 'https://developers.google.com/search/blog/rss.xml', 'rss', 'MARKETING', 1, 10),
+  ('src-google-search-blog', 'Google Search Central', 'https://feeds.feedburner.com/blogspot/amDG', 'rss', 'MARKETING', 1, 10),
   ('src-hubspot-blog', 'HubSpot Marketing', 'https://blog.hubspot.com/marketing/rss.xml', 'rss', 'ONLINE_PRESENCE', 1, 9),
   ('src-smallbiz-trends', 'Small Business Trends', 'https://smallbiztrends.com/feed', 'rss', 'SMALL_BUSINESS', 1, 8),
   ('src-entrepreneur', 'Entrepreneur Tech', 'https://www.entrepreneur.com/latest.rss', 'rss', 'SMALL_BUSINESS', 1, 8);
