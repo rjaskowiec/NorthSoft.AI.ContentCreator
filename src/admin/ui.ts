@@ -112,7 +112,7 @@ export function renderAdminHtml(): string {
         <nav style="flex:1;">
           <div class="nav-section-title">MAIN</div>
           <ul class="nav-list">
-            <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">
+            <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
               Dashboard
             </a></li>
@@ -120,11 +120,11 @@ export function renderAdminHtml(): string {
 
           <div class="nav-section-title">CONTENT</div>
           <ul class="nav-list">
-            <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">
+            <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Content Drafts
             </a></li>
-            <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">
+            <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               Topic Research
             </a></li>
@@ -132,15 +132,15 @@ export function renderAdminHtml(): string {
 
           <div class="nav-section-title">PUBLISHING</div>
           <ul class="nav-list">
-            <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">
+            <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               Scheduled Queue
             </a></li>
-            <li class="nav-item" id="nav-publications"><a href="#publications" onclick="switchTab('publications')">
+            <li class="nav-item" id="nav-publications"><a href="#publications" onclick="switchTab('publications', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
               Publications
             </a></li>
-            <li class="nav-item" id="nav-manual-publisher"><a href="#manual-publisher" onclick="switchTab('manual-publisher')">
+            <li class="nav-item" id="nav-manual-publisher"><a href="#manual-publisher" onclick="switchTab('manual-publisher', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               Manual Publisher
             </a></li>
@@ -148,11 +148,11 @@ export function renderAdminHtml(): string {
 
           <div class="nav-section-title">SYSTEM</div>
           <ul class="nav-list">
-            <li class="nav-item" id="nav-audit"><a href="#audit" onclick="switchTab('audit')">
+            <li class="nav-item" id="nav-audit"><a href="#audit" onclick="switchTab('audit', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               Audit Log
             </a></li>
-            <li class="nav-item" id="nav-security"><a href="#security" onclick="switchTab('security')">
+            <li class="nav-item" id="nav-security"><a href="#security" onclick="switchTab('security', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               Account & Security
             </a></li>
@@ -375,7 +375,7 @@ export function renderAdminHtml(): string {
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Recent System Audit Activity</div>
-                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="switchTab('audit')">
+                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="switchTab('audit', event)">
                   View Full Audit Log &rarr;
                 </button>
               </div>

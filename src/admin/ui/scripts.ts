@@ -61,6 +61,20 @@ export function getAdminScripts(): string {
       document.getElementById('reset-alert').style.display = 'none';
     }
 
+    function formatTimeSafe(isoStr) {
+      if (!isoStr) return '—';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      return d.toLocaleTimeString();
+    }
+
+    function formatDateOnlySafe(isoStr) {
+      if (!isoStr) return '—';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      return d.toLocaleDateString();
+    }
+
     function showDashboard(user) {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard-screen').style.display = 'flex';
@@ -76,7 +90,15 @@ export function getAdminScripts(): string {
       }
     }
 
-    function switchTab(tabName) {
+    function switchTab(tabName, evt) {
+      if (evt && typeof evt.preventDefault === 'function') {
+        evt.preventDefault();
+      }
+      const validTabs = ['dashboard', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      if (!validTabs.includes(tabName)) {
+        tabName = 'dashboard';
+      }
+
       currentTab = tabName;
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active-tab'));
@@ -85,24 +107,38 @@ export function getAdminScripts(): string {
       if (navEl) navEl.classList.add('active');
 
       const tabEl = document.getElementById('tab-' + tabName);
-      if (tabEl) tabEl.classList.add('active-tab');
+      if (tabEl) {
+        tabEl.classList.add('active-tab');
+      }
 
-      if (tabName === 'dashboard') {
-        loadDashboardData();
-      } else if (tabName === 'manual-publisher') {
-        loadManualPublisherData();
-      } else if (tabName === 'research') {
-        loadResearchData();
-      } else if (tabName === 'content') {
-        loadContentData();
-      } else if (tabName === 'schedules') {
-        loadSchedulesData();
-      } else if (tabName === 'publications') {
-        loadPublicationsData();
-      } else if (tabName === 'audit') {
-        loadAuditData();
-      } else if (tabName === 'security') {
-        loadSecurityData();
+      if (window.location.hash !== '#' + tabName) {
+        try {
+          window.history.pushState(null, '', '#' + tabName);
+        } catch {
+          // Ignore
+        }
+      }
+
+      try {
+        if (tabName === 'dashboard') {
+          loadDashboardData();
+        } else if (tabName === 'manual-publisher') {
+          loadManualPublisherData();
+        } else if (tabName === 'research') {
+          loadResearchData();
+        } else if (tabName === 'content') {
+          loadContentData();
+        } else if (tabName === 'schedules') {
+          loadSchedulesData();
+        } else if (tabName === 'publications') {
+          loadPublicationsData();
+        } else if (tabName === 'audit') {
+          loadAuditData();
+        } else if (tabName === 'security') {
+          loadSecurityData();
+        }
+      } catch (err) {
+        console.error('Failed to load tab data for ' + tabName + ':', err);
       }
     }
 
@@ -694,18 +730,19 @@ export function getAdminScripts(): string {
         }
 
         const data = await res.json();
+        const stats = data.stats || {};
 
         const srcCnt = document.getElementById('res-sources-cnt');
-        if (srcCnt) srcCnt.textContent = data.stats.totalSources;
+        if (srcCnt) srcCnt.textContent = stats.totalSources || 0;
 
         const srcSub = document.getElementById('res-enabled-sub');
-        if (srcSub) srcSub.textContent = data.stats.enabledSources + ' Active Feeds';
+        if (srcSub) srcSub.textContent = (stats.enabledSources || 0) + ' Active Feeds';
 
         const topCnt = document.getElementById('res-topics-cnt');
-        if (topCnt) topCnt.textContent = data.stats.totalTopicsDiscovered;
+        if (topCnt) topCnt.textContent = stats.totalTopicsDiscovered || 0;
 
         const lastRun = document.getElementById('res-last-run');
-        if (lastRun) lastRun.textContent = data.stats.lastRunAt ? new Date(data.stats.lastRunAt).toLocaleTimeString() : 'Never';
+        if (lastRun) lastRun.textContent = stats.lastRunAt ? formatTimeSafe(stats.lastRunAt) : 'Never';
 
         // Operational Diagnostics Summary Panel
         const diagPanel = document.getElementById('res-diag-panel');
@@ -748,13 +785,13 @@ export function getAdminScripts(): string {
             topicsBody.innerHTML = data.topics.map(t => \`
               <tr>
                 <td>
-                  <strong>\${escapeHtml(t.title)}</strong>
+                  <strong>\${escapeHtml(t.title || 'Untitled Topic')}</strong>
                   <div style="font-size:0.8rem; color:var(--text-muted);">\${escapeHtml(t.description || '')}</div>
                 </td>
-                <td><span class="code-tag">\${escapeHtml(t.category)}</span></td>
-                <td><span class="status-badge status-healthy">\${t.priority}/100</span></td>
-                <td><span class="status-badge status-active">\${escapeHtml(t.status).toUpperCase()}</span></td>
-                <td class="code-tag">\${new Date(t.created_at).toLocaleDateString()}</td>
+                <td><span class="code-tag">\${escapeHtml(t.category || 'general')}</span></td>
+                <td><span class="status-badge status-healthy">\${t.priority || 0}/100</span></td>
+                <td><span class="status-badge status-active">\${escapeHtml(t.status || '').toUpperCase()}</span></td>
+                <td class="code-tag">\${formatDateOnlySafe(t.created_at)}</td>
               </tr>
             \`).join('');
           } else {
@@ -767,11 +804,11 @@ export function getAdminScripts(): string {
         if (sourcesBody && data.sources && data.sources.length > 0) {
           sourcesBody.innerHTML = data.sources.map(s => \`
             <tr>
-              <td><strong>\${escapeHtml(s.name)}</strong></td>
-              <td><span class="code-tag">\${escapeHtml(s.category)}</span></td>
-              <td style="font-size:0.8rem; font-family:monospace;">\${escapeHtml(s.url)}</td>
+              <td><strong>\${escapeHtml(s.name || 'Unnamed Source')}</strong></td>
+              <td><span class="code-tag">\${escapeHtml(s.category || 'rss')}</span></td>
+              <td style="font-size:0.8rem; font-family:monospace;">\${escapeHtml(s.url || '')}</td>
               <td><span class="status-badge \${s.enabled ? 'status-healthy' : 'status-disabled'}">\${s.enabled ? 'ACTIVE' : 'DISABLED'}</span></td>
-              <td class="code-tag">\${s.last_checked_at ? new Date(s.last_checked_at).toLocaleString() : 'Never'}</td>
+              <td class="code-tag">\${s.last_checked_at ? formatDateSafe(s.last_checked_at) : 'Never'}</td>
             </tr>
           \`).join('');
         }
@@ -786,13 +823,13 @@ export function getAdminScripts(): string {
 
             return \`
               <tr>
-                <td class="code-tag">\${new Date(r.started_at).toLocaleString()}</td>
-                <td><span class="code-tag">\${escapeHtml(r.trigger_type)}</span></td>
-                <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(r.status).toUpperCase()}</span></td>
+                <td class="code-tag">\${formatDateSafe(r.started_at)}</td>
+                <td><span class="code-tag">\${escapeHtml(r.trigger_type || 'cron')}</span></td>
+                <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(r.status || '').toUpperCase()}</span></td>
                 <td>\${r.items_discovered || r.items_found || 0}</td>
                 <td>\${r.items_normalized || 0}</td>
                 <td style="font-size:0.8rem; color:var(--text-muted);">\${irr} irr / \${lowQ} low / \${dup} dup</td>
-                <td><strong>\${r.topics_created}</strong></td>
+                <td><strong>\${r.topics_created || 0}</strong></td>
               </tr>
             \`;
           }).join('');
