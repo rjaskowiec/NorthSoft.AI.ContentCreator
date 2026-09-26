@@ -293,7 +293,6 @@ export function renderAdminHtml(): string {
                   <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-result-val">Result: —</div>
                 </div>
                 <div>
-                <div>
                   <div class="card-label">Last Run Est. Tokens</div>
                   <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Est. Tokens</div>
                 </div>
