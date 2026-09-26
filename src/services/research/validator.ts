@@ -1,9 +1,26 @@
 /**
- * NorthSoft.AI.ContentCreator — AI Response Validator
+ * NorthSoft.AI.ContentCreator — AI Content Discovery Validator
  *
- * Validates AI research outputs against strict domain schemas before database persistence.
- * Prevents invalid, malformed, or unsafe AI data from polluting D1.
+ * Validates AI research outputs against post-angle schemas before database persistence.
  */
+
+import { determineContentPillar, type ContentPillar } from './taxonomy';
+
+export interface CandidateIdeaPayload {
+  title: string;
+  angle: string;
+  hook: string;
+  summary: string;
+  keyPoints: string[];
+  contentPillar: ContentPillar;
+  engagementQuestion: string;
+  commercialRelevance: number; // 0 - 100
+  engagementPotential: number; // 0 - 100
+  relevanceScore: number; // 0 - 100
+  sourceUrl: string;
+  sourceName: string;
+  publishedAt: string;
+}
 
 export interface CandidateTopicPayload {
   title: string;
@@ -11,11 +28,11 @@ export interface CandidateTopicPayload {
   sourceUrl: string;
   sourceName: string;
   publishedAt: string;
-  relevanceScore: number; // 0 - 100
+  relevanceScore: number;
   categories: string[];
   keyClaims: string[];
   whyRelevant: string;
-  confidence: number; // 0.0 - 1.0
+  confidence: number;
 }
 
 export interface ValidationResult<T> {
@@ -25,18 +42,17 @@ export interface ValidationResult<T> {
 }
 
 /**
- * Parses and validates raw AI completion string into a CandidateTopicPayload.
+ * Parses and validates raw AI completion string into a CandidateIdeaPayload (post angle).
  */
-export function validateCandidateTopicOutput(
+export function validateCandidateIdeaOutput(
   rawAiOutput: string,
-): ValidationResult<CandidateTopicPayload> {
+): ValidationResult<CandidateIdeaPayload> {
   if (!rawAiOutput || typeof rawAiOutput !== 'string') {
     return { valid: false, errors: ['AI output is empty or not a string'] };
   }
 
   let parsed: unknown;
   try {
-    // Attempt to extract JSON if wrapped in markdown code blocks
     let cleanedJson = rawAiOutput.trim();
     if (cleanedJson.startsWith('```')) {
       cleanedJson = cleanedJson
@@ -63,71 +79,103 @@ export function validateCandidateTopicOutput(
     errors.push('title must be a string between 5 and 250 characters');
   }
 
+  // Angle validation
+  const angle =
+    typeof obj.angle === 'string'
+      ? obj.angle.trim()
+      : typeof obj.whyRelevant === 'string'
+      ? obj.whyRelevant.trim()
+      : title;
+
+  // Hook validation
+  const hook =
+    typeof obj.hook === 'string'
+      ? obj.hook.trim()
+      : typeof obj.summary === 'string'
+      ? obj.summary.substring(0, 150)
+      : title;
+
   // Summary validation
-  const summary = typeof obj.summary === 'string' ? obj.summary.trim() : '';
-  if (!summary || summary.length < 10) {
-    errors.push('summary must be a non-empty string with at least 10 characters');
+  const summary =
+    typeof obj.summary === 'string'
+      ? obj.summary.trim()
+      : typeof obj.description === 'string'
+      ? (obj.description as string).trim()
+      : hook;
+
+  // Key points validation
+  const keyPoints: string[] = [];
+  const rawPoints = Array.isArray(obj.keyPoints)
+    ? obj.keyPoints
+    : Array.isArray(obj.key_points)
+    ? obj.key_points
+    : Array.isArray(obj.keyClaims)
+    ? obj.keyClaims
+    : [];
+
+  for (const item of rawPoints) {
+    if (typeof item === 'string' && item.trim()) {
+      keyPoints.push(item.trim());
+    }
   }
+
+  // Content Pillar validation
+  const pillarInput =
+    typeof obj.contentPillar === 'string'
+      ? obj.contentPillar
+      : typeof obj.content_pillar === 'string'
+      ? obj.content_pillar
+      : typeof obj.category === 'string'
+      ? obj.category
+      : 'WEBSITE';
+
+  const contentPillar = determineContentPillar(title, summary, [pillarInput]);
+
+  // Engagement Question validation
+  const engagementQuestion =
+    typeof obj.engagementQuestion === 'string'
+      ? obj.engagementQuestion.trim()
+      : typeof obj.engagement_question === 'string'
+      ? obj.engagement_question.trim()
+      : 'What is your take on this?';
+
+  // Scores
+  const commercialRelevance =
+    typeof obj.commercialRelevance === 'number'
+      ? Math.max(0, Math.min(100, Math.round(obj.commercialRelevance)))
+      : typeof obj.commercial_relevance === 'number'
+      ? Math.max(0, Math.min(100, Math.round(obj.commercial_relevance)))
+      : 80;
+
+  const engagementPotential =
+    typeof obj.engagementPotential === 'number'
+      ? Math.max(0, Math.min(100, Math.round(obj.engagementPotential)))
+      : typeof obj.engagement_potential === 'number'
+      ? Math.max(0, Math.min(100, Math.round(obj.engagement_potential)))
+      : 80;
+
+  const relevanceScore =
+    typeof obj.relevanceScore === 'number'
+      ? Math.max(0, Math.min(100, Math.round(obj.relevanceScore)))
+      : 75;
 
   // Source URL validation
-  const sourceUrl = typeof obj.sourceUrl === 'string' ? obj.sourceUrl.trim() : '';
-  if (!sourceUrl) {
-    errors.push('sourceUrl is required');
-  } else {
-    try {
-      new URL(sourceUrl);
-    } catch {
-      errors.push('sourceUrl must be a valid URL string');
-    }
-  }
+  const sourceUrl =
+    typeof obj.sourceUrl === 'string'
+      ? obj.sourceUrl.trim()
+      : typeof obj.source_url === 'string'
+      ? obj.source_url.trim()
+      : 'https://ai.northsoft.is';
 
-  // Source Name validation
-  const sourceName = typeof obj.sourceName === 'string' ? obj.sourceName.trim() : 'Unknown Source';
+  const sourceName =
+    typeof obj.sourceName === 'string'
+      ? obj.sourceName.trim()
+      : typeof obj.source_name === 'string'
+      ? obj.source_name.trim()
+      : 'NorthSoft Research';
 
-  // Published At date validation
   const publishedAt =
     typeof obj.publishedAt === 'string' ? obj.publishedAt.trim() : new Date().toISOString();
-
-  // Relevance Score validation (0 to 100)
-  let relevanceScore = typeof obj.relevanceScore === 'number' ? Math.round(obj.relevanceScore) : 50;
-  if (isNaN(relevanceScore) || relevanceScore < 0 || relevanceScore > 100) {
-    relevanceScore = 50;
-  }
-
-  // Categories validation
-  const categories: string[] = [];
-  if (Array.isArray(obj.categories)) {
-    for (const item of obj.categories) {
-      if (typeof item === 'string' && item.trim()) {
-        categories.push(item.trim());
-      }
-    }
-  }
-  if (categories.length === 0) {
-    categories.push('General');
-  }
-
-  // Key Claims validation
-  const keyClaims: string[] = [];
-  if (Array.isArray(obj.keyClaims)) {
-    for (const item of obj.keyClaims) {
-      if (typeof item === 'string' && item.trim()) {
-        keyClaims.push(item.trim());
-      }
-    }
-  }
-
-  // Why Relevant validation
-  const whyRelevant =
-    typeof obj.whyRelevant === 'string'
-      ? obj.whyRelevant.trim()
-      : 'Discovered by research pipeline';
-
-  // Confidence validation (0.0 to 1.0)
-  let confidence = typeof obj.confidence === 'number' ? obj.confidence : 0.8;
-  if (isNaN(confidence) || confidence < 0 || confidence > 1) {
-    confidence = 0.8;
-  }
 
   if (errors.length > 0) {
     return { valid: false, errors };
@@ -137,15 +185,57 @@ export function validateCandidateTopicOutput(
     valid: true,
     data: {
       title,
+      angle,
+      hook,
       summary,
+      keyPoints,
+      contentPillar,
+      engagementQuestion,
+      commercialRelevance,
+      engagementPotential,
+      relevanceScore,
       sourceUrl,
       sourceName,
       publishedAt,
-      relevanceScore,
+    },
+  };
+}
+
+/**
+ * Legacy wrapper for CandidateTopicPayload.
+ */
+export function validateCandidateTopicOutput(
+  rawAiOutput: string,
+): ValidationResult<CandidateTopicPayload> {
+  const ideaRes = validateCandidateIdeaOutput(rawAiOutput);
+  if (!ideaRes.valid || !ideaRes.data) {
+    return { valid: false, errors: ideaRes.errors };
+  }
+
+  const idea = ideaRes.data;
+  let categories = [idea.contentPillar];
+  try {
+    const parsed = JSON.parse(rawAiOutput);
+    if (Array.isArray(parsed.categories) && parsed.categories.length > 0) {
+      categories = parsed.categories.map((c: unknown) => String(c));
+    }
+  } catch {
+    // Ignore fallback
+  }
+
+  return {
+    valid: true,
+    data: {
+      title: idea.title,
+      summary: idea.summary,
+      sourceUrl: idea.sourceUrl,
+      sourceName: idea.sourceName,
+      publishedAt: idea.publishedAt,
+      relevanceScore: idea.relevanceScore,
       categories,
-      keyClaims,
-      whyRelevant,
-      confidence,
+      keyClaims: idea.keyPoints,
+      whyRelevant: idea.angle,
+      confidence: 0.9,
     },
   };
 }

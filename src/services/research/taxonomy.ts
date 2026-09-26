@@ -6,11 +6,12 @@
  */
 
 export type ContentPillar =
-  | 'WEB_TECHNOLOGY'
-  | 'ONLINE_PRESENCE'
+  | 'WEBSITE'
   | 'MARKETING'
+  | 'SALES'
+  | 'AI'
   | 'SMALL_BUSINESS'
-  | 'AI_AUTOMATION'
+  | 'CUSTOMER_EXPERIENCE'
   | 'LOCAL_BUSINESS';
 
 export interface ContentPillarInfo {
@@ -21,41 +22,47 @@ export interface ContentPillarInfo {
 }
 
 export const CONTENT_PILLARS: Record<ContentPillar, ContentPillarInfo> = {
-  WEB_TECHNOLOGY: {
-    id: 'WEB_TECHNOLOGY',
-    name: 'Web & Technology',
-    description: 'Web development, website performance, mobile design, cybersecurity, APIs, and useful digital tools for modern businesses.',
-    keywords: ['website', 'web', 'cybersecurity', 'ux', 'ui', 'performance', 'mobile', 'api', 'cloud', 'security', 'software', 'tool', 'hosting', 'domain'],
-  },
-  ONLINE_PRESENCE: {
-    id: 'ONLINE_PRESENCE',
-    name: 'Websites & Online Presence',
-    description: 'Why businesses need websites, landing pages, trust & credibility, mobile usability, domain strategy, and online reputation.',
-    keywords: ['website', 'online presence', 'landing page', 'credibility', 'conversion', 'contact form', 'call to action', 'mobile-first', 'trust', 'customer experience'],
+  WEBSITE: {
+    id: 'WEBSITE',
+    name: 'Websites & Landing Pages',
+    description: 'Modernizing websites, page speed, mobile UX, landing pages, contact forms, trust, website vs social media.',
+    keywords: ['website', 'web', 'landing page', 'mobile', 'speed', 'ux', 'form', 'contact', 'trust', 'domain', 'hosting'],
   },
   MARKETING: {
     id: 'MARKETING',
     name: 'Marketing & Customer Acquisition',
-    description: 'Local SEO, Google Business Profile, search visibility, customer acquisition, lead generation, reviews, and reputation management.',
-    keywords: ['seo', 'local seo', 'google business', 'marketing', 'customer acquisition', 'lead generation', 'reviews', 'reputation', 'search', 'visibility', 'traffic'],
+    description: 'Local SEO, Google Business Profile, Facebook/Instagram ads, reviews, lead generation, local marketing, conversion.',
+    keywords: ['seo', 'local seo', 'marketing', 'google business', 'ads', 'reviews', 'reputation', 'lead', 'acquisition', 'traffic', 'social media'],
+  },
+  SALES: {
+    id: 'SALES',
+    name: 'Sales & Conversion Process',
+    description: 'Lead follow-up, quote forms, customer contact, presenting services, conversion optimization, sales process mistakes.',
+    keywords: ['sales', 'conversion', 'quote', 'inquiry', 'follow-up', 'customer contact', 'offer', 'deal', 'revenue'],
+  },
+  AI: {
+    id: 'AI',
+    name: 'AI & Business Automation',
+    description: 'Practical AI in small business, customer support AI, content creation, data analysis, saving time, AI tools.',
+    keywords: ['ai', 'automation', 'chatbot', 'gpt', 'llm', 'time-saving', 'customer support', 'productivity', 'ai tools'],
   },
   SMALL_BUSINESS: {
     id: 'SMALL_BUSINESS',
-    name: 'Small Business & Productivity',
-    description: 'Operational efficiency, workflow automation, digital transformation, reducing repetitive tasks, and small business productivity.',
-    keywords: ['small business', 'local business', 'productivity', 'efficiency', 'process', 'workflow', 'automation', 'entrepreneur', 'operations', 'time-saving'],
+    name: 'Small Business Productivity & Ops',
+    description: 'Work organization, productivity, workflow automation, daily entrepreneur challenges, time saving, common mistakes.',
+    keywords: ['small business', 'entrepreneur', 'productivity', 'efficiency', 'workflow', 'operations', 'time', 'management'],
   },
-  AI_AUTOMATION: {
-    id: 'AI_AUTOMATION',
-    name: 'AI & Business Automation',
-    description: 'Practical business AI use cases, customer service AI, document processing, intelligent workflow automation, and AI productivity.',
-    keywords: ['ai', 'artificial intelligence', 'automation', 'chatbots', 'customer service ai', 'workflow', 'document processing', 'ai tools', 'business ai'],
+  CUSTOMER_EXPERIENCE: {
+    id: 'CUSTOMER_EXPERIENCE',
+    name: 'Customer Experience & Trust',
+    description: 'First impression, response speed, ease of contact, reviews, customer trust, convenience.',
+    keywords: ['customer experience', 'trust', 'first impression', 'response time', 'satisfaction', 'convenience', 'reputation'],
   },
   LOCAL_BUSINESS: {
     id: 'LOCAL_BUSINESS',
     name: 'Local Business & Regional Context',
-    description: 'Insights relevant to local service providers, tourism, restaurants, tradespeople, freelancers, and regional customer trends.',
-    keywords: ['local business', 'iceland', 'icelandic', 'tourism', 'restaurant', 'tradesperson', 'freelancer', 'retailer', 'local search', 'service business'],
+    description: 'Icelandic market specific trends, local services, tourism, trade, seasonality, local customer behaviors.',
+    keywords: ['iceland', 'icelandic', 'local business', 'tourism', 'restaurant', 'tradesperson', 'freelancer', 'local service', 'regional'],
   },
 };
 
@@ -92,7 +99,7 @@ export function isExcludedTopic(title: string, summary: string): { excluded: boo
 }
 
 /**
- * Evaluates the ContentPillar for a given title, summary, and categories.
+ * Determines the ContentPillar for a given title, summary, and categories.
  */
 export function determineContentPillar(title: string, summary: string, categories: string[] = []): ContentPillar {
   const text = `${title} ${summary} ${categories.join(' ')}`.toLowerCase();
@@ -104,31 +111,41 @@ export function determineContentPillar(title: string, summary: string, categorie
 
   // Check AI & Automation
   if (/\b(ai|artificial intelligence|chatbot|chatbots|gpt|llm|llms|genai|copilot)\b/i.test(text)) {
-    return 'AI_AUTOMATION';
+    return 'AI';
+  }
+
+  // Check Sales
+  if (text.includes('quote') || text.includes('pricing') || text.includes('deal') || text.includes('proposal') || text.includes('follow-up')) {
+    return 'SALES';
   }
 
   // Check Marketing & Customer Acquisition
-  if (text.includes('seo') || text.includes('marketing') || text.includes('acquisition') || text.includes('google business') || text.includes('lead') || text.includes('customers')) {
+  if (text.includes('seo') || text.includes('marketing') || text.includes('google business') || text.includes('lead') || text.includes('ads') || text.includes('social media')) {
     return 'MARKETING';
   }
 
-  // Check Websites & Online Presence
-  if (text.includes('website') || text.includes('landing page') || text.includes('online presence') || text.includes('credibility') || text.includes('conversion')) {
-    return 'ONLINE_PRESENCE';
+  // Check Websites & Landing Pages
+  if (text.includes('website') || text.includes('landing page') || text.includes('online presence') || text.includes('mobile') || text.includes('ux') || text.includes('form')) {
+    return 'WEBSITE';
   }
 
-  // Check Small Business Operations
-  if (text.includes('small business') || text.includes('productivity') || text.includes('efficiency') || text.includes('workflow') || text.includes('operations')) {
+  // Check Customer Experience
+  if (text.includes('customer experience') || text.includes('first impression') || text.includes('response time') || text.includes('trust') || text.includes('reputation')) {
+    return 'CUSTOMER_EXPERIENCE';
+  }
+
+  // Check Small Business Operations & Productivity
+  if (text.includes('small business') || text.includes('productivity') || text.includes('efficiency') || text.includes('workflow') || text.includes('operations') || text.includes('entrepreneur')) {
     return 'SMALL_BUSINESS';
   }
 
-  // Check Local Business / Tourism / Regional Service
-  if (text.includes('local business') || text.includes('tourism') || text.includes('restaurant') || text.includes('tradesperson') || text.includes('regional')) {
+  // Check Local Business / Services
+  if (text.includes('local business') || text.includes('tourism') || text.includes('restaurant') || text.includes('tradesperson') || text.includes('local')) {
     return 'LOCAL_BUSINESS';
   }
 
-  // Default to Web & Technology
-  return 'WEB_TECHNOLOGY';
+  // Default to WEBSITE
+  return 'WEBSITE';
 }
 
 export interface RelevanceScoreResult {
@@ -139,7 +156,7 @@ export interface RelevanceScoreResult {
 }
 
 /**
- * Evaluates relevance to NorthSoft's small-business digital audience.
+ * Evaluates relevance and basic quality for small-business digital audience.
  */
 export function evaluateRelevance(title: string, summary: string, categories: string[] = []): RelevanceScoreResult {
   const exclusion = isExcludedTopic(title, summary);
@@ -147,7 +164,7 @@ export function evaluateRelevance(title: string, summary: string, categories: st
     return {
       score: 0,
       passed: false,
-      pillar: 'WEB_TECHNOLOGY',
+      pillar: 'WEBSITE',
       reason: exclusion.reason || 'Excluded topic category',
     };
   }
@@ -157,7 +174,7 @@ export function evaluateRelevance(title: string, summary: string, categories: st
 
   let score = 50; // Baseline score
 
-  // Positive signals relating to NorthSoft audience (websites, digital presence, marketing, AI, automation)
+  // Positive signals relating to NorthSoft audience
   const businessSignals = [
     'business', 'customer', 'website', 'web', 'online', 'digital', 'sales', 'growth',
     'local', 'service', 'automation', 'productivity', 'seo', 'google', 'marketing',
@@ -172,7 +189,7 @@ export function evaluateRelevance(title: string, summary: string, categories: st
   score += Math.min(30, matchedSignals.length * 6);
 
   // Pillar specific bonuses
-  if (pillar === 'ONLINE_PRESENCE' || pillar === 'MARKETING' || pillar === 'AI_AUTOMATION') {
+  if (pillar === 'WEBSITE' || pillar === 'MARKETING' || pillar === 'AI' || pillar === 'CUSTOMER_EXPERIENCE') {
     score += 10;
   }
 
@@ -182,16 +199,56 @@ export function evaluateRelevance(title: string, summary: string, categories: st
   }
 
   score = Math.max(0, Math.min(100, score));
-  const passed = score >= 55;
+  const passed = score >= 40; // Fair baseline for simple inspiration ideas
 
   return {
     score,
     passed,
     pillar,
     reason: passed
-      ? `Relevant to NorthSoft small-business target audience (${pillar})`
-      : `Score ${score} below NorthSoft relevance threshold of 55`,
+      ? `Relevant to NorthSoft target audience (${pillar})`
+      : `Score ${score} below baseline relevance threshold of 40`,
   };
+}
+
+export interface DiversityScoreParams {
+  sourceUsefulness: number; // 0-100
+  businessRelevance: number; // 0-100
+  engagementPotential: number; // 0-100
+  commercialRelevance: number; // 0-100
+  freshnessDays: number;
+  isDuplicateAngle: boolean;
+  recentPillarCount: number; // Number of recent publications in this pillar
+}
+
+/**
+ * Calculates holistic Content Score evaluating usefulness, engagement, commercial relevance,
+ * freshness, angle novelty, and diversity penalties.
+ */
+export function calculateContentScore(params: DiversityScoreParams): number {
+  let score = 0;
+  score += params.sourceUsefulness * 0.2;
+  score += params.businessRelevance * 0.2;
+  score += params.engagementPotential * 0.3;
+  score += params.commercialRelevance * 0.3;
+
+  // Freshness bonus
+  if (params.freshnessDays <= 2) score += 10;
+  else if (params.freshnessDays <= 7) score += 5;
+
+  // Diversity bonus / Recent pillar penalty
+  if (params.recentPillarCount === 0) {
+    score += 15; // Diversity bonus for underrepresented pillars
+  } else {
+    score -= Math.min(30, params.recentPillarCount * 10); // Recent topic penalty
+  }
+
+  // Duplicate angle penalty
+  if (params.isDuplicateAngle) {
+    score -= 50;
+  }
+
+  return Math.max(0, Math.round(score));
 }
 
 export interface SelectableCandidate<T> {
@@ -200,11 +257,11 @@ export interface SelectableCandidate<T> {
   score: number;
 }
 
-export const MAX_AI_RESEARCH_CANDIDATES_PER_RUN = 6;
-export const MAX_CANDIDATES_PER_PILLAR = 2;
+export const MAX_AI_RESEARCH_CANDIDATES_PER_RUN = 12;
+export const MAX_CANDIDATES_PER_PILLAR = 3;
 
 /**
- * Multi-pillar diversity selection: Selects up to maxTotal candidates
+ * Multi-pillar diversity selection: Selects candidates up to maxTotal
  * while enforcing maxPerPillar constraint to avoid single-pillar domination.
  */
 export function selectDiverseCandidates<T>(

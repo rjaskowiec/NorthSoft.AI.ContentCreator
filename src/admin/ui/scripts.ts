@@ -751,7 +751,7 @@ export function getAdminScripts(): string {
         if (alertEl) {
           if (res.ok && data.success) {
             const s = data.summary || {};
-            const created = s.topicsCreated || 0;
+            const created = s.topicsCreated || s.ideasQueued || 0;
             let breakdownText = 'None';
             if (s.pillarBreakdown) {
               breakdownText = Object.entries(s.pillarBreakdown).map(([k, v]) => k + ': ' + v).join(', ');
@@ -759,18 +759,22 @@ export function getAdminScripts(): string {
 
             if (created > 0) {
               alertEl.innerHTML = \`
-                <strong>Research run completed! Discovered \${created} candidate topics.</strong>
+                <strong>Content discovery completed! Added \${created} new ideas to content queue.</strong>
                 <div style="margin-top:0.35rem; font-size:0.85rem; line-height:1.4;">
-                  Discovered: \${s.itemsDiscovered || 0} raw | Unique: \${s.itemsNormalized || 0} | Irrelevant: \${s.rejectedIrrelevant || 0} | Low Quality: \${s.rejectedLowQuality || 0} | Duplicates: \${s.duplicatesFound || 0}<br/>
+                  Discovered: \${s.itemsDiscovered || 0} raw | Unique: \${s.itemsNormalized || 0} | Irrelevant: \${s.rejectedIrrelevant || 0} | Duplicates: \${s.duplicatesFound || 0}<br/>
                   <em>Pillars: \${escapeHtml(breakdownText)}</em>
                 </div>
               \`;
             } else {
+              const primaryReason = (s.duplicatesFound || 0) > 0 && (s.itemsDiscovered || 0) > 0
+                ? 'All discovered items were previously processed or exist in candidate queue.'
+                : 'No sufficiently useful business-oriented ideas found in this run.';
               alertEl.innerHTML = \`
-                <strong>Research run completed with 0 candidate topics.</strong>
+                <strong>Content discovery completed. 0 new ideas added.</strong>
                 <div style="margin-top:0.35rem; font-size:0.85rem; line-height:1.4;">
-                  Discovered: \${s.itemsDiscovered || 0} raw | Unique: \${s.itemsNormalized || 0} | Irrelevant: \${s.rejectedIrrelevant || 0} | Low Quality: \${s.rejectedLowQuality || 0} | Duplicates: \${s.duplicatesFound || 0}<br/>
-                  <em>Primary reason: No candidate topics passed NorthSoft relevance and quality thresholds.</em>
+                  Sources checked: \${s.sourcesChecked || 0} | Discovered: \${s.itemsDiscovered || 0} raw | Duplicates: \${s.duplicatesFound || 0}<br/>
+                  <em>Primary reason: \${primaryReason}</em><br/>
+                  Existing content queue remains active for generation.
                 </div>
               \`;
             }

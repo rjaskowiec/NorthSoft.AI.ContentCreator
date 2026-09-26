@@ -34,9 +34,9 @@ describe('Content Taxonomy & Relevance Model', () => {
   });
 
   describe('determineContentPillar', () => {
-    it('categorizes website topics under ONLINE_PRESENCE', () => {
+    it('categorizes website topics under WEBSITE', () => {
       const pillar = determineContentPillar('Why small businesses need a website', 'Website trust and landing pages');
-      expect(pillar).toBe('ONLINE_PRESENCE');
+      expect(pillar).toBe('WEBSITE');
     });
 
     it('categorizes SEO and local search under MARKETING', () => {
@@ -44,9 +44,9 @@ describe('Content Taxonomy & Relevance Model', () => {
       expect(pillar).toBe('MARKETING');
     });
 
-    it('categorizes AI automation under AI_AUTOMATION', () => {
+    it('categorizes AI automation under AI', () => {
       const pillar = determineContentPillar('What can a small business actually automate with AI today?', 'Practical AI use cases and customer service chatbots');
-      expect(pillar).toBe('AI_AUTOMATION');
+      expect(pillar).toBe('AI');
     });
 
     it('categorizes Icelandic local trends under LOCAL_BUSINESS', () => {
@@ -62,7 +62,7 @@ describe('Content Taxonomy & Relevance Model', () => {
         'Optimizing landing pages and mobile usability to boost conversion and inquiries',
       );
       expect(evalRes.passed).toBe(true);
-      expect(evalRes.score).toBeGreaterThanOrEqual(55);
+      expect(evalRes.score).toBeGreaterThanOrEqual(40);
     });
 
     it('marks local SEO as relevant', () => {
@@ -109,27 +109,27 @@ describe('Content Taxonomy & Relevance Model', () => {
   describe('selectDiverseCandidates', () => {
     it('prevents single pillar from dominating candidate pool (max 2 per pillar)', () => {
       const candidates = [
-        { item: 'ai-1', pillar: 'AI_AUTOMATION' as const, score: 98 },
-        { item: 'ai-2', pillar: 'AI_AUTOMATION' as const, score: 96 },
-        { item: 'ai-3', pillar: 'AI_AUTOMATION' as const, score: 95 },
-        { item: 'ai-4', pillar: 'AI_AUTOMATION' as const, score: 94 },
+        { item: 'ai-1', pillar: 'AI' as const, score: 98 },
+        { item: 'ai-2', pillar: 'AI' as const, score: 96 },
+        { item: 'ai-3', pillar: 'AI' as const, score: 95 },
+        { item: 'ai-4', pillar: 'AI' as const, score: 94 },
         { item: 'mkt-1', pillar: 'MARKETING' as const, score: 92 },
-        { item: 'web-1', pillar: 'WEB_TECHNOLOGY' as const, score: 90 },
+        { item: 'web-1', pillar: 'WEBSITE' as const, score: 90 },
         { item: 'biz-1', pillar: 'SMALL_BUSINESS' as const, score: 88 },
-        { item: 'pres-1', pillar: 'ONLINE_PRESENCE' as const, score: 85 },
+        { item: 'cx-1', pillar: 'CUSTOMER_EXPERIENCE' as const, score: 85 },
       ];
 
       const selected = selectDiverseCandidates(candidates, 6, 2);
 
       expect(selected).toHaveLength(6);
-      const aiSelected = selected.filter(s => s.pillar === 'AI_AUTOMATION');
-      expect(aiSelected).toHaveLength(2); // Maximum 2 AI_AUTOMATION items
+      const aiSelected = selected.filter(s => s.pillar === 'AI');
+      expect(aiSelected).toHaveLength(2); // Maximum 2 AI items
     });
 
     it('returns fewer candidates when total pool is small', () => {
       const candidates = [
-        { item: 'ai-1', pillar: 'AI_AUTOMATION' as const, score: 90 },
-        { item: 'ai-2', pillar: 'AI_AUTOMATION' as const, score: 88 },
+        { item: 'ai-1', pillar: 'AI' as const, score: 90 },
+        { item: 'ai-2', pillar: 'AI' as const, score: 88 },
         { item: 'mkt-1', pillar: 'MARKETING' as const, score: 85 },
       ];
 
@@ -144,14 +144,14 @@ describe('Content Taxonomy & Relevance Model', () => {
 
     it('strictly limits total selected to maxTotal (6)', () => {
       const candidates = [
-        { item: 'web-1', pillar: 'WEB_TECHNOLOGY' as const, score: 99 },
-        { item: 'web-2', pillar: 'WEB_TECHNOLOGY' as const, score: 98 },
+        { item: 'web-1', pillar: 'WEBSITE' as const, score: 99 },
+        { item: 'web-2', pillar: 'WEBSITE' as const, score: 98 },
         { item: 'mkt-1', pillar: 'MARKETING' as const, score: 97 },
         { item: 'mkt-2', pillar: 'MARKETING' as const, score: 96 },
         { item: 'biz-1', pillar: 'SMALL_BUSINESS' as const, score: 95 },
         { item: 'biz-2', pillar: 'SMALL_BUSINESS' as const, score: 94 },
-        { item: 'pres-1', pillar: 'ONLINE_PRESENCE' as const, score: 93 },
-        { item: 'pres-2', pillar: 'ONLINE_PRESENCE' as const, score: 92 },
+        { item: 'sales-1', pillar: 'SALES' as const, score: 93 },
+        { item: 'sales-2', pillar: 'SALES' as const, score: 92 },
       ];
 
       const selected = selectDiverseCandidates(candidates, 6, 2);

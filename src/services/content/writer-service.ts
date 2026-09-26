@@ -1,8 +1,8 @@
 /**
  * NorthSoft.AI.ContentCreator — Autonomous Writer Service
  *
- * Transforms research topics and evidence into structured, factually grounded
- * post drafts following NorthSoft's professional tone and zero-cost AI constraints.
+ * Transforms content idea angles into structured, highly engaging social media posts
+ * for small and local business owners.
  */
 
 import type { IAIProvider } from '../../ai/provider';
@@ -39,6 +39,8 @@ export interface ResearchTopicItem {
   title: string;
   description: string;
   category: string;
+  content_angle?: string;
+  hook?: string;
 }
 
 export class WriterService {
@@ -52,7 +54,7 @@ export class WriterService {
   }
 
   /**
-   * Generates a structured post draft from an approved research topic.
+   * Generates a structured social post draft from a queued content idea.
    */
   async generateDraft(
     topic: ResearchTopicItem,
@@ -73,31 +75,38 @@ export class WriterService {
       };
     }
 
-    const systemPrompt = `You are a Senior Technical Content Writer for NorthSoft AI.
-Your objective is to craft an engaging, clear, technically grounded Facebook post based STRICTLY on verified research evidence.
+    const systemPrompt = `You are a Senior Social Media Copywriter for NorthSoft AI.
+Your objective is to craft a short, engaging, practical social media post for small business owners.
 
 NorthSoft Brand Voice Guidelines:
-- Tone: Professional, clear, technically grounded, accessible, human, confident.
-- Strictly AVOID clickbait and exaggerated hype (NEVER use "Exciting news! 🚀", "Game changer!", "You won't believe...", "Revolutionary!").
-- Target post body length: 400 to 1,200 characters.
-- Hashtags: Maximum 2-3 relevant technical hashtags (e.g. #Cloudflare #WebDev).
-- Include a subtle, value-driven call to action if appropriate.
+- Tone: Accessible, conversational, human, engaging, practical, confident.
+- Format: Short, punchy paragraphs with clear bullet points.
+- Structure:
+  1. Scroll-stopping hook (first 1-2 lines).
+  2. Quick bite of useful value / practical tip (3-5 bullet points).
+  3. Engaging question to encourage comments & shares.
+  4. Subtle, natural bridge showing how NorthSoft can help.
+- Target post body length: 300 to 900 characters.
+- Hashtags: 2-3 relevant hashtags (#SmallBusiness #Websites #Automation).
 
 Return ONLY a valid JSON object matching this schema:
 {
   "title": "Clear headline for the post",
   "body": "Full post body text",
   "language": "en",
-  "tone": "professional",
+  "tone": "conversational",
   "claims": [
-    { "text": "Specific factual claim assertion", "sourceIds": ["src-1"] }
+    { "text": "Main practical insight", "sourceIds": ["src-1"] }
   ],
   "hashtags": ["#Category1", "#Category2"],
-  "callToAction": "Subtle CTA text or null"
+  "callToAction": "Subtle CTA text"
 }`;
 
     const researchContext =
-      `Topic: ${topic.title}\nDescription: ${topic.description}\n` +
+      `Topic Title: ${topic.title}\n` +
+      `Content Angle: ${topic.content_angle || topic.description}\n` +
+      `Hook: ${topic.hook || topic.title}\n` +
+      `Category/Pillar: ${topic.category}\n` +
       `Sources:\n` +
       sources
         .map((s) => `[ID: ${s.id}] Title: ${s.title}\nURL: ${s.url}\nSummary: ${s.summary}`)
@@ -130,7 +139,6 @@ Return ONLY a valid JSON object matching this schema:
         durationMs: completion.durationMs,
       });
 
-      // Parse and validate structured output
       const rawText = completion.content;
       let parsed: Record<string, unknown>;
 
@@ -162,7 +170,7 @@ Return ONLY a valid JSON object matching this schema:
         title: typeof parsed.title === 'string' ? parsed.title : topic.title,
         body: bodyText,
         language: typeof parsed.language === 'string' ? parsed.language : 'en',
-        tone: typeof parsed.tone === 'string' ? parsed.tone : 'professional',
+        tone: typeof parsed.tone === 'string' ? parsed.tone : 'conversational',
         topicId: topic.id,
         sourceIds: sources.map((s) => s.id),
         claims: claimsList,

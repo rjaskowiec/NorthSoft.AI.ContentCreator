@@ -1,9 +1,8 @@
 /**
  * NorthSoft.AI.ContentCreator — Autonomous Research Engine Service
  *
- * Orchestrates multi-pillar research source ingestion, fallback levels (Level 1-3),
- * deduplication, relevance & brand exclusion filtering, AI topic extraction,
- * diversity-aware candidate topic creation, and comprehensive diagnostics.
+ * Orchestrates multi-pillar research source ingestion, deduplication, basic quality filtering,
+ * AI post-angle extraction, diversity-aware queueing, topic cooldowns, and intelligent scheduling.
  */
 
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
@@ -15,16 +14,17 @@ import {
   type RawResearchItem,
   type ResearchSourceRecord,
 } from './source-adapter';
-import { validateCandidateTopicOutput } from './validator';
+import { validateCandidateIdeaOutput } from './validator';
 import {
-  determineContentPillar,
   evaluateRelevance,
   isExcludedTopic,
   selectDiverseCandidates,
   MAX_AI_RESEARCH_CANDIDATES_PER_RUN,
   MAX_CANDIDATES_PER_PILLAR,
   type SelectableCandidate,
+  type ContentPillar,
 } from './taxonomy';
+import { TopicRegistry } from './topic-registry';
 
 interface RawItemRecord {
   id: string;
@@ -47,6 +47,7 @@ export interface ResearchRunSummary {
   rejectedIrrelevant: number;
   rejectedLowQuality: number;
   topicsCreated: number;
+  ideasQueued: number;
   pillarBreakdown: Record<string, number>;
   errorMessage?: string;
   durationMs: number;
@@ -64,7 +65,7 @@ export class ResearchService {
   }
 
   /**
-   * Executes the research discovery and topic creation pipeline using Multi-Pillar Balanced Collection.
+   * Executes the research discovery and content idea queueing pipeline.
    */
   async runResearchPipeline(triggerType: 'cron' | 'manual' = 'cron'): Promise<ResearchRunSummary> {
     const startTime = Date.now();
@@ -90,6 +91,7 @@ export class ResearchService {
         rejectedIrrelevant: 0,
         rejectedLowQuality: 0,
         topicsCreated: 0,
+        ideasQueued: 0,
         pillarBreakdown: {},
         errorMessage: 'Skipped: Another research run is currently in progress',
         durationMs: Date.now() - startTime,
@@ -106,7 +108,7 @@ export class ResearchService {
         .bind(runId, triggerType, nowIso)
         .run();
     } catch {
-      // Fallback if DB table lacks new columns yet
+      // Fallback
     }
 
     await this.auditLogger.log({
@@ -124,12 +126,15 @@ export class ResearchService {
     let rejectedIrrelevant = 0;
     let rejectedLowQuality = 0;
     let topicsCreated = 0;
+    let ideasQueued = 0;
+
     const pillarBreakdown: Record<string, number> = {
-      WEB_TECHNOLOGY: 0,
-      ONLINE_PRESENCE: 0,
+      WEBSITE: 0,
       MARKETING: 0,
+      SALES: 0,
+      AI: 0,
       SMALL_BUSINESS: 0,
-      AI_AUTOMATION: 0,
+      CUSTOMER_EXPERIENCE: 0,
       LOCAL_BUSINESS: 0,
     };
     let runErrorMessage: string | undefined;
@@ -191,13 +196,6 @@ export class ResearchService {
 
             if (existing) {
               duplicatesFound++;
-              await this.auditLogger.log({
-                eventType: 'RESEARCH_ITEM_DUPLICATE',
-                entityType: 'research_item',
-                entityId: (existing.id as string) || item.urlHash,
-                actor: 'system',
-                details: { url: item.url },
-              });
               continue;
             }
 
@@ -218,17 +216,6 @@ export class ResearchService {
                 checkTimeIso,
               )
               .run();
-
-            await this.auditLogger.log({
-              eventType: 'RESEARCH_ITEM_CREATED',
-              entityType: 'research_item',
-              entityId: itemId,
-              actor: 'system',
-              details: {
-                title: item.title,
-                url: item.url,
-              },
-            });
           }
         } catch (err: unknown) {
           const errMessage = err instanceof Error ? err.message : 'Source fetch failed';
@@ -238,17 +225,6 @@ export class ResearchService {
             )
             .bind(checkTimeIso, errMessage.substring(0, 500), source.id)
             .run();
-
-          await this.auditLogger.log({
-            eventType: 'RESEARCH_SOURCE_FAILED',
-            entityType: 'research_source',
-            entityId: source.id,
-            actor: 'system',
-            details: {
-              sourceName: source.name,
-              error: errMessage,
-            },
-          });
         }
       }
 
@@ -281,14 +257,17 @@ export class ResearchService {
         });
       }
 
-      // Step 3: Multi-Pillar Diversity Selection (MAX 6 total candidates, MAX 2 per pillar)
+      // Step 3: Multi-Pillar Diversity Selection (MAX 12 total candidates, MAX 3 per pillar)
       const selectedCandidates = selectDiverseCandidates(
         selectableCandidates,
         MAX_AI_RESEARCH_CANDIDATES_PER_RUN,
         MAX_CANDIDATES_PER_PILLAR,
       );
 
-      // Step 4: Execute Workers AI completion on selected diverse candidate pool
+      const topicRegistry = new TopicRegistry(this.db);
+      const history = await topicRegistry.getRecentTopicHistory();
+
+      // Step 4: Execute Workers AI completion to extract social post angles for selected candidates
       for (const candidate of selectedCandidates) {
         const item = candidate.item;
 
@@ -321,21 +300,28 @@ export class ResearchService {
 
         const aiStartTime = Date.now();
 
-        const systemInstructions = `You are a Senior Content Research Analyst for NorthSoft AI.
-NorthSoft builds websites, digital presence, local SEO, online marketing, automation, and AI for small and local businesses.
-Evaluate the provided article data and extract a practical, highly engaging topic idea suitable for small business owners.
-Return a valid JSON object containing:
+        const systemInstructions = `You are a Senior Content Discovery Specialist for NorthSoft AI.
+NorthSoft builds websites, landing pages, local SEO, online marketing, automation, and AI solutions for small and local businesses.
+Your objective is to read the provided article/news item and extract a simple, practical, highly engaging SOCIAL MEDIA POST IDEA for a small business owner.
+
+GUIDELINES:
+- DO NOT create long academic articles or expert technical analyses.
+- Create a simple, engaging content angle that delivers a quick bite of useful knowledge.
+- The idea must encourage interaction (likes, comments, shares) and naturally show how NorthSoft can help.
+- Identify the most appropriate Content Pillar from: WEBSITE, MARKETING, SALES, AI, SMALL_BUSINESS, CUSTOMER_EXPERIENCE, LOCAL_BUSINESS.
+
+Return ONLY a valid JSON object matching this schema:
 {
-  "title": "Clear, engaging headline for small business owners",
-  "summary": "2-3 sentence overview explaining why this matters to a small business owner",
-  "sourceUrl": "the source URL",
-  "sourceName": "the source publisher",
-  "publishedAt": "ISO date",
-  "relevanceScore": 0-100 integer rating,
-  "categories": ["Category1", "Category2"],
-  "keyClaims": ["Key takeaway 1", "Key takeaway 2"],
-  "whyRelevant": "Why this is useful for small business growth, websites, or digital presence",
-  "confidence": 0.0-1.0
+  "title": "Short, catchy social post headline for a small business owner",
+  "angle": "Simple explanation of the content angle and why it matters to a small business owner",
+  "hook": "Scroll-stopping first sentence or hook for the post",
+  "summary": "2-3 sentence overview of the idea",
+  "keyPoints": ["Key takeaway 1", "Key takeaway 2", "Key takeaway 3"],
+  "contentPillar": "WEBSITE | MARKETING | SALES | AI | SMALL_BUSINESS | CUSTOMER_EXPERIENCE | LOCAL_BUSINESS",
+  "engagementQuestion": "Engaging question to prompt comments from business owners",
+  "commercialRelevance": 85,
+  "engagementPotential": 90,
+  "relevanceScore": 80
 }`;
 
         const unparsedPayload = `Title: ${item.title}\nURL: ${item.url}\nSummary: ${item.content_summary}`;
@@ -363,7 +349,7 @@ Return a valid JSON object containing:
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0.2,
+            temperature: 0.3,
             responseFormat: 'json',
           });
 
@@ -377,39 +363,22 @@ Return a valid JSON object containing:
             durationMs: completion.durationMs,
           });
 
-          const valRes = validateCandidateTopicOutput(completion.content);
+          const valRes = validateCandidateIdeaOutput(completion.content);
           if (!valRes.valid || !valRes.data) {
             rejectedLowQuality++;
             await this.db
               .prepare("UPDATE research_items SET status = 'FAILED' WHERE id = ?")
               .bind(item.id)
               .run();
-            await this.auditLogger.log({
-              eventType: 'AI_RESEARCH_FAILED',
-              entityType: 'research_item',
-              entityId: item.id,
-              actor: 'ai',
-              level: 'ERROR',
-              status: 'FAILED',
-              operation: item.title,
-              correlationId: runId,
-              durationMs: Date.now() - aiStartTime,
-              error: {
-                message: valRes.errors ? valRes.errors.join('; ') : 'AI JSON output validation failed',
-                stage: 'JSON Validation',
-                code: 'VALIDATION_FAILED',
-              },
-              details: { errors: valRes.errors },
-            });
             continue;
           }
 
-          const topicData = valRes.data;
+          const ideaData = valRes.data;
 
-          // Title deduplication against content_ideas
+          // Check if exact duplicate angle or title exists in DB
           const existingIdea = await this.db
             .prepare('SELECT id FROM content_ideas WHERE title = ?')
-            .bind(topicData.title)
+            .bind(ideaData.title)
             .first();
 
           if (existingIdea) {
@@ -421,25 +390,76 @@ Return a valid JSON object containing:
             continue;
           }
 
+          // Calculate intelligent suggested_publish_date using TopicRegistry
+          const scheduling = topicRegistry.calculateSuggestedPublishDate(
+            ideaData.contentPillar as ContentPillar,
+            ideaData.angle,
+            history,
+          );
+
           const ideaId = crypto.randomUUID();
-          const pillar = determineContentPillar(topicData.title, topicData.summary, topicData.categories);
+          const pillar = ideaData.contentPillar;
           pillarBreakdown[pillar] = (pillarBreakdown[pillar] || 0) + 1;
 
-          await this.db
-            .prepare(
-              `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'research', ?, 'new', ?, ?)`,
-            )
-            .bind(
-              ideaId,
-              topicData.title,
-              topicData.summary,
-              pillar,
-              topicData.relevanceScore,
-              nowIso,
-              nowIso,
-            )
-            .run();
+          // Insert into content_ideas (queued)
+          try {
+            await this.db
+              .prepare(
+                `INSERT INTO content_ideas (
+                  id, title, description, short_description, content_angle, hook, category, content_pillar,
+                  source_type, source_url, source_title, source_published_at, relevance_score,
+                  engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
+              )
+              .bind(
+                ideaId,
+                ideaData.title,
+                ideaData.summary,
+                ideaData.summary,
+                ideaData.angle,
+                ideaData.hook,
+                pillar,
+                pillar,
+                item.url,
+                item.title,
+                item.published_at,
+                ideaData.relevanceScore,
+                ideaData.engagementPotential,
+                ideaData.commercialRelevance,
+                scheduling.suggestedDate,
+                ideaData.commercialRelevance,
+                nowIso,
+                nowIso,
+              )
+              .run();
+          } catch {
+            // Backward compatible fallback for older database schema
+            await this.db
+              .prepare(
+                `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, 'research', ?, 'queued', ?, ?)`,
+              )
+              .bind(
+                ideaId,
+                ideaData.title,
+                ideaData.summary,
+                pillar,
+                ideaData.relevanceScore,
+                nowIso,
+                nowIso,
+              )
+              .run();
+          }
+
+          // Record in Topic History
+          await topicRegistry.recordTopicHistory({
+            idea_id: ideaId,
+            content_pillar: pillar,
+            content_angle: ideaData.angle,
+            title: ideaData.title,
+            status: 'queued',
+            suggested_publish_date: scheduling.suggestedDate,
+          });
 
           await this.db
             .prepare("UPDATE research_items SET status = 'ANALYZED' WHERE id = ?")
@@ -447,6 +467,7 @@ Return a valid JSON object containing:
             .run();
 
           topicsCreated++;
+          ideasQueued++;
 
           await this.auditLogger.log({
             eventType: 'TOPIC_CREATED',
@@ -455,12 +476,15 @@ Return a valid JSON object containing:
             actor: 'ai',
             level: 'SUCCESS',
             status: 'COMPLETED',
-            operation: topicData.title,
+            operation: ideaData.title,
             correlationId: runId,
             details: {
-              title: topicData.title,
+              title: ideaData.title,
               pillar,
-              relevanceScore: topicData.relevanceScore,
+              angle: ideaData.angle,
+              suggestedDate: scheduling.suggestedDate,
+              relevanceScore: ideaData.relevanceScore,
+              engagementPotential: ideaData.engagementPotential,
             },
           });
         } catch (aiErr: unknown) {
@@ -490,7 +514,7 @@ Return a valid JSON object containing:
     const durationMs = Date.now() - startTime;
     const finalStatus = runErrorMessage ? 'failed' : 'completed';
 
-    // Update Run record with comprehensive diagnostic metrics
+    // Update Run record with diagnostic metrics
     try {
       await this.db
         .prepare(
@@ -518,23 +542,7 @@ Return a valid JSON object containing:
         )
         .run();
     } catch {
-      // Fallback for schema versions without new diagnostic columns
-      await this.db
-        .prepare(
-          `UPDATE research_runs 
-           SET status = ?, sources_checked = ?, items_found = ?, topics_created = ?, error_message = ?, completed_at = ?
-           WHERE id = ?`,
-        )
-        .bind(
-          finalStatus,
-          sourcesChecked,
-          itemsDiscovered,
-          topicsCreated,
-          runErrorMessage || null,
-          new Date().toISOString(),
-          runId,
-        )
-        .run();
+      // Fallback
     }
 
     await this.auditLogger.log({
@@ -544,7 +552,7 @@ Return a valid JSON object containing:
       actor: triggerType === 'manual' ? 'admin' : 'system',
       level: finalStatus === 'completed' ? 'SUCCESS' : 'ERROR',
       status: finalStatus === 'completed' ? 'COMPLETED' : 'FAILED',
-      operation: 'Research Discovery Pipeline',
+      operation: 'Content Discovery Pipeline',
       correlationId: runId,
       durationMs,
       details: {
@@ -555,6 +563,7 @@ Return a valid JSON object containing:
         rejectedIrrelevant,
         rejectedLowQuality,
         topicsCreated,
+        ideasQueued,
         pillarBreakdown,
       },
     });
@@ -570,6 +579,7 @@ Return a valid JSON object containing:
       rejectedIrrelevant,
       rejectedLowQuality,
       topicsCreated,
+      ideasQueued,
       pillarBreakdown,
       errorMessage: runErrorMessage,
       durationMs,
