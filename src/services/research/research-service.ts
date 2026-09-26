@@ -115,7 +115,7 @@ export class ResearchService {
         ideasQueued: 0,
         ideasDeferred: 0,
         aiProviderName: this.aiProvider.name,
-        aiModelName: '@cf/meta/llama-3.1-8b-instruct',
+        aiModelName: '@cf/meta/llama-3.1-8b-instruct-fp8',
         aiInferenceRequests: 0,
         aiInferenceSuccessful: 0,
         aiInferenceFailed: 0,
@@ -640,7 +640,7 @@ Return ONLY a valid JSON object matching this schema:
         ideasDeferred,
         pillarBreakdown,
         aiProviderName: this.aiProvider.name,
-        aiModelName: '@cf/meta/llama-3.1-8b-instruct',
+        aiModelName: '@cf/meta/llama-3.1-8b-instruct-fp8',
         aiInferenceRequests,
         aiInferenceSuccessful,
         aiInferenceFailed,
@@ -651,7 +651,7 @@ Return ONLY a valid JSON object matching this schema:
     console.log(
       `[AI DISCOVERY METRICS]\n` +
         `AI provider: ${this.aiProvider.name}\n` +
-        `Model: @cf/meta/llama-3.1-8b-instruct\n` +
+        `Model: @cf/meta/llama-3.1-8b-instruct-fp8\n` +
         `Inference requests: ${aiInferenceRequests}\n` +
         `Successful responses: ${aiInferenceSuccessful}\n` +
         `Failed responses: ${aiInferenceFailed}\n` +
@@ -678,7 +678,7 @@ Return ONLY a valid JSON object matching this schema:
       ideasQueued,
       ideasDeferred,
       aiProviderName: this.aiProvider.name,
-      aiModelName: '@cf/meta/llama-3.1-8b-instruct',
+      aiModelName: '@cf/meta/llama-3.1-8b-instruct-fp8',
       aiInferenceRequests,
       aiInferenceSuccessful,
       aiInferenceFailed,

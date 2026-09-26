@@ -20,7 +20,7 @@ export class CloudflareWorkersAIProvider implements IAIProvider {
 
   constructor(config?: CloudflareWorkersAIConfig) {
     this.aiBinding = config?.aiBinding;
-    this.defaultModel = config?.defaultModel || '@cf/meta/llama-3.1-8b-instruct';
+    this.defaultModel = config?.defaultModel || '@cf/meta/llama-3.1-8b-instruct-fp8';
   }
 
   async complete(request: AICompletionRequest): Promise<AICompletionResult> {
