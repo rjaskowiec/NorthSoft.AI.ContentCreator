@@ -300,33 +300,33 @@ export function renderAdminHtml(): string {
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Cloudflare Verified Telemetry (Official Cloudflare Analytics)</div>
-                <div id="cf-telemetry-badge"><span class="status-badge status-active">CHECKING...</span></div>
+                <div id="cf-telemetry-badge"><span class="status-badge status-active">CHECKING API...</span></div>
               </div>
               <div class="section-grid" style="margin-bottom:0.75rem;">
                 <div>
-                  <div class="card-label">Actual Cloudflare Neurons</div>
-                  <div style="font-size:1.25rem; font-weight:700; color:var(--accent-cyan);" id="cf-neurons-val">Checking API...</div>
+                  <div class="card-label">Actual Neurons Today</div>
+                  <div style="font-size:1.5rem; font-weight:700; color:var(--accent-cyan);" id="cf-neurons-val">Checking API...</div>
                   <div class="card-sub" id="cf-period-sub">Period: Today (UTC)</div>
                 </div>
                 <div>
-                  <div class="card-label">Actual Cloudflare Requests</div>
+                  <div class="card-label">Cloudflare Requests Today</div>
                   <div style="font-size:1.1rem; font-weight:700;" id="cf-requests-val">—</div>
                   <div class="card-sub" id="cf-synced-sub">Last Synced: —</div>
                 </div>
                 <div>
                   <div class="card-label">Telemetry Source</div>
-                  <div style="font-size:0.95rem; font-weight:600;" id="cf-source-val">Cloudflare Analytics API</div>
+                  <div style="font-size:0.95rem; font-weight:600;" id="cf-source-val">Cloudflare Analytics GraphQL API</div>
                   <div class="card-sub"><a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:underline;">Open Cloudflare Dashboard ↗</a></div>
                 </div>
               </div>
               <div id="cf-notice-box" style="display:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border-radius:6px; font-size:0.85rem; color:var(--text-muted); border-left:3px solid var(--accent-orange);"></div>
             </div>
 
-            <!-- Panel 2: Application Execution Metrics & Local Safety Budget -->
+            <!-- Panel 2: Application Safety (Circuit Breaker) -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Application Execution Metrics &amp; Local Safety Budget</div>
-                <div id="ai-quota-badge"><span class="status-badge status-healthy">LOCAL SAFETY BUDGET OK</span></div>
+                <div class="panel-title">Application Safety (Circuit Breaker)</div>
+                <div id="ai-quota-badge"><span class="status-badge status-healthy">CIRCUIT BREAKER OK</span></div>
               </div>
               <div class="section-grid" style="margin-bottom:0;">
                 <div>
@@ -335,19 +335,38 @@ export function renderAdminHtml(): string {
                   <div class="card-sub">Zero Financial Cost Target</div>
                 </div>
                 <div>
-                  <div class="card-label">Daily Request Count</div>
+                  <div class="card-label">Requests Today (Circuit Breaker)</div>
                   <div style="font-size:1.1rem; font-weight:700;" id="ai-today-text">0 / 300 requests</div>
                   <div class="progress-bar-container">
                     <div id="ai-today-bar" class="progress-bar-fill" style="width: 0%;"></div>
                   </div>
                 </div>
                 <div>
-                  <div class="card-label">Daily Est. Tokens (Local Safety Cap)</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 / 7,500 Est. Tokens (Local Cap)</div>
-                  <div class="progress-bar-container">
-                    <div id="ai-neurons-bar" class="progress-bar-fill" style="width: 0%;"></div>
-                  </div>
-                  <div class="card-sub" style="margin-top:0.25rem;">Local cap to prevent runaway requests (char/4 heuristic).</div>
+                  <div class="card-label">Safety Purpose</div>
+                  <div style="font-size:0.9rem; font-weight:600; color:var(--text-muted);">Prevents runaway AI loops</div>
+                  <div class="card-sub" style="margin-top:0.25rem;">Independent application request cap.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel 3: Internal Diagnostics (Application Metric Only) -->
+            <div class="panel" style="border-left: 3px solid var(--accent-cyan);">
+              <div class="panel-header">
+                <div class="panel-title">Internal Diagnostics (Application Metric Only)</div>
+                <div><span class="status-badge status-neutral">INTERNAL ONLY</span></div>
+              </div>
+              <div class="section-grid" style="margin-bottom:0;">
+                <div>
+                  <div class="card-label">Estimated Tokens Today</div>
+                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 Est. Tokens</div>
+                </div>
+                <div>
+                  <div class="card-label">Estimation Method</div>
+                  <div style="font-size:0.9rem; font-weight:600;">character-length heuristic (char / 4)</div>
+                </div>
+                <div>
+                  <div class="card-label">Important Note</div>
+                  <div style="font-size:0.85rem; color:var(--text-muted);">This is an internal application metric. It is <strong>NOT Cloudflare usage</strong> and does NOT block AI calls.</div>
                 </div>
               </div>
             </div>

@@ -57,7 +57,7 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
     expect(result.neuronsUsed).toBe(0);
   });
 
-  it('defers execution and makes ZERO AI calls when Neuron Hard Budget (7,500) is exhausted', async () => {
+  it('defers execution and makes ZERO AI calls when daily request circuit breaker limit (300) is reached', async () => {
     const candidateTopic = {
       id: 'topic-99',
       title: 'Zero Trust Network Architecture',
@@ -83,7 +83,7 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
         return mockStmt({ first: null });
       }
       if (sql.includes('FROM ai_usage')) {
-        return mockStmt({ first: { req_total: 25, neuron_total: 7400 } });
+        return mockStmt({ first: { req_total: 300, neuron_total: 100 } });
       }
       return mockStmt({});
     });
@@ -95,7 +95,7 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
     const result = await orchestrator.runPipeline('cron');
 
     expect(result.status).toBe('deferred');
-    expect(result.errorMessage).toContain('Neuron hard limit reached');
+    expect(result.errorMessage).toContain('request limit reached');
     expect(result.neuronsUsed).toBe(0);
   });
 });

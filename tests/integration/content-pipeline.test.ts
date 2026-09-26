@@ -55,7 +55,7 @@ describe('Content Planner & Pipeline Integration', () => {
     expect(result.qualityScore).toBeGreaterThanOrEqual(70);
   });
 
-  it('defers draft generation when Neuron hard budget (7,500) is reached', async () => {
+  it('defers draft generation when daily request limit circuit breaker (300) is reached', async () => {
     const topicRow = {
       id: 'topic-200',
       title: 'Serverless Security Safeguards',
@@ -71,10 +71,10 @@ describe('Content Planner & Pipeline Integration', () => {
         return { all: vi.fn().mockResolvedValue({ results: [] }) };
       }
       if (sql.includes('FROM ai_usage')) {
-        // Return 7,600 neurons used today (exceeds 7,500 hard limit)
+        // Return 300 requests today (exceeds daily limit)
         return {
           bind: vi.fn().mockReturnValue({
-            first: vi.fn().mockResolvedValue({ req_total: 20, neuron_total: 7600 }),
+            first: vi.fn().mockResolvedValue({ req_total: 300, neuron_total: 100 }),
           }),
         };
       }
@@ -94,6 +94,6 @@ describe('Content Planner & Pipeline Integration', () => {
     const result = await planner.generatePostFromTopic('topic-200', 'system');
 
     expect(result.status).toBe('deferred');
-    expect(result.errorMessage).toContain('Neuron hard limit reached');
+    expect(result.errorMessage).toContain('request limit reached');
   });
 });

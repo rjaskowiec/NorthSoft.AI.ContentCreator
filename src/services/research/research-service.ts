@@ -623,12 +623,12 @@ Return ONLY a valid JSON object matching this schema:
       // Fallback
     }
 
-    // Fetch Telemetry Summary (Cloudflare Verified & Local Safety Budget)
+    // Fetch Telemetry Summary (Cloudflare Verified & Application Safety)
     const telemetry = await this.quotaManager.getFullUsageSummary(this.db, this.env);
-    const localEstTokens = telemetry.applicationMetrics.todayEstimatedTokens;
-    const cfVerifiedNeurons = telemetry.cloudflareVerifiedUsage.actualNeurons;
-    const usageSource = telemetry.cloudflareVerifiedUsage.source;
-    const usageTimestamp = telemetry.cloudflareVerifiedUsage.lastUpdated || new Date().toISOString();
+    const localEstTokens = telemetry.internalDiagnostics?.estimatedTokensToday ?? telemetry.todayNeurons ?? 0;
+    const cfVerifiedNeurons = telemetry.cloudflareVerifiedUsage?.actualNeurons ?? null;
+    const usageSource = telemetry.cloudflareVerifiedUsage?.source ?? 'Cloudflare Analytics';
+    const usageTimestamp = telemetry.cloudflareVerifiedUsage?.lastUpdated || new Date().toISOString();
 
     await this.auditLogger.log({
       eventType: 'RESEARCH_RUN_COMPLETED',

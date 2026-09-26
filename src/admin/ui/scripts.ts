@@ -487,36 +487,33 @@ export function getAdminScripts(): string {
             }
           }
 
-          // 2. Application Execution Metrics & Local Safety Budget Panel
+          // 2. Application Safety (Circuit Breaker) & Internal Diagnostics Panels
           const providerName = document.getElementById('ai-provider-name');
           if (providerName) providerName.textContent = sys.aiProvider || 'Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct-fp8)';
 
-          const todayRequests = app.todayRequests ?? usage.todayRequests ?? 0;
-          const dailyLimit = app.dailyLimit ?? usage.dailyLimit ?? 300;
-          const todayEstTokens = app.todayEstimatedTokens ?? usage.todayNeurons ?? 0;
-          const localCap = app.localSafetyCap ?? usage.hardNeuronLimit ?? 7500;
+          const appGuard = usage.applicationSafetyGuard || app;
+          const diag = usage.internalDiagnostics || {};
+
+          const todayRequests = appGuard.todayRequests ?? usage.todayRequests ?? 0;
+          const dailyLimit = appGuard.dailyLimit ?? usage.dailyLimit ?? 300;
+          const estTokens = diag.estimatedTokensToday ?? usage.todayNeurons ?? 0;
 
           const todayText = document.getElementById('ai-today-text');
           if (todayText) todayText.textContent = todayRequests + ' / ' + dailyLimit + ' requests';
 
           const neuronsText = document.getElementById('ai-neurons-text');
-          if (neuronsText) neuronsText.textContent = todayEstTokens + ' / ' + localCap + ' Est. Tokens (Local Cap)';
+          if (neuronsText) neuronsText.textContent = estTokens.toLocaleString() + ' Est. Tokens';
 
           const todayPct = Math.min(100, Math.round((todayRequests / dailyLimit) * 100));
-          const estTokenPct = Math.min(100, Math.round((todayEstTokens / localCap) * 100));
-
           const todayBar = document.getElementById('ai-today-bar');
           if (todayBar) todayBar.style.width = todayPct + '%';
 
-          const neuronBar = document.getElementById('ai-neurons-bar');
-          if (neuronBar) neuronBar.style.width = estTokenPct + '%';
-
           const badgeEl = document.getElementById('ai-quota-badge');
           if (badgeEl) {
-            const status = app.status || usage.status;
+            const status = appGuard.status || usage.status;
             if (status === 'FREE_CAPACITY_AVAILABLE') {
               badgeEl.className = 'status-badge status-healthy';
-              badgeEl.textContent = 'LOCAL SAFETY BUDGET OK';
+              badgeEl.textContent = 'CIRCUIT BREAKER OK';
             } else {
               badgeEl.className = 'status-badge status-alert';
               badgeEl.textContent = status;
