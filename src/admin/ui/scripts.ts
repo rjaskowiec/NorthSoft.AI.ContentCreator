@@ -21,6 +21,34 @@ export function getAdminScripts(): string {
       return safeStr(val, defaultVal).toLowerCase();
     }
 
+    let isCheckingSession = false;
+    let initialSessionLoaded = false;
+    const activeInFlightRequests = new Map();
+
+    async function guardedFetch(url, options = {}) {
+      const method = safeUpper(options ? options.method : 'GET', 'GET');
+      const key = method + ':' + url;
+
+      if (method === 'GET' && activeInFlightRequests.has(key)) {
+        return activeInFlightRequests.get(key).then(res => res.clone());
+      }
+
+      const fetchPromise = (async () => {
+        try {
+          const res = await fetch(url, options);
+          return res;
+        } finally {
+          activeInFlightRequests.delete(key);
+        }
+      })();
+
+      if (method === 'GET') {
+        activeInFlightRequests.set(key, fetchPromise);
+      }
+
+      return fetchPromise;
+    }
+
     // Initialize State Check
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', checkSession);
@@ -29,39 +57,59 @@ export function getAdminScripts(): string {
     }
 
     async function checkSession() {
+      if (isCheckingSession) return;
+      isCheckingSession = true;
+
       const urlParams = new URLSearchParams(window.location.search);
       const resetToken = urlParams.get('resetToken') || urlParams.get('token');
 
       if (resetToken) {
         showResetForm(resetToken);
+        isCheckingSession = false;
         return;
       }
 
       try {
-        const res = await fetch('/api/auth/session');
+        const res = await guardedFetch('/api/auth/session');
         const data = await res.json();
         if (data && data.authenticated) {
           csrfToken = safeStr(data.csrfToken);
           showDashboard(data.user || {});
+          if (!initialSessionLoaded) {
+            initialSessionLoaded = true;
+            const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
+            const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+            if (hash && validTabs.includes(hash)) {
+              switchTab(hash);
+            } else {
+              switchTab('dashboard');
+            }
+          }
         } else {
           showLoginForm();
         }
       } catch (err) {
         showLoginForm();
+      } finally {
+        isCheckingSession = false;
       }
     }
 
     function showLoginForm() {
-      document.getElementById('login-screen').style.display = 'flex';
-      document.getElementById('dashboard-screen').style.display = 'none';
+      const loginScr = document.getElementById('login-screen');
+      const dashScr = document.getElementById('dashboard-screen');
+      if (loginScr) loginScr.style.display = 'flex';
+      if (dashScr) dashScr.style.display = 'none';
       document.getElementById('login-form').style.display = 'block';
       document.getElementById('forgot-form').style.display = 'none';
       document.getElementById('reset-form').style.display = 'none';
     }
 
     function showForgotForm() {
-      document.getElementById('login-screen').style.display = 'flex';
-      document.getElementById('dashboard-screen').style.display = 'none';
+      const loginScr = document.getElementById('login-screen');
+      const dashScr = document.getElementById('dashboard-screen');
+      if (loginScr) loginScr.style.display = 'flex';
+      if (dashScr) dashScr.style.display = 'none';
       document.getElementById('login-form').style.display = 'none';
       document.getElementById('forgot-form').style.display = 'block';
       document.getElementById('reset-form').style.display = 'none';
@@ -71,8 +119,10 @@ export function getAdminScripts(): string {
     let activeResetToken = '';
     function showResetForm(token) {
       activeResetToken = safeStr(token);
-      document.getElementById('login-screen').style.display = 'flex';
-      document.getElementById('dashboard-screen').style.display = 'none';
+      const loginScr = document.getElementById('login-screen');
+      const dashScr = document.getElementById('dashboard-screen');
+      if (loginScr) loginScr.style.display = 'flex';
+      if (dashScr) dashScr.style.display = 'none';
       document.getElementById('login-form').style.display = 'none';
       document.getElementById('forgot-form').style.display = 'none';
       document.getElementById('reset-form').style.display = 'block';
@@ -94,25 +144,22 @@ export function getAdminScripts(): string {
     }
 
     function showDashboard(user) {
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('dashboard-screen').style.display = 'flex';
+      const loginScr = document.getElementById('login-screen');
+      const dashScr = document.getElementById('dashboard-screen');
+      if (loginScr) loginScr.style.display = 'none';
+      if (dashScr) dashScr.style.display = 'flex';
       const userDisp = document.getElementById('user-display');
       if (userDisp) userDisp.textContent = safeStr(user.username, 'Administrator');
-
-      const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-      const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
-      if (hash && validTabs.includes(hash)) {
-        switchTab(hash);
-      } else {
-        switchTab('dashboard');
-      }
     }
 
     async function switchTab(tabName, evt) {
       if (evt && typeof evt.preventDefault === 'function') {
         evt.preventDefault();
       }
-      const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      if (tabName === 'manual-publisher') {
+        tabName = 'content';
+      }
+      const validTabs = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'security', 'audit'];
       if (!validTabs.includes(tabName)) {
         tabName = 'dashboard';
       }
@@ -146,8 +193,6 @@ export function getAdminScripts(): string {
           await loadDashboardData();
         } else if (tabName === 'pipeline') {
           await loadPipelineData();
-        } else if (tabName === 'manual-publisher') {
-          await loadManualPublisherData();
         } else if (tabName === 'research') {
           await loadResearchData();
         } else if (tabName === 'content') {
@@ -168,8 +213,8 @@ export function getAdminScripts(): string {
 
     window.addEventListener('hashchange', () => {
       const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-      const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
-      if (hash && validTabs.includes(hash)) {
+      const validTabs = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'security', 'audit'];
+      if (hash && (validTabs.includes(hash) || hash === 'manual-publisher')) {
         switchTab(hash);
       }
     });
@@ -363,9 +408,9 @@ export function getAdminScripts(): string {
 
     async function loadSecurityData() {
       try {
-        const res = await fetch('/api/auth/recovery-email');
+        const res = await guardedFetch('/api/auth/recovery-email');
         if (!res.ok) {
-          if (res.status === 401) await checkSession();
+          console.error('Failed to fetch security data:', res.status, res.statusText);
           return;
         }
         const data = await res.json();
@@ -446,13 +491,9 @@ export function getAdminScripts(): string {
     // Load Dashboard Overview Data
     async function loadDashboardData() {
       try {
-        const res = await fetch('/api/admin/dashboard');
+        const res = await guardedFetch('/api/admin/dashboard');
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-          } else {
-            console.error('Failed to fetch dashboard data:', res.status, res.statusText);
-          }
+          console.error('Failed to fetch dashboard data:', res.status, res.statusText);
           return;
         }
 
@@ -662,16 +703,12 @@ export function getAdminScripts(): string {
           search: safeStr(currentAuditSearch, ''),
         });
 
-        const res = await fetch('/api/admin/audit?' + queryParams.toString());
+        const res = await guardedFetch('/api/admin/audit?' + queryParams.toString());
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-          } else {
-            console.error('Failed to fetch audit data:', res.status, res.statusText);
-            const fullBody = document.getElementById('full-audit-body');
-            if (fullBody) {
-              fullBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load audit events (HTTP ' + res.status + ').</td></tr>';
-            }
+          console.error('Failed to fetch audit data:', res.status, res.statusText);
+          const fullBody = document.getElementById('full-audit-body');
+          if (fullBody) {
+            fullBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load audit events (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -772,16 +809,12 @@ export function getAdminScripts(): string {
     // Load Research Tab Data
     async function loadResearchData() {
       try {
-        const res = await fetch('/api/admin/research');
+        const res = await guardedFetch('/api/admin/research');
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-          } else {
-            console.error('Failed to fetch research data:', res.status, res.statusText);
-            const topicsBody = document.getElementById('topics-table-body');
-            if (topicsBody) {
-              topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
-            }
+          console.error('Failed to fetch research data:', res.status, res.statusText);
+          const topicsBody = document.getElementById('topics-table-body');
+          if (topicsBody) {
+            topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -997,16 +1030,12 @@ export function getAdminScripts(): string {
     // Load Content Tab Data
     async function loadContentData() {
       try {
-        const res = await fetch('/api/admin/content/posts');
+        const res = await guardedFetch('/api/admin/content/posts');
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-          } else {
-            console.error('Failed to fetch content data:', res.status, res.statusText);
-            const postsBody = document.getElementById('posts-table-body');
-            if (postsBody) {
-              postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--accent-rose);">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
-            }
+          console.error('Failed to fetch content data:', res.status, res.statusText);
+          const postsBody = document.getElementById('posts-table-body');
+          if (postsBody) {
+            postsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1019,32 +1048,60 @@ export function getAdminScripts(): string {
             postsBody.innerHTML = data.posts.map(p => {
               if (!p) return '';
               const statusStr = safeUpper(p.status, 'DRAFT');
-              const statusClass = statusStr === 'APPROVED' ? 'status-healthy' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-active';
-              const qDec = safeUpper(p.quality_decision, 'PASS');
-              const qClass = qDec === 'PASS' ? 'status-healthy' : 'status-alert';
+              const statusClass = statusStr === 'PUBLISHED' ? 'status-healthy' : statusStr === 'SCHEDULED' ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
+              const pId = safeStr(p.id);
+              const pTitle = safeStr(p.title, 'Untitled Post');
+              const pBody = safeStr(p.latest_body || p.body);
 
               return \`
               <tr>
                 <td>
-                  <strong>\${escapeHtml(safeStr(p.title, 'Untitled Post'))}</strong>
-                  <div style="font-size:0.8rem; color:var(--text-muted); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(safeStr(p.latest_body))}</div>
+                  <strong>\${escapeHtml(pTitle)}</strong>
+                </td>
+                <td>
+                  <div style="font-size:0.85rem; color:var(--text-main); max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
                 </td>
                 <td><span class="status-badge \${statusClass}">\${escapeHtml(statusStr)}</span></td>
-                <td><span class="code-tag">v\${Number(p.current_version || 1)}</span></td>
-                <td><span class="status-badge status-healthy">\${Number(p.quality_score || 0)}/100</span></td>
-                <td><span class="status-badge \${qClass}">\${escapeHtml(qDec)}</span></td>
-                <td class="code-tag">\${formatDateSafe(p.created_at)}</td>
+                <td class="code-tag">\${formatDateOnlySafe(p.created_at)}</td>
+                <td>
+                  \${statusStr !== 'PUBLISHED' ? \`
+                    <button class="btn-primary" style="padding:0.3rem 0.65rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}', '\${escapeHtml(pTitle)}')">Publish Now</button>
+                    <button class="btn-secondary" style="padding:0.3rem 0.65rem; font-size:0.75rem; margin-left:0.25rem;" onclick="openSchedulePostModal()">Schedule</button>
+                  \` : \`
+                    <span style="color:var(--accent-emerald); font-weight:600; font-size:0.8rem;">Live on Facebook</span>
+                  \`}
+                </td>
               </tr>
             \`;
             }).join('');
           } else {
-            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No post drafts generated yet. Trigger research or orchestration pipeline to generate content.</td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
         }
       } catch (err) {
         console.error('Failed to load content data:', err);
       }
     }
+
+    function openInstantPublishModal(postId, text) {
+      const modalPostId = document.getElementById('publish-modal-post-id');
+      const modalText = document.getElementById('publish-modal-content-text');
+      if (modalPostId) modalPostId.value = safeStr(postId);
+      if (modalText) modalText.value = safeStr(text);
+      openModal('publish-modal');
+    }
+
+    async function executeInstantPublication() {
+      const modalPostId = document.getElementById('publish-modal-post-id');
+      const postId = modalPostId ? safeStr(modalPostId.value) : '';
+      closeModal('publish-modal');
+      if (postId) {
+        await publishNow(postId);
+      }
+    }
+
+    window.openInstantPublishModal = openInstantPublishModal;
+    window.executeInstantPublication = executeInstantPublication;
 
     // Run Autonomous Pipeline
     async function runPipelineNow() {
@@ -1096,16 +1153,12 @@ export function getAdminScripts(): string {
     // Load Scheduled Publications Tab Data
     async function loadSchedulesData() {
       try {
-        const res = await fetch('/api/admin/schedules');
+        const res = await guardedFetch('/api/admin/schedules');
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-          } else {
-            console.error('Failed to fetch schedules:', res.status, res.statusText);
-            const schedBody = document.getElementById('schedules-table-body');
-            if (schedBody) {
-              schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load scheduled queue (HTTP ' + res.status + ').</td></tr>';
-            }
+          console.error('Failed to fetch schedules:', res.status, res.statusText);
+          const schedBody = document.getElementById('schedules-table-body');
+          if (schedBody) {
+            schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load scheduled queue (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1126,8 +1179,8 @@ export function getAdminScripts(): string {
                 '<td class="code-tag">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
                 '<td>' +
-                  '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openSchedulePostModal(\\\'' + schedIdStr + '\\\')">Edit</button>' +
-                  '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(\\\'' + schedIdStr + '\\\')">Unschedule</button>' +
+                  '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openSchedulePostModal(&quot;' + schedIdStr + '&quot;)">Edit</button>' +
+                  '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
                 '</td>' +
               '</tr>';
             }).join('');
@@ -1143,16 +1196,12 @@ export function getAdminScripts(): string {
     // Load Publications Tab Data
     async function loadPublicationsData() {
       try {
-        const res = await fetch('/api/admin/publications');
+        const res = await guardedFetch('/api/admin/publications');
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-          } else {
-            console.error('Failed to fetch publications:', res.status, res.statusText);
-            const pubBody = document.getElementById('publications-table-body');
-            if (pubBody) {
-              pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load publication log (HTTP ' + res.status + ').</td></tr>';
-            }
+          console.error('Failed to fetch publications:', res.status, res.statusText);
+          const pubBody = document.getElementById('publications-table-body');
+          if (pubBody) {
+            pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load publication log (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1341,16 +1390,10 @@ export function getAdminScripts(): string {
       }
 
       try {
-        const fetchUrl = (isAppend && fbNextCursor)
-          ? '/api/admin/facebook/page-posts?limit=5&after=' + encodeURIComponent(fbNextCursor)
-          : '/api/admin/facebook/page-posts?limit=5';
-
-        const res = await fetch(fetchUrl);
+        const res = await guardedFetch(fetchUrl);
         if (!res.ok) {
-          if (res.status === 401) {
-            await checkSession();
-            return;
-          }
+          console.error('Failed to fetch Facebook page posts:', res.status);
+          return;
         }
 
         const data = await res.json();
@@ -1918,7 +1961,7 @@ export function getAdminScripts(): string {
     async function loadPipelineData() {
       const alertEl = document.getElementById('pipeline-control-alert');
       try {
-        const res = await fetch('/api/admin/pipeline/scheduler');
+        const res = await guardedFetch('/api/admin/pipeline/scheduler');
         if (res.ok) {
           const data = await res.json();
           const cfg = data.config || {};
@@ -1948,16 +1991,15 @@ export function getAdminScripts(): string {
               statusBadge.innerHTML = '<span class="status-badge status-disabled">SCHEDULER OFF</span>';
             }
           }
-        } else if (res.status === 401) {
-          await checkSession();
-          return;
+        } else {
+          console.error('Failed to fetch pipeline scheduler config:', res.status);
         }
       } catch (err) {
         console.error('Failed to load scheduler config:', err);
       }
 
       try {
-        const res = await fetch('/api/admin/pipeline/history');
+        const res = await guardedFetch('/api/admin/pipeline/history');
         const historyBody = document.getElementById('pipeline-history-body');
         if (res.ok && historyBody) {
           const data = await res.json();
@@ -1993,8 +2035,6 @@ export function getAdminScripts(): string {
               '</tr>';
             }).join('');
           }
-        } else if (res.status === 401) {
-          await checkSession();
         } else if (historyBody) {
           historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load pipeline execution history (HTTP ' + res.status + ').</td></tr>';
         }

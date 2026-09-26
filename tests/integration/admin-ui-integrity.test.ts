@@ -2,21 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 
 describe('Admin UI Integrity & Pipeline Endpoint Security', () => {
-  it('serves /admin HTML containing all 9 tabs and navigation elements', async () => {
+  it('serves /admin HTML containing all 8 tabs and navigation elements', async () => {
     const res = await app.request('/admin');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
 
     const html = await res.text();
 
-    // Verify all required navigation items exist
+    // Verify all required navigation items exist (8-tab Information Architecture)
     expect(html).toContain('id="nav-dashboard"');
     expect(html).toContain('id="nav-pipeline"');
     expect(html).toContain('id="nav-content"');
     expect(html).toContain('id="nav-research"');
     expect(html).toContain('id="nav-schedules"');
     expect(html).toContain('id="nav-publications"');
-    expect(html).toContain('id="nav-manual-publisher"');
     expect(html).toContain('id="nav-audit"');
     expect(html).toContain('id="nav-security"');
 
@@ -27,7 +26,6 @@ describe('Admin UI Integrity & Pipeline Endpoint Security', () => {
     expect(html).toContain('id="tab-research"');
     expect(html).toContain('id="tab-schedules"');
     expect(html).toContain('id="tab-publications"');
-    expect(html).toContain('id="tab-manual-publisher"');
     expect(html).toContain('id="tab-audit"');
     expect(html).toContain('id="tab-security"');
 
