@@ -1,8 +1,8 @@
 /**
  * NorthSoft.AI.ContentCreator — Autonomous Research Engine Service
  *
- * Orchestrates multi-pillar research source ingestion, deduplication, basic quality filtering,
- * AI post-angle extraction, diversity-aware queueing, topic cooldowns, and intelligent scheduling.
+ * Orchestrates source ingestion, inspiration tracking, substantive content angle deduplication,
+ * topic cooldowns, and intelligent scheduling into the Content Ideas Queue.
  */
 
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
@@ -34,6 +34,7 @@ interface RawItemRecord {
   url_hash: string;
   content_summary: string;
   published_at: string;
+  active_angles_count?: number;
 }
 
 export interface ResearchRunSummary {
@@ -41,13 +42,22 @@ export interface ResearchRunSummary {
   triggerType: 'cron' | 'manual';
   status: 'completed' | 'failed';
   sourcesChecked: number;
-  itemsDiscovered: number;
-  itemsNormalized: number;
-  duplicatesFound: number;
+  rawItemsDiscovered: number;
+  newSourcesCount: number;
+  knownSourcesCount: number;
+  sourceReuseCandidates: number;
+  potentialAnglesDiscovered: number;
+  rejectedTooTechnical: number;
   rejectedIrrelevant: number;
-  rejectedLowQuality: number;
-  topicsCreated: number;
+  rejectedDuplicateAngle: number;
+  rejectedRecentCooldown: number;
   ideasQueued: number;
+  ideasDeferred: number;
+  topicsCreated: number; // Backward compatibility
+  duplicatesFound: number; // Backward compatibility
+  itemsDiscovered: number; // Backward compatibility
+  itemsNormalized: number; // Backward compatibility
+  rejectedLowQuality: number; // Backward compatibility
   pillarBreakdown: Record<string, number>;
   errorMessage?: string;
   durationMs: number;
@@ -85,13 +95,22 @@ export class ResearchService {
         triggerType,
         status: 'completed',
         sourcesChecked: 0,
+        rawItemsDiscovered: 0,
+        newSourcesCount: 0,
+        knownSourcesCount: 0,
+        sourceReuseCandidates: 0,
+        potentialAnglesDiscovered: 0,
+        rejectedTooTechnical: 0,
+        rejectedIrrelevant: 0,
+        rejectedDuplicateAngle: 0,
+        rejectedRecentCooldown: 0,
+        ideasQueued: 0,
+        ideasDeferred: 0,
+        topicsCreated: 0,
+        duplicatesFound: 0,
         itemsDiscovered: 0,
         itemsNormalized: 0,
-        duplicatesFound: 0,
-        rejectedIrrelevant: 0,
         rejectedLowQuality: 0,
-        topicsCreated: 0,
-        ideasQueued: 0,
         pillarBreakdown: {},
         errorMessage: 'Skipped: Another research run is currently in progress',
         durationMs: Date.now() - startTime,
@@ -120,13 +139,18 @@ export class ResearchService {
     });
 
     let sourcesChecked = 0;
-    let itemsDiscovered = 0;
-    let itemsNormalized = 0;
-    let duplicatesFound = 0;
+    let rawItemsDiscovered = 0;
+    let newSourcesCount = 0;
+    let knownSourcesCount = 0;
+    let sourceReuseCandidates = 0;
+    let potentialAnglesDiscovered = 0;
+
     let rejectedIrrelevant = 0;
-    let rejectedLowQuality = 0;
-    let topicsCreated = 0;
+    let rejectedTooTechnical = 0;
+    let rejectedDuplicateAngle = 0;
+    const rejectedRecentCooldown = 0;
     let ideasQueued = 0;
+    let ideasDeferred = 0;
 
     const pillarBreakdown: Record<string, number> = {
       WEBSITE: 0,
@@ -150,14 +174,14 @@ export class ResearchService {
       const sources = sourcesResult.results || [];
       const adapter = new RssSourceAdapter();
 
-      // Step 1: Ingest and deduplicate raw items across ALL enabled sources
+      // Step 1: Ingest and register raw source items (Technical Source Deduplication)
       for (const source of sources) {
         sourcesChecked++;
         const checkTimeIso = new Date().toISOString();
 
         try {
           const rawItems: RawResearchItem[] = await adapter.fetchItems(source);
-          itemsDiscovered += rawItems.length;
+          rawItemsDiscovered += rawItems.length;
 
           await this.db
             .prepare(
@@ -166,56 +190,35 @@ export class ResearchService {
             .bind(checkTimeIso, source.id)
             .run();
 
-          await this.auditLogger.log({
-            eventType: 'RESEARCH_SOURCE_FETCHED',
-            entityType: 'research_source',
-            entityId: source.id,
-            actor: 'system',
-            details: {
-              sourceName: source.name,
-              itemCount: rawItems.length,
-            },
-          });
-
-          // Store and Deduplicate Raw Items
           for (const item of rawItems) {
-            itemsNormalized++;
-
-            // Exclusion check (politics, entertainment, clickbait)
-            const exclusion = isExcludedTopic(item.title, item.summary);
-            if (exclusion.excluded) {
-              rejectedIrrelevant++;
-              continue;
-            }
-
-            // Check deterministic url_hash
+            // Check if source URL is already known in research_items
             const existing = await this.db
               .prepare('SELECT id FROM research_items WHERE url_hash = ?')
               .bind(item.urlHash)
               .first();
 
             if (existing) {
-              duplicatesFound++;
-              continue;
+              knownSourcesCount++;
+            } else {
+              newSourcesCount++;
+              const itemId = crypto.randomUUID();
+              await this.db
+                .prepare(
+                  `INSERT INTO research_items (id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status, active_angles_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', 0)`,
+                )
+                .bind(
+                  itemId,
+                  item.sourceId,
+                  item.title,
+                  item.url,
+                  item.urlHash,
+                  item.summary,
+                  item.publishedAt,
+                  checkTimeIso,
+                )
+                .run();
             }
-
-            const itemId = crypto.randomUUID();
-            await this.db
-              .prepare(
-                `INSERT INTO research_items (id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW')`,
-              )
-              .bind(
-                itemId,
-                item.sourceId,
-                item.title,
-                item.url,
-                item.urlHash,
-                item.summary,
-                item.publishedAt,
-                checkTimeIso,
-              )
-              .run();
           }
         } catch (err: unknown) {
           const errMessage = err instanceof Error ? err.message : 'Source fetch failed';
@@ -228,25 +231,44 @@ export class ResearchService {
         }
       }
 
-      // Step 2: Fetch unanalyzed research items for relevance evaluation & diversity selection
-      const newItemsResult = await this.db
-        .prepare(
-          "SELECT id, source_id, title, url, url_hash, content_summary, published_at FROM research_items WHERE status IN ('NEW', 'DEFERRED') ORDER BY fetched_at DESC LIMIT 50",
-        )
-        .all<RawItemRecord>();
+      // Step 2: Fetch source items eligible for angle extraction
+      // Max 3 active angles per source material to prevent single-source domination
+      let candidateItems: RawItemRecord[] = [];
+      try {
+        const candidateRes = await this.db
+          .prepare(
+            `SELECT id, source_id, title, url, url_hash, content_summary, published_at, active_angles_count
+             FROM research_items
+             WHERE status != 'REJECTED' AND (active_angles_count IS NULL OR active_angles_count < 3)
+             ORDER BY fetched_at DESC
+             LIMIT 50`,
+          )
+          .all<RawItemRecord>();
+        candidateItems = candidateRes.results || [];
+      } catch {
+        const candidateRes = await this.db
+          .prepare(
+            "SELECT id, source_id, title, url, url_hash, content_summary, published_at FROM research_items ORDER BY fetched_at DESC LIMIT 50",
+          )
+          .all<RawItemRecord>();
+        candidateItems = candidateRes.results || [];
+      }
 
-      const candidateItems = newItemsResult.results || [];
+      sourceReuseCandidates = candidateItems.length;
       const selectableCandidates: SelectableCandidate<RawItemRecord>[] = [];
 
       for (const item of candidateItems) {
-        // Check NorthSoft audience relevance before AI selection
+        // Exclusion check (politics, entertainment, clickbait)
+        const exclusion = isExcludedTopic(item.title, item.content_summary);
+        if (exclusion.excluded) {
+          rejectedIrrelevant++;
+          continue;
+        }
+
+        // Relevance & quality score
         const relEval = evaluateRelevance(item.title, item.content_summary);
         if (!relEval.passed) {
-          rejectedIrrelevant++;
-          await this.db
-            .prepare("UPDATE research_items SET status = 'REJECTED' WHERE id = ?")
-            .bind(item.id)
-            .run();
+          rejectedTooTechnical++;
           continue;
         }
 
@@ -257,7 +279,7 @@ export class ResearchService {
         });
       }
 
-      // Step 3: Multi-Pillar Diversity Selection (MAX 12 total candidates, MAX 3 per pillar)
+      // Step 3: Multi-Pillar Diversity Selection
       const selectedCandidates = selectDiverseCandidates(
         selectableCandidates,
         MAX_AI_RESEARCH_CANDIDATES_PER_RUN,
@@ -266,8 +288,9 @@ export class ResearchService {
 
       const topicRegistry = new TopicRegistry(this.db);
       const history = await topicRegistry.getRecentTopicHistory();
+      potentialAnglesDiscovered = selectedCandidates.length;
 
-      // Step 4: Execute Workers AI completion to extract social post angles for selected candidates
+      // Step 4: Execute Workers AI completion to extract social post angles for selected candidate sources
       for (const candidate of selectedCandidates) {
         const item = candidate.item;
 
@@ -279,6 +302,7 @@ export class ResearchService {
         );
 
         if (!capacity.allowed) {
+          ideasDeferred++;
           await this.auditLogger.log({
             eventType: 'AI_QUOTA_EXCEEDED',
             entityType: 'research_item',
@@ -290,11 +314,6 @@ export class ResearchService {
             correlationId: runId,
             details: { reason: capacity.reason },
           });
-
-          await this.db
-            .prepare("UPDATE research_items SET status = 'DEFERRED' WHERE id = ?")
-            .bind(item.id)
-            .run();
           break;
         }
 
@@ -330,18 +349,6 @@ Return ONLY a valid JSON object matching this schema:
           unparsedPayload,
         );
 
-        await this.auditLogger.log({
-          eventType: 'AI_RESEARCH_STARTED',
-          entityType: 'research_item',
-          entityId: item.id,
-          actor: 'ai',
-          level: 'INFO',
-          status: 'STARTED',
-          operation: item.title,
-          correlationId: runId,
-          details: { title: item.title, url: item.url },
-        });
-
         try {
           const completion = await this.aiProvider.complete({
             role: 'researcher',
@@ -365,37 +372,41 @@ Return ONLY a valid JSON object matching this schema:
 
           const valRes = validateCandidateIdeaOutput(completion.content);
           if (!valRes.valid || !valRes.data) {
-            rejectedLowQuality++;
-            await this.db
-              .prepare("UPDATE research_items SET status = 'FAILED' WHERE id = ?")
-              .bind(item.id)
-              .run();
+            rejectedTooTechnical++;
             continue;
           }
 
           const ideaData = valRes.data;
 
-          // Check if exact duplicate angle or title exists in DB
-          const existingIdea = await this.db
-            .prepare('SELECT id FROM content_ideas WHERE title = ?')
-            .bind(ideaData.title)
-            .first();
-
-          if (existingIdea) {
-            duplicatesFound++;
-            await this.db
-              .prepare("UPDATE research_items SET status = 'DUPLICATE' WHERE id = ?")
-              .bind(item.id)
-              .run();
-            continue;
-          }
-
-          // Calculate intelligent suggested_publish_date using TopicRegistry
+          // Check if angle is a substantive duplicate against TopicRegistry history
           const scheduling = topicRegistry.calculateSuggestedPublishDate(
             ideaData.contentPillar as ContentPillar,
             ideaData.angle,
             history,
           );
+
+          if (scheduling.isDuplicateAngle) {
+            rejectedDuplicateAngle++;
+            await this.auditLogger.log({
+              eventType: 'DUPLICATE_ANGLE_REJECTED',
+              entityType: 'content_idea',
+              entityId: item.id,
+              actor: 'ai',
+              details: { angle: ideaData.angle, title: ideaData.title },
+            });
+            continue;
+          }
+
+          // Check if exact title already exists in content_ideas
+          const existingTitle = await this.db
+            .prepare('SELECT id FROM content_ideas WHERE title = ?')
+            .bind(ideaData.title)
+            .first();
+
+          if (existingTitle) {
+            rejectedDuplicateAngle++;
+            continue;
+          }
 
           const ideaId = crypto.randomUUID();
           const pillar = ideaData.contentPillar;
@@ -433,7 +444,7 @@ Return ONLY a valid JSON object matching this schema:
               )
               .run();
           } catch {
-            // Backward compatible fallback for older database schema
+            // Fallback for older database schema
             await this.db
               .prepare(
                 `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
@@ -461,12 +472,18 @@ Return ONLY a valid JSON object matching this schema:
             suggested_publish_date: scheduling.suggestedDate,
           });
 
-          await this.db
-            .prepare("UPDATE research_items SET status = 'ANALYZED' WHERE id = ?")
-            .bind(item.id)
-            .run();
+          // Increment active_angles_count on source material
+          try {
+            await this.db
+              .prepare(
+                "UPDATE research_items SET active_angles_count = COALESCE(active_angles_count, 0) + 1, last_angle_generated_at = ?, status = 'ANALYZED' WHERE id = ?",
+              )
+              .bind(nowIso, item.id)
+              .run();
+          } catch {
+            // Fallback
+          }
 
-          topicsCreated++;
           ideasQueued++;
 
           await this.auditLogger.log({
@@ -488,7 +505,7 @@ Return ONLY a valid JSON object matching this schema:
             },
           });
         } catch (aiErr: unknown) {
-          rejectedLowQuality++;
+          rejectedTooTechnical++;
           const aiErrMsg = aiErr instanceof Error ? aiErr.message : 'AI completion failed';
 
           await this.quotaManager.recordUsage(this.db, {
@@ -499,11 +516,6 @@ Return ONLY a valid JSON object matching this schema:
             durationMs: Date.now() - aiStartTime,
             errorMessage: aiErrMsg,
           });
-
-          await this.db
-            .prepare("UPDATE research_items SET status = 'FAILED' WHERE id = ?")
-            .bind(item.id)
-            .run();
         }
       }
     } catch (globalErr: unknown) {
@@ -514,7 +526,7 @@ Return ONLY a valid JSON object matching this schema:
     const durationMs = Date.now() - startTime;
     const finalStatus = runErrorMessage ? 'failed' : 'completed';
 
-    // Update Run record with diagnostic metrics
+    // Update Run record with comprehensive diagnostic metrics
     try {
       await this.db
         .prepare(
@@ -528,13 +540,13 @@ Return ONLY a valid JSON object matching this schema:
         .bind(
           finalStatus,
           sourcesChecked,
-          itemsDiscovered,
-          topicsCreated,
-          itemsDiscovered,
-          itemsNormalized,
-          duplicatesFound,
+          rawItemsDiscovered,
+          ideasQueued,
+          rawItemsDiscovered,
+          rawItemsDiscovered,
+          rejectedDuplicateAngle,
           rejectedIrrelevant,
-          rejectedLowQuality,
+          rejectedTooTechnical,
           JSON.stringify(pillarBreakdown),
           runErrorMessage || null,
           new Date().toISOString(),
@@ -557,13 +569,17 @@ Return ONLY a valid JSON object matching this schema:
       durationMs,
       details: {
         sourcesChecked,
-        itemsDiscovered,
-        itemsNormalized,
-        duplicatesFound,
+        rawItemsDiscovered,
+        newSourcesCount,
+        knownSourcesCount,
+        sourceReuseCandidates,
+        potentialAnglesDiscovered,
+        rejectedTooTechnical,
         rejectedIrrelevant,
-        rejectedLowQuality,
-        topicsCreated,
+        rejectedDuplicateAngle,
+        rejectedRecentCooldown,
         ideasQueued,
+        ideasDeferred,
         pillarBreakdown,
       },
     });
@@ -573,13 +589,22 @@ Return ONLY a valid JSON object matching this schema:
       triggerType,
       status: finalStatus,
       sourcesChecked,
-      itemsDiscovered,
-      itemsNormalized,
-      duplicatesFound,
+      rawItemsDiscovered,
+      newSourcesCount,
+      knownSourcesCount,
+      sourceReuseCandidates,
+      potentialAnglesDiscovered,
+      rejectedTooTechnical,
       rejectedIrrelevant,
-      rejectedLowQuality,
-      topicsCreated,
+      rejectedDuplicateAngle,
+      rejectedRecentCooldown,
       ideasQueued,
+      ideasDeferred,
+      topicsCreated: ideasQueued,
+      duplicatesFound: rejectedDuplicateAngle,
+      itemsDiscovered: rawItemsDiscovered,
+      itemsNormalized: rawItemsDiscovered,
+      rejectedLowQuality: rejectedTooTechnical,
       pillarBreakdown,
       errorMessage: runErrorMessage,
       durationMs,

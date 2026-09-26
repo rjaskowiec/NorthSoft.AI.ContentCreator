@@ -73,7 +73,8 @@ export type AuditEventType =
   | 'PUBLICATION_SUCCEEDED'
   | 'PUBLICATION_FAILED'
   | 'PUBLICATION_RETRY'
-  | 'PUBLICATION_BLOCKED';
+  | 'PUBLICATION_BLOCKED'
+  | 'DUPLICATE_ANGLE_REJECTED';
 
 export type AuditLevel = 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
 export type AuditStatus = 'STARTED' | 'COMPLETED' | 'FAILED' | 'DEFERRED';

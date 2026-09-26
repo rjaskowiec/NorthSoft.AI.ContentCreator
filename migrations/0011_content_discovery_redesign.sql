@@ -34,3 +34,7 @@ CREATE TABLE IF NOT EXISTS content_topic_history (
 CREATE INDEX IF NOT EXISTS idx_topic_history_pillar ON content_topic_history(content_pillar);
 CREATE INDEX IF NOT EXISTS idx_topic_history_status ON content_topic_history(status);
 CREATE INDEX IF NOT EXISTS idx_topic_history_suggested ON content_topic_history(suggested_publish_date);
+
+-- 3. Extend research_items to support source reuse and active angle tracking
+ALTER TABLE research_items ADD COLUMN active_angles_count INTEGER DEFAULT 0;
+ALTER TABLE research_items ADD COLUMN last_angle_generated_at TEXT;

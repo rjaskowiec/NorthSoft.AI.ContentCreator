@@ -64,7 +64,7 @@ describe('ResearchService Pipeline', () => {
       if (sql.includes('FROM research_sources')) {
         return createMockStatement(null, mockSources);
       }
-      if (sql.includes("status IN ('NEW', 'DEFERRED')")) {
+      if (sql.includes('FROM research_items')) {
         return createMockStatement(null, mockNewItems);
       }
       return createMockStatement(null, []);
@@ -135,7 +135,7 @@ describe('ResearchService Pipeline', () => {
       if (sql.includes('FROM research_sources')) {
         return createMockStatement(null, mockSources);
       }
-      if (sql.includes("status IN ('NEW', 'DEFERRED')")) {
+      if (sql.includes('FROM research_items')) {
         return createMockStatement(null, mockGossipItems);
       }
       return createMockStatement(null, []);
