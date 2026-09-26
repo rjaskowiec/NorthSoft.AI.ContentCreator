@@ -1,5 +1,10 @@
 /**
  * Admin Dashboard UI — CSS Stylesheet Module
+ *
+ * Implements Facebook / Meta Business inspired 3-column layout:
+ * - Left Sidebar (240px navigation)
+ * - Center Workspace (flexible content area)
+ * - Right Facebook Live Preview Rail (330px persistent feed)
  */
 
 export function getAdminCss(): string {
@@ -14,8 +19,8 @@ export function getAdminCss(): string {
       --text-main: #f1f5f9;
       --text-muted: #94a3b8;
       --text-subtle: #64748b;
-      --accent-blue: #3b82f6;
-      --accent-blue-hover: #2563eb;
+      --accent-blue: #1877f2;
+      --accent-blue-hover: #166fe5;
       --accent-cyan: #06b6d4;
       --accent-emerald: #10b981;
       --accent-amber: #f59e0b;
@@ -82,7 +87,7 @@ export function getAdminCss(): string {
       background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
       border-radius: 10px;
       margin-bottom: 1rem;
-      box-shadow: 0 8px 16px -4px rgba(59, 130, 246, 0.3);
+      box-shadow: 0 8px 16px -4px rgba(24, 119, 242, 0.3);
     }
 
     .brand-title {
@@ -126,7 +131,7 @@ export function getAdminCss(): string {
     .form-input:focus {
       outline: none;
       border-color: var(--accent-blue);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.15);
     }
 
     .btn-primary {
@@ -143,7 +148,7 @@ export function getAdminCss(): string {
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+      box-shadow: 0 4px 12px rgba(24, 119, 242, 0.25);
     }
 
     .btn-primary:hover {
@@ -160,6 +165,27 @@ export function getAdminCss(): string {
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-weight: 500;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: var(--border-color-hover);
     }
 
     .alert-error {
@@ -184,7 +210,7 @@ export function getAdminCss(): string {
       display: none;
     }
 
-    /* DASHBOARD LAYOUT */
+    /* DASHBOARD 3-COLUMN LAYOUT */
     #dashboard-screen {
       display: none;
       flex: 1;
@@ -197,50 +223,74 @@ export function getAdminCss(): string {
       width: 100%;
     }
 
-    /* Sidebar */
+    /* 1. LEFT SIDEBAR */
     .sidebar {
-      width: 260px;
+      width: 240px;
       background: var(--bg-sidebar);
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      padding: 1.5rem 1rem;
+      padding: 1.25rem 0.85rem;
       flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 100;
     }
 
     .sidebar-brand {
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      padding: 0 0.5rem 1.25rem 0.5rem;
+      padding: 0 0.5rem 1rem 0.5rem;
       border-bottom: 1px solid var(--border-color);
-      margin-bottom: 1.25rem;
+      margin-bottom: 0.75rem;
     }
 
     .sidebar-brand-name {
       font-weight: 700;
       font-size: 1.05rem;
       letter-spacing: -0.01em;
+      color: var(--text-main);
+    }
+
+    .sidebar-brand-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .nav-section-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--text-subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 1.15rem 0.75rem 0.35rem 0.75rem;
+    }
+
+    .nav-section-title:first-of-type {
+      padding-top: 0.35rem;
     }
 
     .nav-list {
       list-style: none;
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
+      gap: 0.25rem;
     }
 
     .nav-item a {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 0.65rem 0.85rem;
+      padding: 0.55rem 0.75rem;
       color: var(--text-muted);
       text-decoration: none;
       border-radius: 8px;
       font-weight: 500;
-      font-size: 0.875rem;
+      font-size: 0.85rem;
       transition: all 0.15s ease;
+      border: 1px solid transparent;
     }
 
     .nav-item a:hover {
@@ -249,18 +299,23 @@ export function getAdminCss(): string {
     }
 
     .nav-item.active a {
-      background: rgba(59, 130, 246, 0.15);
+      background: rgba(24, 119, 242, 0.15);
       color: #60a5fa;
       font-weight: 600;
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-color: rgba(24, 119, 242, 0.3);
     }
 
-    .nav-item.disabled a {
-      opacity: 0.4;
-      cursor: not-allowed;
+    .nav-icon {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      margin-right: 0.6rem;
+      flex-shrink: 0;
     }
 
-    /* Main Content Area */
+    /* 2. CENTER WORKSPACE */
     .main-content {
       flex: 1;
       display: flex;
@@ -276,14 +331,48 @@ export function getAdminCss(): string {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 2rem;
+      padding: 0 1.75rem;
       flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header-app-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+
+    .header-app-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
     }
 
     .header-user {
       display: flex;
       align-items: center;
       gap: 1rem;
+    }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+    }
+
+    .user-avatar {
+      font-size: 0.9rem;
     }
 
     .env-tag {
@@ -318,9 +407,8 @@ export function getAdminCss(): string {
     }
 
     .content-body {
-      padding: 2rem;
+      padding: 1.75rem;
       flex: 1;
-      max-width: 1400px;
       width: 100%;
       margin: 0 auto;
     }
@@ -335,13 +423,13 @@ export function getAdminCss(): string {
     .page-subtitle {
       color: var(--text-muted);
       font-size: 0.875rem;
-      margin-bottom: 1.75rem;
+      margin-bottom: 1.5rem;
     }
 
     /* GRID & CARDS */
     .section-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 1rem;
       margin-bottom: 1.75rem;
     }
@@ -362,7 +450,7 @@ export function getAdminCss(): string {
     }
 
     .card-label {
-      font-size: 0.75rem;
+      font-size: 0.725rem;
       color: var(--text-muted);
       font-weight: 600;
       text-transform: uppercase;
@@ -371,19 +459,19 @@ export function getAdminCss(): string {
     }
 
     .card-val {
-      font-size: 1.6rem;
+      font-size: 1.5rem;
       font-weight: 700;
       color: var(--text-main);
       letter-spacing: -0.02em;
     }
 
     .card-sub {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: var(--text-subtle);
       margin-top: 0.35rem;
     }
 
-    /* STATUS BADGES */
+    /* STATUS BADGES & DOTS */
     .status-badge {
       display: inline-flex;
       align-items: center;
@@ -399,6 +487,17 @@ export function getAdminCss(): string {
     .status-active { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); }
     .status-disabled { background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.25); }
     .status-alert { background: rgba(244, 63, 94, 0.12); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.25); }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+    .status-dot-healthy { background-color: #34d399; box-shadow: 0 0 6px rgba(52, 211, 153, 0.6); }
+    .status-dot-active { background-color: #60a5fa; box-shadow: 0 0 6px rgba(96, 165, 250, 0.6); }
+    .status-dot-alert { background-color: #fda4af; box-shadow: 0 0 6px rgba(253, 164, 175, 0.6); }
+    .status-dot-disabled { background-color: #94a3b8; }
 
     /* PANELS & TABLES */
     .panel {
@@ -422,6 +521,7 @@ export function getAdminCss(): string {
       font-size: 1.05rem;
       font-weight: 600;
       letter-spacing: -0.01em;
+      color: var(--text-main);
     }
 
     .table-container {
@@ -498,14 +598,6 @@ export function getAdminCss(): string {
       display: block;
     }
 
-    .badge-disabled {
-      font-size: 0.65rem;
-      padding: 2px 6px;
-      background: rgba(148, 163, 184, 0.15);
-      color: #94a3b8;
-      border-radius: 4px;
-    }
-
     .audit-details-compact {
       display: flex;
       flex-wrap: wrap;
@@ -535,39 +627,282 @@ export function getAdminCss(): string {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
 
-    /* RESPONSIVE LAYOUT ADJUSTMENTS */
-    @media (max-width: 1024px) {
-      .section-grid {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    /* 3. RIGHT FACEBOOK LIVE PREVIEW RAIL */
+    .facebook-rail {
+      width: 330px;
+      background: var(--bg-sidebar);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 1.25rem 1rem;
+      z-index: 90;
+    }
+
+    .fb-rail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.85rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .fb-rail-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-main);
+    }
+
+    .fb-rail-page-box {
+      background: rgba(24, 119, 242, 0.06);
+      border: 1px solid rgba(24, 119, 242, 0.18);
+      border-radius: 10px;
+      padding: 0.85rem;
+      margin-bottom: 1rem;
+    }
+
+    .fb-rail-page-header {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .fb-rail-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1877f2, #0056b3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: white;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .fb-rail-page-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--text-main);
+      line-height: 1.2;
+    }
+
+    .fb-rail-page-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .fb-rail-status-row {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .fb-rail-status-chip {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .fb-rail-feed-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .btn-icon-refresh {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 0.25rem 0.45rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .btn-icon-refresh:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+    }
+
+    .fb-rail-posts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      flex: 1;
+    }
+
+    .fb-rail-post-card {
+      background: #18191a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 0.85rem;
+      transition: border-color 0.15s ease;
+    }
+
+    .fb-rail-post-card:hover {
+      border-color: rgba(24, 119, 242, 0.3);
+    }
+
+    .fb-rail-post-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .fb-rail-post-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1877f2, #0056b3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: white;
+      font-size: 0.7rem;
+      flex-shrink: 0;
+    }
+
+    .fb-rail-post-name {
+      font-weight: 600;
+      font-size: 0.825rem;
+      color: #e4e6eb;
+      line-height: 1.2;
+    }
+
+    .fb-rail-post-time {
+      font-size: 0.7rem;
+      color: #b0b3b8;
+    }
+
+    .fb-rail-post-text {
+      font-size: 0.825rem;
+      color: #e4e6eb;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-bottom: 0.5rem;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .fb-rail-post-img-wrap {
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+      max-height: 160px;
+      background: #242526;
+    }
+
+    .fb-rail-post-img-wrap img {
+      width: 100%;
+      max-height: 160px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .fb-rail-post-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 0.4rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.75rem;
+    }
+
+    .fb-rail-post-link {
+      color: var(--accent-blue);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.15s ease;
+    }
+
+    .fb-rail-post-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Loading Spinner */
+    .fb-post-loading-spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(24, 119, 242, 0.15);
+      border-top-color: #1877f2;
+      border-radius: 50%;
+      margin: 0 auto;
+      animation: fbSpinner 0.75s linear infinite;
+    }
+
+    @keyframes fbSpinner {
+      to { transform: rotate(360deg); }
+    }
+
+    /* RESPONSIVE BREAKPOINTS */
+    @media (max-width: 1200px) {
+      .facebook-rail {
+        width: 300px;
       }
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 960px) {
       .app-layout {
         flex-direction: column;
       }
 
       .sidebar {
         width: 100%;
+        height: auto;
+        position: relative;
         border-right: none;
         border-bottom: 1px solid var(--border-color);
         padding: 1rem;
       }
 
       .sidebar-brand {
-        margin-bottom: 0.75rem;
-        padding-bottom: 0.75rem;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.5rem;
       }
 
       .nav-list {
         flex-direction: row;
-        overflow-x: auto;
-        padding-bottom: 0.25rem;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .nav-section-title {
+        display: none;
       }
 
       .nav-item a {
-        padding: 0.5rem 0.75rem;
+        padding: 0.45rem 0.65rem;
         white-space: nowrap;
+      }
+
+      .facebook-rail {
+        width: 100%;
+        height: auto;
+        position: relative;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+        padding: 1.25rem 1rem;
       }
 
       .header {
@@ -590,150 +925,6 @@ export function getAdminCss(): string {
 
       .card-val {
         font-size: 1.35rem;
-      }
-    }
-
-    /* ===================================================================
-       Facebook Page Posts — Card Styles
-       =================================================================== */
-
-    .fb-post-card {
-      background: #18191a;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      padding: 1rem 1.15rem;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .fb-post-card:hover {
-      border-color: rgba(24, 119, 242, 0.3);
-      box-shadow: 0 2px 12px rgba(24, 119, 242, 0.08);
-    }
-
-    .fb-post-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 0.65rem;
-    }
-
-    .fb-post-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #1877f2, #0056b3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      color: white;
-      font-size: 0.75rem;
-      flex-shrink: 0;
-    }
-
-    .fb-post-page-name {
-      font-weight: 600;
-      font-size: 0.88rem;
-      color: #e4e6eb;
-      line-height: 1.2;
-    }
-
-    .fb-post-time {
-      font-size: 0.73rem;
-      color: #b0b3b8;
-      cursor: help;
-    }
-
-    .fb-post-type-badge {
-      font-size: 0.65rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text-muted);
-      font-weight: 500;
-      white-space: nowrap;
-    }
-
-    .fb-post-body {
-      font-size: 0.9rem;
-      color: #e4e6eb;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      word-break: break-word;
-      margin-bottom: 0.65rem;
-    }
-
-    .fb-post-no-text {
-      color: var(--text-subtle);
-      font-style: italic;
-    }
-
-    .fb-post-image-wrap {
-      border-radius: 8px;
-      overflow: hidden;
-      margin-bottom: 0.65rem;
-      max-height: 260px;
-      background: #242526;
-    }
-
-    .fb-post-image {
-      width: 100%;
-      max-height: 260px;
-      object-fit: cover;
-      display: block;
-    }
-
-    .fb-post-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: 0.55rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .fb-post-id {
-      font-size: 0.72rem;
-      font-family: 'SF Mono', 'Consolas', monospace;
-      color: var(--text-subtle);
-      cursor: help;
-    }
-
-    .fb-post-permalink {
-      font-size: 0.78rem;
-      color: var(--accent-blue);
-      text-decoration: none;
-      font-weight: 500;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      transition: background-color 0.15s ease;
-    }
-
-    .fb-post-permalink:hover {
-      background: rgba(59, 130, 246, 0.12);
-      text-decoration: none;
-    }
-
-    /* Loading Spinner */
-    .fb-post-loading-spinner {
-      width: 28px;
-      height: 28px;
-      border: 3px solid rgba(24, 119, 242, 0.15);
-      border-top-color: #1877f2;
-      border-radius: 50%;
-      margin: 0 auto;
-      animation: fbSpinner 0.75s linear infinite;
-    }
-
-    @keyframes fbSpinner {
-      to { transform: rotate(360deg); }
-    }
-
-    /* Responsive: stack posts in 2-col on wider screens */
-    @media (min-width: 1200px) {
-      #fb-posts-container {
-        grid-template-columns: 1fr 1fr;
       }
     }
   `;

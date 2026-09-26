@@ -65,9 +65,11 @@ describe('Admin Dashboard Integration & Security', () => {
     expect(html).toContain('NorthSoft AI');
     expect(html).toContain('Content Creator Admin Interface');
     expect(html).toContain('Authenticate');
-    expect(html).toContain('Facebook Page — Live Posts');
-    expect(html).toContain('fb-posts-container');
-    expect(html).toContain('fb-posts-load-more-btn');
+    expect(html).toContain('facebook-rail');
+    expect(html).toContain('fb-rail-posts-container');
+    expect(html).toContain('val-fb-config');
+    expect(html).toContain('val-fb-read');
+    expect(html).toContain('val-fb-publishing');
     expect(html).toContain('loadFacebookPagePosts');
   });
 

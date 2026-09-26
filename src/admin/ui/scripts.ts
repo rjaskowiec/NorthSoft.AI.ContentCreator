@@ -64,7 +64,8 @@ export function getAdminScripts(): string {
     function showDashboard(user) {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard-screen').style.display = 'flex';
-      document.getElementById('user-display').textContent = user.username;
+      const userDisp = document.getElementById('user-display');
+      if (userDisp) userDisp.textContent = user.username;
       loadDashboardData();
     }
 
@@ -91,19 +92,23 @@ export function getAdminScripts(): string {
         loadSchedulesData();
       } else if (tabName === 'publications') {
         loadPublicationsData();
+      } else if (tabName === 'audit') {
+        loadAuditData();
       } else if (tabName === 'security') {
         loadSecurityData();
       }
     }
 
     // Login Form Handler
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
+    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const alertEl = document.getElementById('login-alert');
-      alertEl.style.display = 'none';
+      if (alertEl) alertEl.style.display = 'none';
 
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+      const username = usernameInput ? usernameInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
 
       try {
         const res = await fetch('/api/auth/login', {
@@ -116,13 +121,15 @@ export function getAdminScripts(): string {
         if (res.ok && data.success) {
           csrfToken = data.csrfToken;
           showDashboard(data.user);
-        } else {
+        } else if (alertEl) {
           alertEl.textContent = data.message || 'Invalid credentials.';
           alertEl.style.display = 'block';
         }
       } catch (err) {
-        alertEl.textContent = 'An unexpected connection error occurred.';
-        alertEl.style.display = 'block';
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected connection error occurred.';
+          alertEl.style.display = 'block';
+        }
       }
     });
 
@@ -146,9 +153,10 @@ export function getAdminScripts(): string {
     document.getElementById('forgot-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const alertEl = document.getElementById('forgot-alert');
-      alertEl.style.display = 'none';
+      if (alertEl) alertEl.style.display = 'none';
 
-      const email = document.getElementById('forgot-email').value.trim();
+      const emailInput = document.getElementById('forgot-email');
+      const email = emailInput ? emailInput.value.trim() : '';
 
       try {
         const res = await fetch('/api/auth/forgot-password', {
@@ -158,19 +166,23 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok) {
-          alertEl.className = 'alert-success';
-          alertEl.textContent = data.message || 'If an account matches this information, a password reset email has been sent.';
-          document.getElementById('forgot-email').value = '';
-        } else {
-          alertEl.className = 'alert-error';
-          alertEl.textContent = data.message || 'Failed to submit password recovery request.';
+        if (alertEl) {
+          if (res.ok) {
+            alertEl.className = 'alert-success';
+            alertEl.textContent = data.message || 'If an account matches this information, a password reset email has been sent.';
+            if (emailInput) emailInput.value = '';
+          } else {
+            alertEl.className = 'alert-error';
+            alertEl.textContent = data.message || 'Failed to submit password recovery request.';
+          }
+          alertEl.style.display = 'block';
         }
-        alertEl.style.display = 'block';
       } catch (err) {
-        alertEl.className = 'alert-error';
-        alertEl.textContent = 'Failed to submit password recovery request.';
-        alertEl.style.display = 'block';
+        if (alertEl) {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = 'Failed to submit password recovery request.';
+          alertEl.style.display = 'block';
+        }
       }
     });
 
@@ -178,15 +190,19 @@ export function getAdminScripts(): string {
     document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const alertEl = document.getElementById('reset-alert');
-      alertEl.style.display = 'none';
+      if (alertEl) alertEl.style.display = 'none';
 
-      const newPassword = document.getElementById('reset-new-password').value;
-      const confirmPassword = document.getElementById('reset-confirm-password').value;
+      const newPassInput = document.getElementById('reset-new-password');
+      const confirmPassInput = document.getElementById('reset-confirm-password');
+      const newPassword = newPassInput ? newPassInput.value : '';
+      const confirmPassword = confirmPassInput ? confirmPassInput.value : '';
 
       if (newPassword !== confirmPassword) {
-        alertEl.className = 'alert-error';
-        alertEl.textContent = 'Passwords do not match.';
-        alertEl.style.display = 'block';
+        if (alertEl) {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = 'Passwords do not match.';
+          alertEl.style.display = 'block';
+        }
         return;
       }
 
@@ -198,23 +214,27 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          alertEl.className = 'alert-success';
-          alertEl.textContent = 'Password reset successfully! Redirecting to login...';
-          alertEl.style.display = 'block';
-          setTimeout(() => {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            showLoginForm();
-          }, 2000);
-        } else {
-          alertEl.className = 'alert-error';
-          alertEl.textContent = data.message || 'Password reset link is invalid or expired.';
-          alertEl.style.display = 'block';
+        if (alertEl) {
+          if (res.ok && data.success) {
+            alertEl.className = 'alert-success';
+            alertEl.textContent = 'Password reset successfully! Redirecting to login...';
+            alertEl.style.display = 'block';
+            setTimeout(() => {
+              window.history.replaceState({}, document.title, window.location.pathname);
+              showLoginForm();
+            }, 2000);
+          } else {
+            alertEl.className = 'alert-error';
+            alertEl.textContent = data.message || 'Password reset link is invalid or expired.';
+            alertEl.style.display = 'block';
+          }
         }
       } catch (err) {
-        alertEl.className = 'alert-error';
-        alertEl.textContent = 'An error occurred resetting your password.';
-        alertEl.style.display = 'block';
+        if (alertEl) {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = 'An error occurred resetting your password.';
+          alertEl.style.display = 'block';
+        }
       }
     });
 
@@ -222,11 +242,11 @@ export function getAdminScripts(): string {
     document.getElementById('change-password-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const alertEl = document.getElementById('security-alert');
-      alertEl.style.display = 'none';
+      if (alertEl) alertEl.style.display = 'none';
 
-      const currentPassword = document.getElementById('change-current-password').value;
-      const newPassword = document.getElementById('change-new-password').value;
-      const confirmPassword = document.getElementById('change-confirm-password').value;
+      const currentPassword = (document.getElementById('change-current-password')?.value || '');
+      const newPassword = (document.getElementById('change-new-password')?.value || '');
+      const confirmPassword = (document.getElementById('change-confirm-password')?.value || '');
 
       try {
         const res = await fetch('/api/auth/change-password', {
@@ -239,25 +259,27 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          if (data.csrfToken) {
-            csrfToken = data.csrfToken;
+        if (alertEl) {
+          if (res.ok && data.success) {
+            if (data.csrfToken) csrfToken = data.csrfToken;
+            alertEl.className = 'alert-success';
+            alertEl.textContent = 'Password updated successfully! All other sessions were invalidated.';
+            alertEl.style.display = 'block';
+            document.getElementById('change-current-password').value = '';
+            document.getElementById('change-new-password').value = '';
+            document.getElementById('change-confirm-password').value = '';
+          } else {
+            alertEl.className = 'alert-error';
+            alertEl.textContent = data.message || 'Failed to change password.';
+            alertEl.style.display = 'block';
           }
-          alertEl.className = 'alert-success';
-          alertEl.textContent = 'Password updated successfully! All other sessions were invalidated.';
-          alertEl.style.display = 'block';
-          document.getElementById('change-current-password').value = '';
-          document.getElementById('change-new-password').value = '';
-          document.getElementById('change-confirm-password').value = '';
-        } else {
-          alertEl.className = 'alert-error';
-          alertEl.textContent = data.message || 'Failed to change password.';
-          alertEl.style.display = 'block';
         }
       } catch (err) {
-        alertEl.className = 'alert-error';
-        alertEl.textContent = 'An unexpected connection error occurred.';
-        alertEl.style.display = 'block';
+        if (alertEl) {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = 'An unexpected connection error occurred.';
+          alertEl.style.display = 'block';
+        }
       }
     });
 
@@ -270,26 +292,26 @@ export function getAdminScripts(): string {
         const inputEl = document.getElementById('recovery-email-input');
 
         if (data.configured && data.email) {
-          badgeEl.innerHTML = '<span class="status-badge status-healthy">Configured</span>';
-          boxEl.innerHTML = 'Password recovery email: <strong>' + data.email + '</strong><br><span style="color:var(--status-success-text); font-size:0.85rem;">Password recovery via email is currently <strong>enabled</strong>.</span>';
-          inputEl.value = data.email;
+          if (badgeEl) badgeEl.innerHTML = '<span class="status-badge status-healthy">Configured</span>';
+          if (boxEl) boxEl.innerHTML = 'Password recovery email: <strong>' + escapeHtml(data.email) + '</strong><br><span style="color:var(--accent-emerald); font-size:0.85rem;">Password recovery via email is currently <strong>enabled</strong>.</span>';
+          if (inputEl) inputEl.value = data.email;
         } else {
-          badgeEl.innerHTML = '<span class="status-badge status-disabled">Not configured</span>';
-          boxEl.innerHTML = 'Password recovery via email is currently <strong>unavailable</strong> because no recovery email address has been set.';
-          inputEl.value = '';
+          if (badgeEl) badgeEl.innerHTML = '<span class="status-badge status-disabled">Not configured</span>';
+          if (boxEl) boxEl.innerHTML = 'Password recovery via email is currently <strong>unavailable</strong> because no recovery email address has been set.';
+          if (inputEl) inputEl.value = '';
         }
       } catch (err) {
         // Ignore
       }
     }
 
-    // Recovery Email Form Handler (Authenticated Admin)
+    // Recovery Email Form Handler
     document.getElementById('recovery-email-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const alertEl = document.getElementById('security-alert');
-      alertEl.style.display = 'none';
+      if (alertEl) alertEl.style.display = 'none';
 
-      const email = document.getElementById('recovery-email-input').value.trim();
+      const email = (document.getElementById('recovery-email-input')?.value || '').trim();
 
       try {
         const res = await fetch('/api/auth/recovery-email', {
@@ -302,25 +324,29 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          alertEl.className = 'alert-success';
-          alertEl.textContent = 'Password recovery email updated successfully.';
-          alertEl.style.display = 'block';
-          loadSecurityData();
-        } else {
-          alertEl.className = 'alert-error';
-          alertEl.textContent = data.message || 'Failed to update recovery email.';
-          alertEl.style.display = 'block';
+        if (alertEl) {
+          if (res.ok && data.success) {
+            alertEl.className = 'alert-success';
+            alertEl.textContent = 'Password recovery email updated successfully.';
+            alertEl.style.display = 'block';
+            loadSecurityData();
+          } else {
+            alertEl.className = 'alert-error';
+            alertEl.textContent = data.message || 'Failed to update recovery email.';
+            alertEl.style.display = 'block';
+          }
         }
       } catch (err) {
-        alertEl.className = 'alert-error';
-        alertEl.textContent = 'An unexpected connection error occurred.';
-        alertEl.style.display = 'block';
+        if (alertEl) {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = 'An unexpected connection error occurred.';
+          alertEl.style.display = 'block';
+        }
       }
     });
 
     // Logout Handler
-    document.getElementById('logout-btn').addEventListener('click', async () => {
+    document.getElementById('logout-btn')?.addEventListener('click', async () => {
       try {
         await fetch('/api/auth/logout', {
           method: 'POST',
@@ -331,7 +357,7 @@ export function getAdminScripts(): string {
         });
       } finally {
         csrfToken = '';
-        showLogin();
+        showLoginForm();
       }
     });
 
@@ -340,196 +366,124 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/dashboard');
         if (!res.ok) {
-          if (res.status === 401) showLogin();
+          if (res.status === 401) showLoginForm();
           return;
         }
 
         const data = await res.json();
+        const sys = data.systemStatus || {};
+        const metaStatus = sys.metaPublisherStatus || {};
 
         // Environment Tag
         const envBadge = document.getElementById('env-badge');
-        const env = (data.systemStatus.environment || 'staging').toLowerCase();
-        envBadge.textContent = env.toUpperCase();
-        envBadge.className = 'env-tag env-' + env;
+        if (envBadge) {
+          const env = (sys.environment || 'staging').toLowerCase();
+          envBadge.textContent = env.toUpperCase();
+          envBadge.className = 'env-tag env-' + env;
+        }
+
+        // Truthful System Status Cards
+        const workerEl = document.getElementById('val-worker');
+        if (workerEl) workerEl.innerHTML = '<span class="status-badge status-healthy">' + escapeHtml(sys.worker || 'Healthy') + '</span>';
+
+        const dbEl = document.getElementById('val-db');
+        if (dbEl) dbEl.innerHTML = '<span class="status-badge ' + (sys.database === 'Connected' ? 'status-healthy' : 'status-alert') + '">' + escapeHtml(sys.database || 'Connected') + '</span>';
+
+        const aiEl = document.getElementById('val-ai');
+        if (aiEl) aiEl.innerHTML = '<span class="status-badge status-active">' + escapeHtml(sys.aiProvider || 'Workers AI') + '</span>';
+
+        const isFbConfigured = Boolean(metaStatus.configured || (metaStatus.pageIdConfigured && metaStatus.tokenConfigured));
+        const fbConfigEl = document.getElementById('val-fb-config');
+        if (fbConfigEl) fbConfigEl.innerHTML = '<span class="status-badge ' + (isFbConfigured ? 'status-healthy' : 'status-disabled') + '">' + (isFbConfigured ? 'Configured' : 'Not configured') + '</span>';
+
+        const isPubEnabled = Boolean(sys.publishing === 'Enabled' || metaStatus.publishEnabled);
+        const fbPubEl = document.getElementById('val-fb-publishing');
+        if (fbPubEl) fbPubEl.innerHTML = '<span class="status-badge ' + (isPubEnabled ? 'status-healthy' : 'status-disabled') + '">' + (isPubEnabled ? 'Enabled' : 'Disabled') + '</span>';
+
+        const railPubStatus = document.getElementById('fb-rail-pub-status');
+        if (railPubStatus) {
+          railPubStatus.className = 'fb-rail-status-chip ' + (isPubEnabled ? 'status-healthy' : 'status-disabled');
+          railPubStatus.innerHTML = isPubEnabled ? '● Pub: Enabled' : '○ Pub: Disabled';
+        }
 
         // Pipeline Counts
-        document.getElementById('cnt-ideas').textContent = data.pipeline.discoveredTopics || data.pipeline.ideas || 0;
-        document.getElementById('cnt-drafts').textContent = data.pipeline.drafts || 0;
-        document.getElementById('cnt-qa').textContent = data.pipeline.underReview || data.pipeline.awaitingQa || 0;
-        document.getElementById('cnt-approved').textContent = data.pipeline.approved || 0;
-        document.getElementById('cnt-scheduled').textContent = data.pipeline.scheduled || 0;
-        document.getElementById('cnt-published').textContent = data.pipeline.published || 0;
-        document.getElementById('cnt-blocked').textContent = data.pipeline.rejected || data.pipeline.blocked || 0;
+        const cntIdeas = document.getElementById('cnt-ideas');
+        if (cntIdeas) cntIdeas.textContent = data.pipeline.discoveredTopics || data.pipeline.ideas || 0;
+
+        const cntDrafts = document.getElementById('cnt-drafts');
+        if (cntDrafts) cntDrafts.textContent = data.pipeline.drafts || 0;
+
+        const cntQa = document.getElementById('cnt-qa');
+        if (cntQa) cntQa.textContent = data.pipeline.underReview || data.pipeline.awaitingQa || 0;
+
+        const cntApproved = document.getElementById('cnt-approved');
+        if (cntApproved) cntApproved.textContent = data.pipeline.approved || 0;
+
+        const cntScheduled = document.getElementById('cnt-scheduled');
+        if (cntScheduled) cntScheduled.textContent = data.pipeline.scheduled || 0;
+
+        const cntPublished = document.getElementById('cnt-published');
+        if (cntPublished) cntPublished.textContent = data.pipeline.published || 0;
+
+        const cntBlocked = document.getElementById('cnt-blocked');
+        if (cntBlocked) cntBlocked.textContent = data.pipeline.rejected || data.pipeline.blocked || 0;
 
         // AI Quota & Usage Panel
         if (data.aiUsage) {
           const usage = data.aiUsage;
-          document.getElementById('ai-provider-name').textContent = data.systemStatus.aiProvider || 'Cloudflare Workers AI';
-          document.getElementById('ai-today-text').textContent = \`\${usage.todayRequests} / \${usage.dailyLimit} requests\`;
-          document.getElementById('ai-neurons-text').textContent = \`\${usage.todayNeurons} / \${usage.hardNeuronLimit || 7500} Neurons (Hard Stop)\`;
+          const providerName = document.getElementById('ai-provider-name');
+          if (providerName) providerName.textContent = sys.aiProvider || 'Cloudflare Workers AI';
+
+          const todayText = document.getElementById('ai-today-text');
+          if (todayText) todayText.textContent = usage.todayRequests + ' / ' + usage.dailyLimit + ' requests';
+
+          const neuronsText = document.getElementById('ai-neurons-text');
+          if (neuronsText) neuronsText.textContent = usage.todayNeurons + ' / ' + (usage.hardNeuronLimit || 7500) + ' Neurons (Hard Stop)';
 
           const todayPct = Math.min(100, Math.round((usage.todayRequests / usage.dailyLimit) * 100));
           const neuronPct = Math.min(100, Math.round((usage.todayNeurons / (usage.hardNeuronLimit || 7500)) * 100));
 
-          document.getElementById('ai-today-bar').style.width = todayPct + '%';
-          document.getElementById('ai-neurons-bar').style.width = neuronPct + '%';
+          const todayBar = document.getElementById('ai-today-bar');
+          if (todayBar) todayBar.style.width = todayPct + '%';
+
+          const neuronBar = document.getElementById('ai-neurons-bar');
+          if (neuronBar) neuronBar.style.width = neuronPct + '%';
 
           const badgeEl = document.getElementById('ai-quota-badge');
-          if (usage.status === 'FREE_CAPACITY_AVAILABLE') {
-            badgeEl.className = 'status-badge status-healthy';
-            badgeEl.textContent = 'FREE CAPACITY AVAILABLE';
-          } else {
-            badgeEl.className = 'status-badge status-alert';
-            badgeEl.textContent = usage.status;
+          if (badgeEl) {
+            if (usage.status === 'FREE_CAPACITY_AVAILABLE') {
+              badgeEl.className = 'status-badge status-healthy';
+              badgeEl.textContent = 'FREE CAPACITY AVAILABLE';
+            } else {
+              badgeEl.className = 'status-badge status-alert';
+              badgeEl.textContent = usage.status;
+            }
           }
         }
 
         // Orchestrator Run Metrics
         if (data.lastRun) {
           const r = data.lastRun;
-          document.getElementById('orch-last-time').textContent = r.started_at ? new Date(r.started_at).toLocaleString() : 'Never';
-          document.getElementById('orch-last-trigger').textContent = 'Trigger: ' + (r.trigger_type || 'cron').toUpperCase();
-          document.getElementById('orch-status-val').innerHTML = '<span class="status-badge ' + (r.status === 'completed' ? 'status-healthy' : r.status === 'running' ? 'status-active' : 'status-alert') + '">' + (r.status || 'UNKNOWN').toUpperCase() + '</span>';
-          document.getElementById('orch-result-val').textContent = 'Result: ' + (r.result_status || '—').toUpperCase();
-          document.getElementById('orch-neurons-val').textContent = (r.neurons_used || 0) + ' Neurons';
+          const timeEl = document.getElementById('orch-last-time');
+          if (timeEl) timeEl.textContent = r.started_at ? new Date(r.started_at).toLocaleString() : 'Never';
+
+          const trigEl = document.getElementById('orch-last-trigger');
+          if (trigEl) trigEl.textContent = 'Trigger: ' + String(r.trigger_type || 'cron').toUpperCase();
+
+          const statusVal = document.getElementById('orch-status-val');
+          if (statusVal) statusVal.innerHTML = '<span class="status-badge ' + (r.status === 'completed' ? 'status-healthy' : r.status === 'running' ? 'status-active' : 'status-alert') + '">' + String(r.status || 'UNKNOWN').toUpperCase() + '</span>';
+
+          const resVal = document.getElementById('orch-result-val');
+          if (resVal) resVal.textContent = 'Result: ' + String(r.result_status || '—').toUpperCase();
+
+          const neurVal = document.getElementById('orch-neurons-val');
+          if (neurVal) neurVal.textContent = (r.neurons_used || 0) + ' Neurons';
         }
 
-        // Audit Activity Table Formatting Helpers
-        function formatAuditEvent(eventType) {
-          const norm = (eventType || '').toUpperCase().trim();
-          switch (norm) {
-            case 'AUTH_LOGIN_SUCCESS': return { title: 'Login successful', category: 'SUCCESS', badgeClass: 'status-healthy' };
-            case 'AUTH_LOGIN_FAILURE': return { title: 'Login failed', category: 'FAILED', badgeClass: 'status-alert' };
-            case 'AUTH_LOGOUT': return { title: 'User signed out', category: 'INFO', badgeClass: 'status-disabled' };
-            case 'SESSION_CREATED': return { title: 'Session created', category: 'INFO', badgeClass: 'status-active' };
-            case 'SESSION_REVOKED': return { title: 'Session revoked', category: 'INFO', badgeClass: 'status-disabled' };
-            case 'ADMIN_PASSWORD_CHANGED': return { title: 'Password changed', category: 'SUCCESS', badgeClass: 'status-healthy' };
-            case 'ADMIN_PASSWORD_RESET_REQUESTED': return { title: 'Password reset requested', category: 'INFO', badgeClass: 'status-disabled' };
-            case 'ADMIN_PASSWORD_RESET_COMPLETED': return { title: 'Password reset completed', category: 'SUCCESS', badgeClass: 'status-healthy' };
-            case 'ADMIN_PASSWORD_RESET_FAILED': return { title: 'Password reset failed', category: 'FAILED', badgeClass: 'status-alert' };
-            case 'ADMIN_RECOVERY_EMAIL_UPDATED': return { title: 'Recovery email updated', category: 'UPDATED', badgeClass: 'status-active' };
-            case 'RESEARCH_STARTED': case 'RESEARCH_RUN_STARTED': case 'AI_RESEARCH_STARTED': return { title: 'Research started', category: 'STARTED', badgeClass: 'status-active' };
-            case 'RESEARCH_COMPLETED': case 'RESEARCH_RUN_COMPLETED': case 'AI_RESEARCH_COMPLETED': return { title: 'Research completed', category: 'SUCCESS', badgeClass: 'status-healthy' };
-            case 'POST_GENERATED': case 'POST_GENERATION_STARTED': return { title: 'Post draft generated', category: 'CREATED', badgeClass: 'status-active' };
-            case 'QUALITY_GATE': return { title: 'Quality gate evaluation', category: 'EVALUATION', badgeClass: 'status-active' };
-            case 'POST_APPROVED': case 'QA_PASSED': case 'POLICY_REVIEW_PASSED': case 'STATIC_VALIDATION_PASSED': return { title: 'Post approved', category: 'APPROVED', badgeClass: 'status-healthy' };
-            case 'POST_BLOCKED': case 'POST_REJECTED': case 'QA_FAILED': case 'POLICY_REVIEW_FAILED': case 'STATIC_VALIDATION_FAILED': return { title: 'Post rejected / blocked', category: 'BLOCKED', badgeClass: 'status-alert' };
-            case 'POST_SCHEDULED': case 'PUBLICATION_SCHEDULED': case 'PUBLICATION_CREATED': return { title: 'Publication scheduled', category: 'SCHEDULED', badgeClass: 'status-active' };
-            case 'PUBLICATION_STARTED': case 'FACEBOOK_PUBLISH_ATTEMPT': return { title: 'Publication attempt', category: 'ATTEMPT', badgeClass: 'status-active' };
-            case 'PUBLICATION_SUCCEEDED': case 'FACEBOOK_PUBLISH_SUCCESS': return { title: 'Publication succeeded', category: 'SUCCESS', badgeClass: 'status-healthy' };
-            case 'PUBLICATION_FAILED': case 'FACEBOOK_PUBLISH_FAILED': return { title: 'Publication failed', category: 'FAILED', badgeClass: 'status-alert' };
-            case 'CONFIG_CHANGED': return { title: 'Configuration updated', category: 'CONFIG', badgeClass: 'status-active' };
-            case 'SYSTEM_ERROR': case 'WORKFLOW_FAILED': return { title: 'System error', category: 'ERROR', badgeClass: 'status-alert' };
-            default: {
-              const words = norm.split('_').filter(Boolean).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
-              const isErr = norm.includes('FAIL') || norm.includes('ERR') || norm.includes('BLOCK') || norm.includes('REJECT');
-              const isSucc = norm.includes('SUCCESS') || norm.includes('COMPLET') || norm.includes('PASS');
-              return { title: words || 'System Event', category: isErr ? 'FAILED' : isSucc ? 'SUCCESS' : 'INFO', badgeClass: isErr ? 'status-alert' : isSucc ? 'status-healthy' : 'status-disabled' };
-            }
-          }
-        }
-
-        function formatAuditActor(actor, details) {
-          const act = (actor || 'system').toLowerCase().trim();
-          let label = 'SYSTEM';
-          let badgeClass = 'status-disabled';
-          if (act === 'admin') { label = 'ADMIN'; badgeClass = 'status-active'; }
-          else if (act === 'ai') { label = 'AI ENGINE'; badgeClass = 'status-healthy'; }
-          const username = details && (details.username || details.actorName);
-          return { label, subtext: typeof username === 'string' && username.trim() ? username.trim() : null, badgeClass };
-        }
-
-        function formatAuditEntity(entityType, entityId) {
-          const typeMap = { admin_user: 'Admin user', admin_session: 'Admin session', publication: 'Publication', post: 'Post draft', post_version: 'Post version', topic: 'Research topic', research_run: 'Research run', orchestrator: 'Orchestrator' };
-          const rawType = (entityType || '').toLowerCase().trim();
-          const typeLabel = typeMap[rawType] || rawType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'System';
-          const fullId = String(entityId || '—');
-          const truncatedId = fullId.length > 14 ? fullId.substring(0, 8) + '…' : fullId;
-          return { typeLabel, truncatedId, fullId };
-        }
-
-        function formatAuditDetails(detailsInput) {
-          let details = {};
-          if (typeof detailsInput === 'string') {
-            try { details = JSON.parse(detailsInput); } catch { details = { info: detailsInput }; }
-          } else if (detailsInput && typeof detailsInput === 'object') {
-            details = detailsInput;
-          }
-          const labelMap = { username: 'Username', clientIp: 'IP', emailConfigured: 'Email', expiresAt: 'Expires', adminUserId: 'User ID', triggerType: 'Trigger', trigger: 'Trigger', reason: 'Reason', status: 'Status', neuronsUsed: 'Neurons', neurons: 'Neurons', errorMessage: 'Error', error: 'Error' };
-          const items = [];
-          for (const [key, rawVal] of Object.entries(details)) {
-            if (rawVal === undefined || rawVal === null) continue;
-            const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-            let value = '';
-            if (typeof rawVal === 'boolean') { value = rawVal ? 'Configured' : 'Not configured'; }
-            else if (typeof rawVal === 'object') { value = JSON.stringify(rawVal); }
-            else if (key.toLowerCase().includes('time') || key.toLowerCase().includes('expires')) {
-              const parsedDate = new Date(String(rawVal));
-              value = isNaN(parsedDate.getTime()) ? String(rawVal) : parsedDate.toLocaleString();
-            } else { value = String(rawVal); }
-            if (value.length > 36) value = value.substring(0, 33) + '…';
-            items.push({ key, label, value });
-          }
-          return items;
-        }
-
-        function formatAuditTimestamp(isoDate) {
-          const d = new Date(isoDate);
-          if (isNaN(d.getTime())) return { compact: isoDate || '—', full: isoDate || '—' };
-          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const day = d.getUTCDate();
-          const month = monthNames[d.getUTCMonth()];
-          const hours = String(d.getUTCHours()).padStart(2, '0');
-          const mins = String(d.getUTCMinutes()).padStart(2, '0');
-          const secs = String(d.getUTCSeconds()).padStart(2, '0');
-          return {
-            compact: day + ' ' + month + ', ' + hours + ':' + mins + ' UTC',
-            full: d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0') + ' ' + hours + ':' + mins + ':' + secs + ' UTC'
-          };
-        }
-
-        // Audit Activity Table
+        // Audit Activity Table (Recent Activity Preview)
         const actBody = document.getElementById('recent-activity-body');
-        if (data.recentActivity && data.recentActivity.length > 0) {
-          actBody.innerHTML = data.recentActivity.map(act => {
-            const evt = formatAuditEvent(act.eventType);
-            const actorInfo = formatAuditActor(act.actor, act.details);
-            const entInfo = formatAuditEntity(act.entityType, act.entityId);
-            const dtItems = formatAuditDetails(act.details);
-            const tsInfo = formatAuditTimestamp(act.timestamp);
-
-            return \`
-              <tr>
-                <td>
-                  <div style="display:flex; align-items:center; gap:0.4rem;">
-                    <span class="status-badge \${evt.badgeClass}">\${evt.category}</span>
-                    <div>
-                      <strong style="font-size:0.875rem; color:var(--text-main);">\${evt.title}</strong>
-                      <div style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;" title="Technical Event Type">\${act.eventType}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span class="status-badge \${actorInfo.badgeClass}">\${actorInfo.label}</span>
-                  \${actorInfo.subtext ? \`<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">\${actorInfo.subtext}</div>\` : ''}
-                </td>
-                <td>
-                  <div style="font-weight:600; font-size:0.825rem;">\${entInfo.typeLabel}</div>
-                  <div style="font-size:0.725rem; color:var(--text-subtle); font-family:monospace;" title="\${entInfo.fullId}">\${entInfo.truncatedId}</div>
-                </td>
-                <td>
-                  <div class="audit-details-compact">
-                    \${dtItems.length > 0 ? dtItems.map(d => \`<span class="detail-pill"><span class="detail-key">\${d.label}:</span> <span class="detail-val">\${d.value}</span></span>\`).join('') : '<span style="color:var(--text-subtle); font-size:0.8rem;">—</span>'}
-                  </div>
-                </td>
-                <td style="white-space:nowrap; font-size:0.8rem; color:var(--text-muted);" title="\${tsInfo.full}">
-                  \${tsInfo.compact}
-                </td>
-              </tr>
-            \`;
-          }).join('');
-        } else {
-          actBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events yet</div><div style="font-size:0.825rem;">System activity will appear here as administrative actions are recorded.</div></td></tr>';
+        if (actBody && data.recentActivity) {
+          actBody.innerHTML = renderAuditRows(data.recentActivity);
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
@@ -541,49 +495,77 @@ export function getAdminScripts(): string {
       }
     }
 
+    // Load Full Audit Log Data
+    async function loadAuditData() {
+      try {
+        const res = await fetch('/api/admin/dashboard');
+        if (!res.ok) {
+          if (res.status === 401) showLoginForm();
+          return;
+        }
+
+        const data = await res.json();
+        const fullBody = document.getElementById('full-audit-body');
+        if (fullBody && data.recentActivity) {
+          fullBody.innerHTML = renderAuditRows(data.recentActivity);
+        }
+      } catch (err) {
+        console.error('Failed to load audit data:', err);
+      }
+    }
+
     // Load Research Tab Data
     async function loadResearchData() {
       try {
         const res = await fetch('/api/admin/research');
         if (!res.ok) {
-          if (res.status === 401) showLogin();
+          if (res.status === 401) showLoginForm();
           return;
         }
 
         const data = await res.json();
 
-        document.getElementById('res-sources-cnt').textContent = data.stats.totalSources;
-        document.getElementById('res-enabled-sub').textContent = data.stats.enabledSources + ' Active Feeds';
-        document.getElementById('res-topics-cnt').textContent = data.stats.totalTopicsDiscovered;
-        document.getElementById('res-last-run').textContent = data.stats.lastRunAt ? new Date(data.stats.lastRunAt).toLocaleTimeString() : 'Never';
+        const srcCnt = document.getElementById('res-sources-cnt');
+        if (srcCnt) srcCnt.textContent = data.stats.totalSources;
+
+        const srcSub = document.getElementById('res-enabled-sub');
+        if (srcSub) srcSub.textContent = data.stats.enabledSources + ' Active Feeds';
+
+        const topCnt = document.getElementById('res-topics-cnt');
+        if (topCnt) topCnt.textContent = data.stats.totalTopicsDiscovered;
+
+        const lastRun = document.getElementById('res-last-run');
+        if (lastRun) lastRun.textContent = data.stats.lastRunAt ? new Date(data.stats.lastRunAt).toLocaleTimeString() : 'Never';
 
         // Topics Table
         const topicsBody = document.getElementById('topics-table-body');
-        if (data.topics && data.topics.length > 0) {
-          topicsBody.innerHTML = data.topics.map(t => \`
-            <tr>
-              <td>
-                <strong>\${t.title}</strong>
-                <div style="font-size:0.8rem; color:var(--text-muted);">\${t.description || ''}</div>
-              </td>
-              <td><span class="code-tag">\${t.category}</span></td>
-              <td><span class="status-badge status-healthy">\${t.priority}/100</span></td>
-              <td><span class="status-badge status-active">\${t.status.toUpperCase()}</span></td>
-              <td class="code-tag">\${new Date(t.created_at).toLocaleDateString()}</td>
-            </tr>
-          \`).join('');
-        } else {
-          topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No candidate topics discovered yet.</td></tr>';
+        if (topicsBody) {
+          if (data.topics && data.topics.length > 0) {
+            topicsBody.innerHTML = data.topics.map(t => \`
+              <tr>
+                <td>
+                  <strong>\${escapeHtml(t.title)}</strong>
+                  <div style="font-size:0.8rem; color:var(--text-muted);">\${escapeHtml(t.description || '')}</div>
+                </td>
+                <td><span class="code-tag">\${escapeHtml(t.category)}</span></td>
+                <td><span class="status-badge status-healthy">\${t.priority}/100</span></td>
+                <td><span class="status-badge status-active">\${escapeHtml(t.status).toUpperCase()}</span></td>
+                <td class="code-tag">\${new Date(t.created_at).toLocaleDateString()}</td>
+              </tr>
+            \`).join('');
+          } else {
+            topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No candidate topics discovered yet.</td></tr>';
+          }
         }
 
         // Sources Table
         const sourcesBody = document.getElementById('sources-table-body');
-        if (data.sources && data.sources.length > 0) {
+        if (sourcesBody && data.sources && data.sources.length > 0) {
           sourcesBody.innerHTML = data.sources.map(s => \`
             <tr>
-              <td><strong>\${s.name}</strong></td>
-              <td><span class="code-tag">\${s.category}</span></td>
-              <td style="font-size:0.8rem; font-family:monospace;">\${s.url}</td>
+              <td><strong>\${escapeHtml(s.name)}</strong></td>
+              <td><span class="code-tag">\${escapeHtml(s.category)}</span></td>
+              <td style="font-size:0.8rem; font-family:monospace;">\${escapeHtml(s.url)}</td>
               <td><span class="status-badge \${s.enabled ? 'status-healthy' : 'status-disabled'}">\${s.enabled ? 'ACTIVE' : 'DISABLED'}</span></td>
               <td class="code-tag">\${s.last_checked_at ? new Date(s.last_checked_at).toLocaleString() : 'Never'}</td>
             </tr>
@@ -592,12 +574,12 @@ export function getAdminScripts(): string {
 
         // Runs Table
         const runsBody = document.getElementById('runs-table-body');
-        if (data.runs && data.runs.length > 0) {
+        if (runsBody && data.runs && data.runs.length > 0) {
           runsBody.innerHTML = data.runs.map(r => \`
             <tr>
               <td class="code-tag">\${new Date(r.started_at).toLocaleString()}</td>
-              <td><span class="code-tag">\${r.trigger_type}</span></td>
-              <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${r.status.toUpperCase()}</span></td>
+              <td><span class="code-tag">\${escapeHtml(r.trigger_type)}</span></td>
+              <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(r.status).toUpperCase()}</span></td>
               <td>\${r.sources_checked}</td>
               <td>\${r.items_found}</td>
               <td><strong>\${r.topics_created}</strong></td>
@@ -613,10 +595,12 @@ export function getAdminScripts(): string {
     async function runResearchNow() {
       const btn = document.getElementById('run-research-btn');
       const alertEl = document.getElementById('research-run-alert');
-      alertEl.style.display = 'none';
+      if (alertEl) alertEl.style.display = 'none';
 
-      btn.disabled = true;
-      btn.innerHTML = 'Executing...';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = 'Executing...';
+      }
 
       try {
         const res = await fetch('/api/admin/research/run', {
@@ -628,23 +612,29 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          alertEl.textContent = 'Research run completed successfully! Discovered ' + (data.summary?.topicsCreated || 0) + ' candidate topics.';
-          alertEl.className = 'alert-success';
-          alertEl.style.display = 'block';
-          loadResearchData();
-        } else {
-          alertEl.textContent = 'Research run failed: ' + (data.summary?.errorMessage || 'Unknown error');
+        if (alertEl) {
+          if (res.ok && data.success) {
+            alertEl.textContent = 'Research run completed successfully! Discovered ' + (data.summary?.topicsCreated || 0) + ' candidate topics.';
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+            loadResearchData();
+          } else {
+            alertEl.textContent = 'Research run failed: ' + (data.summary?.errorMessage || 'Unknown error');
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'An unexpected connection error occurred.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
-      } catch (err) {
-        alertEl.textContent = 'An unexpected connection error occurred.';
-        alertEl.className = 'alert-error';
-        alertEl.style.display = 'block';
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Research Pipeline Now';
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Research Pipeline Now';
+        }
       }
     }
 
@@ -653,29 +643,31 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/content/posts');
         if (!res.ok) {
-          if (res.status === 401) showLogin();
+          if (res.status === 401) showLoginForm();
           return;
         }
 
         const data = await res.json();
         const postsBody = document.getElementById('posts-table-body');
 
-        if (data.posts && data.posts.length > 0) {
-          postsBody.innerHTML = data.posts.map(p => \`
-            <tr>
-              <td>
-                <strong>\${p.title}</strong>
-                <div style="font-size:0.8rem; color:var(--text-muted); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${p.latest_body || ''}</div>
-              </td>
-              <td><span class="status-badge \${p.status === 'approved' ? 'status-healthy' : p.status === 'rejected' || p.status === 'blocked' ? 'status-alert' : 'status-active'}">\${p.status.toUpperCase()}</span></td>
-              <td><span class="code-tag">v\${p.current_version}</span></td>
-              <td><span class="status-badge status-healthy">\${p.quality_score || 0}/100</span></td>
-              <td><span class="status-badge \${p.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${p.quality_decision || 'PASS'}</span></td>
-              <td class="code-tag">\${new Date(p.created_at).toLocaleString()}</td>
-            </tr>
-          \`).join('');
-        } else {
-          postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No post drafts generated yet. Trigger research or orchestration pipeline to generate content.</td></tr>';
+        if (postsBody) {
+          if (data.posts && data.posts.length > 0) {
+            postsBody.innerHTML = data.posts.map(p => \`
+              <tr>
+                <td>
+                  <strong>\${escapeHtml(p.title)}</strong>
+                  <div style="font-size:0.8rem; color:var(--text-muted); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(p.latest_body || '')}</div>
+                </td>
+                <td><span class="status-badge \${p.status === 'approved' ? 'status-healthy' : p.status === 'rejected' || p.status === 'blocked' ? 'status-alert' : 'status-active'}">\${escapeHtml(p.status).toUpperCase()}</span></td>
+                <td><span class="code-tag">v\${p.current_version}</span></td>
+                <td><span class="status-badge status-healthy">\${p.quality_score || 0}/100</span></td>
+                <td><span class="status-badge \${p.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(p.quality_decision || 'PASS')}</span></td>
+                <td class="code-tag">\${new Date(p.created_at).toLocaleString()}</td>
+              </tr>
+            \`).join('');
+          } else {
+            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No post drafts generated yet. Trigger research or orchestration pipeline to generate content.</td></tr>';
+          }
         }
       } catch (err) {
         console.error('Failed to load content data:', err);
@@ -703,15 +695,13 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          if (alertEl) {
+        if (alertEl) {
+          if (res.ok && data.success) {
             alertEl.textContent = 'Autonomous pipeline completed! Result: ' + (data.result?.resultStatus || 'COMPLETED').toUpperCase();
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
-          }
-          loadDashboardData();
-        } else {
-          if (alertEl) {
+            loadDashboardData();
+          } else {
             alertEl.textContent = data.result?.errorMessage || 'Pipeline run encountered an issue or was deferred by quota.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
@@ -736,27 +726,29 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/schedules');
         if (!res.ok) {
-          if (res.status === 401) showLogin();
+          if (res.status === 401) showLoginForm();
           return;
         }
 
         const data = await res.json();
         const schedBody = document.getElementById('schedules-table-body');
 
-        if (data.schedules && data.schedules.length > 0) {
-          schedBody.innerHTML = data.schedules.map(sched => \`
-            <tr>
-              <td><strong>\${sched.post_title}</strong></td>
-              <td class="code-tag">\${new Date(sched.scheduled_at).toUTCString()}</td>
-              <td><span class="status-badge status-healthy">\${sched.status.toUpperCase()}</span></td>
-              <td><span class="code-tag">v\${sched.current_version}</span></td>
-              <td><span class="status-badge status-healthy">\${sched.quality_score || 0}/100</span></td>
-              <td><span class="status-badge \${sched.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${sched.quality_decision || 'PASS'}</span></td>
-              <td class="code-tag">\${new Date(sched.created_at).toLocaleString()}</td>
-            </tr>
-          \`).join('');
-        } else {
-          schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No scheduled publications queue entries found. Approved posts will automatically appear here when scheduled.</td></tr>';
+        if (schedBody) {
+          if (data.schedules && data.schedules.length > 0) {
+            schedBody.innerHTML = data.schedules.map(sched => \`
+              <tr>
+                <td><strong>\${escapeHtml(sched.post_title)}</strong></td>
+                <td class="code-tag">\${new Date(sched.scheduled_at).toUTCString()}</td>
+                <td><span class="status-badge status-healthy">\${escapeHtml(sched.status).toUpperCase()}</span></td>
+                <td><span class="code-tag">v\${sched.current_version}</span></td>
+                <td><span class="status-badge status-healthy">\${sched.quality_score || 0}/100</span></td>
+                <td><span class="status-badge \${sched.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(sched.quality_decision || 'PASS')}</span></td>
+                <td class="code-tag">\${new Date(sched.created_at).toLocaleString()}</td>
+              </tr>
+            \`).join('');
+          } else {
+            schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No scheduled publications queue entries found. Approved posts will automatically appear here when scheduled.</td></tr>';
+          }
         }
       } catch (err) {
         console.error('Failed to load schedules:', err);
@@ -768,14 +760,13 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/publications');
         if (!res.ok) {
-          if (res.status === 401) showLogin();
+          if (res.status === 401) showLoginForm();
           return;
         }
 
         const data = await res.json();
         const config = data.configStatus || {};
 
-        // Config Status Cards
         const cfgBadge = document.getElementById('meta-config-badge');
         const st = (config.state || (config.configured ? 'READY' : 'NOT_CONFIGURED')).toUpperCase();
         let badgeClass = 'status-disabled';
@@ -794,49 +785,51 @@ export function getAdminScripts(): string {
         if (tokenEl) tokenEl.textContent = config.tokenConfigured ? 'Configured (Set)' : 'Missing';
 
         const verEl = document.getElementById('meta-version-val');
-        if (verEl) verEl.textContent = config.apiVersion || 'v19.0';
+        if (verEl) verEl.textContent = config.apiVersion || 'v26.0';
 
         const lockEl = document.getElementById('meta-lock-val');
         if (lockEl) lockEl.textContent = config.publishEnabled ? 'ENABLED' : 'DISABLED';
 
         // Publications Table
         const pubBody = document.getElementById('publications-table-body');
-        if (data.publications && data.publications.length > 0) {
-          pubBody.innerHTML = data.publications.map(pub => {
-            const isApproved = pub.qualityGateStatus === 'approved' || pub.qualityGateStatus === 'PASS';
-            const statusClass = pub.status === 'published' ? 'status-healthy' : pub.status === 'publishing' ? 'status-active' : pub.status === 'failed' ? 'status-alert' : 'status-disabled';
-            const errCategory = pub.errorCode ? pub.errorCode : '';
+        if (pubBody) {
+          if (data.publications && data.publications.length > 0) {
+            pubBody.innerHTML = data.publications.map(pub => {
+              const isApproved = pub.qualityGateStatus === 'approved' || pub.qualityGateStatus === 'PASS';
+              const statusClass = pub.status === 'published' ? 'status-healthy' : pub.status === 'publishing' ? 'status-active' : pub.status === 'failed' ? 'status-alert' : 'status-disabled';
+              const errCategory = pub.errorCode ? pub.errorCode : '';
 
-            return \`
-              <tr>
-                <td>
-                  <strong>\${pub.postTitle || 'Untitled Post'}</strong>
-                  <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${pub.postBody || ''}</div>
-                  \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-red); margin-top:2px;">\${pub.errorMessage}</div>\` : ''}
-                </td>
-                <td><span class="code-tag">\${pub.provider}</span></td>
-                <td><span class="status-badge \${isApproved ? 'status-healthy' : 'status-alert'}">\${isApproved ? 'PASS' : 'UNAPPROVED'}</span></td>
-                <td>
-                  <span class="status-badge \${statusClass}">\${pub.status.toUpperCase()}</span>
-                  \${errCategory ? \`<div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">\${errCategory}</div>\` : ''}
-                </td>
-                <td class="code-tag">\${pub.facebookPostId || '—'}</td>
-                <td class="code-tag">\${pub.publishedAt ? new Date(pub.publishedAt).toLocaleString() : '—'}</td>
-                <td>
-                  \${isApproved && pub.status !== 'published' && pub.status !== 'publishing' ? \`
-                    <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${pub.postId}')">Publish Now</button>
-                    \${pub.status === 'failed' ? \`<button class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.8rem; margin-left:4px;" onclick="retryPub('\${pub.id}')">Retry</button>\` : ''}
-                  \` : pub.status === 'published' ? \`
-                    <span style="color:var(--accent-green); font-weight:600; font-size:0.85rem;">Published</span>
-                  \` : \`
-                    <span style="color:var(--text-muted); font-size:0.85rem;">—</span>
-                  \`}
-                </td>
-              </tr>
-            \`;
-          }).join('');
-        } else {
-          pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No publication records found. Approved scheduled posts will automatically publish via Meta Graph API.</td></tr>';
+              return \`
+                <tr>
+                  <td>
+                    <strong>\${escapeHtml(pub.postTitle || 'Untitled Post')}</strong>
+                    <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pub.postBody || '')}</div>
+                    \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-rose); margin-top:2px;">\${escapeHtml(pub.errorMessage)}</div>\` : ''}
+                  </td>
+                  <td><span class="code-tag">\${escapeHtml(pub.provider)}</span></td>
+                  <td><span class="status-badge \${isApproved ? 'status-healthy' : 'status-alert'}">\${isApproved ? 'PASS' : 'UNAPPROVED'}</span></td>
+                  <td>
+                    <span class="status-badge \${statusClass}">\${escapeHtml(pub.status).toUpperCase()}</span>
+                    \${errCategory ? \`<div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">\${escapeHtml(errCategory)}</div>\` : ''}
+                  </td>
+                  <td class="code-tag">\${escapeHtml(pub.facebookPostId || '—')}</td>
+                  <td class="code-tag">\${pub.publishedAt ? new Date(pub.publishedAt).toLocaleString() : '—'}</td>
+                  <td>
+                    \${isApproved && pub.status !== 'published' && pub.status !== 'publishing' ? \`
+                      <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${pub.postId}')">Publish Now</button>
+                      \${pub.status === 'failed' ? \`<button class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.8rem; margin-left:4px;" onclick="retryPub('\${pub.id}')">Retry</button>\` : ''}
+                    \` : pub.status === 'published' ? \`
+                      <span style="color:var(--accent-emerald); font-weight:600; font-size:0.85rem;">Published</span>
+                    \` : \`
+                      <span style="color:var(--text-muted); font-size:0.85rem;">—</span>
+                    \`}
+                  </td>
+                </tr>
+              \`;
+            }).join('');
+          } else {
+            pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No publication records found. Approved scheduled posts will automatically publish via Meta Graph API.</td></tr>';
+          }
         }
       } catch (err) {
         console.error('Failed to load publications:', err);
@@ -857,14 +850,12 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          if (alertEl) {
+        if (alertEl) {
+          if (res.ok && data.success) {
             alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + (data.result?.externalPostId || 'Success');
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
-          }
-        } else {
-          if (alertEl) {
+          } else {
             alertEl.textContent = 'Publication failed: ' + (data.error || data.result?.message || 'Error publishing post');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
@@ -895,14 +886,12 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (res.ok && data.success) {
-          if (alertEl) {
+        if (alertEl) {
+          if (res.ok && data.success) {
             alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + (data.result?.externalPostId || 'Success');
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
-          }
-        } else {
-          if (alertEl) {
+          } else {
             alertEl.textContent = 'Publication retry failed: ' + (data.error || data.result?.message || 'Error retrying publication');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
@@ -920,7 +909,7 @@ export function getAdminScripts(): string {
     }
 
     // ======================================================================
-    // Facebook Page Posts — READ-ONLY Live Feed
+    // Facebook Page Posts — READ-ONLY Live Feed & Health Status
     // ======================================================================
 
     let fbPostsLoaded = false;
@@ -929,13 +918,14 @@ export function getAdminScripts(): string {
     let loadedFbPostIds = new Set();
 
     async function loadFacebookPagePosts(append) {
-      const container = document.getElementById('fb-posts-container');
-      const statusBadge = document.getElementById('fb-posts-status-badge');
-      const refreshBtn = document.getElementById('fb-posts-refresh-btn');
-      const pageInfoEl = document.getElementById('fb-page-info');
-      const metaEl = document.getElementById('fb-posts-meta');
-      const loadMoreContainer = document.getElementById('fb-posts-load-more-container');
-      const loadMoreBtn = document.getElementById('fb-posts-load-more-btn');
+      const railContainer = document.getElementById('fb-rail-posts-container');
+      const pageContainer = document.getElementById('fb-posts-container');
+      const railBadge = document.getElementById('fb-rail-status-badge');
+      const pageBadge = document.getElementById('fb-posts-status-badge');
+      const railReadStatus = document.getElementById('fb-rail-read-status');
+      const fbReadCard = document.getElementById('val-fb-read');
+      const fbConfigCard = document.getElementById('val-fb-config');
+      const loadMoreWrap = document.getElementById('fb-rail-load-more-wrap');
 
       const isAppend = Boolean(append);
 
@@ -943,17 +933,13 @@ export function getAdminScripts(): string {
         fbNextCursor = null;
         fbHasMore = false;
         loadedFbPostIds = new Set();
-        if (refreshBtn) {
-          refreshBtn.disabled = true;
-          refreshBtn.textContent = 'Loading...';
+        if (railContainer) {
+          railContainer.innerHTML = '<div style="text-align:center; padding:2rem 0; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.825rem;">Fetching posts from Meta Graph API...</div></div>';
         }
-        if (statusBadge) {
-          statusBadge.innerHTML = '<span class="status-badge status-active">FETCHING</span>';
+        if (pageContainer) {
+          pageContainer.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts...</div></div>';
         }
-        if (container) {
-          container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts from Meta Graph API...</div></div>';
-        }
-        if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+        if (loadMoreWrap) loadMoreWrap.style.display = 'none';
       }
 
       try {
@@ -969,267 +955,346 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
 
-        // Handle not configured
+        // 1. Handle Not Configured
         if (!data.configured) {
-          if (statusBadge) {
-            statusBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
+          if (fbConfigCard) fbConfigCard.innerHTML = '<span class="status-badge status-disabled">Not configured</span>';
+          if (fbReadCard) fbReadCard.innerHTML = '<span class="status-badge status-disabled">Not checked</span>';
+          if (railReadStatus) {
+            railReadStatus.className = 'fb-rail-status-chip status-disabled';
+            railReadStatus.innerHTML = '○ READ: Not configured';
           }
-          if (container && !isAppend) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--text-subtle); stroke-width:1.5; margin-bottom:0.5rem;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div style="font-weight:600; margin-bottom:0.25rem;">Meta API Not Configured</div><div style="font-size:0.85rem;">Set <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">META_PAGE_ID</code> and <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">META_PAGE_ACCESS_TOKEN</code> to enable this feature.</div></div>';
-          }
-          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+          if (railBadge) railBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
+          if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
+
+          const notConfigHtml = '<div style="text-align:center; padding:1.5rem 0.5rem; color:var(--text-muted); font-size:0.825rem;">Meta API Not Configured</div>';
+          if (railContainer && !isAppend) railContainer.innerHTML = notConfigHtml;
+          if (pageContainer && !isAppend) pageContainer.innerHTML = notConfigHtml;
+          if (loadMoreWrap) loadMoreWrap.style.display = 'none';
           return;
         }
 
-        // Handle API error with configured credentials
+        // 2. Handle API Error
         if (data.error && (!data.posts || data.posts.length === 0)) {
-          if (statusBadge) {
-            statusBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
+          if (fbConfigCard) fbConfigCard.innerHTML = '<span class="status-badge status-healthy">Configured</span>';
+          if (fbReadCard) fbReadCard.innerHTML = '<span class="status-badge status-alert">● Error</span>';
+          if (railReadStatus) {
+            railReadStatus.className = 'fb-rail-status-chip status-alert';
+            railReadStatus.innerHTML = '● READ: Error';
           }
-          if (container && !isAppend) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem;"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--accent-rose); stroke-width:1.5; margin-bottom:0.5rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">' + escapeHtml(data.error) + '</div><button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
-          }
-          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+          if (railBadge) railBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
+          if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
+
+          const errorHtml = '<div style="text-align:center; padding:1.5rem 0.5rem;"><div style="font-weight:600; color:var(--accent-rose); font-size:0.85rem; margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">' + escapeHtml(data.error) + '</div><button class="btn-secondary" style="font-size:0.78rem; padding:0.3rem 0.75rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
+          if (railContainer && !isAppend) railContainer.innerHTML = errorHtml;
+          if (pageContainer && !isAppend) pageContainer.innerHTML = errorHtml;
+          if (loadMoreWrap) loadMoreWrap.style.display = 'none';
           return;
         }
 
-        // Update pagination cursors
+        // 3. SUCCESS — READ Connected
+        if (fbConfigCard) fbConfigCard.innerHTML = '<span class="status-badge status-healthy">Configured</span>';
+        if (fbReadCard) fbReadCard.innerHTML = '<span class="status-badge status-healthy">● Connected</span>';
+        if (railReadStatus) {
+          railReadStatus.className = 'fb-rail-status-chip status-healthy';
+          railReadStatus.innerHTML = '● READ: Connected';
+        }
+
         fbHasMore = Boolean(data.paging && data.paging.hasMore);
         fbNextCursor = (data.paging && data.paging.after) ? data.paging.after : null;
 
-        // Render Page Info
-        if (data.pageInfo && pageInfoEl) {
-          pageInfoEl.style.display = 'block';
-          const nameEl = document.getElementById('fb-page-name');
-          const catEl = document.getElementById('fb-page-category');
-          const fansEl = document.getElementById('fb-page-fans');
-          const linkEl = document.getElementById('fb-page-link');
-          const avatarEl = document.getElementById('fb-page-avatar');
-
-          if (nameEl) nameEl.textContent = data.pageInfo.name || 'Facebook Page';
-          if (catEl) catEl.textContent = data.pageInfo.category || '';
-          if (fansEl && data.pageInfo.fanCount) {
-            fansEl.textContent = data.pageInfo.fanCount.toLocaleString() + ' followers';
-          }
-          if (linkEl && data.pageInfo.link) {
-            linkEl.href = data.pageInfo.link;
-            linkEl.style.display = 'inline-block';
-          }
-          if (avatarEl && data.pageInfo.pictureUrl) {
-            avatarEl.innerHTML = '<img src="' + escapeHtml(data.pageInfo.pictureUrl) + '" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" alt="Page avatar">';
-          }
+        if (data.pageInfo) {
+          const rName = document.getElementById('fb-rail-page-name');
+          const rId = document.getElementById('fb-rail-page-id');
+          if (rName) rName.textContent = data.pageInfo.name || 'NorthSoft';
+          if (rId && data.pageInfo.id) rId.textContent = 'Page ID: ' + data.pageInfo.id;
         }
 
-        // Filter and render posts
         const rawPosts = data.posts || [];
         const newPosts = rawPosts.filter(function(p) { return !loadedFbPostIds.has(p.id); });
         newPosts.forEach(function(p) { loadedFbPostIds.add(p.id); });
 
         if (loadedFbPostIds.size > 0) {
-          if (statusBadge) {
-            statusBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
-          }
+          if (railBadge) railBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
+          if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
 
-          const cardsHtml = newPosts.map(function(post) {
+          const railCardsHtml = newPosts.map(function(post) {
             const timeAgo = formatFbTimeAgo(post.createdTime);
             const fullDate = post.createdTime ? new Date(post.createdTime).toLocaleString() : '';
-            const msgContent = post.message ? escapeHtml(post.message) : '<em style="color:var(--text-subtle);">No text content available.</em>';
-            const postTypeBadge = post.statusType ? '<span class="fb-post-type-badge">' + escapeHtml(post.statusType.replace(/_/g, ' ')) + '</span>' : '';
+            const msgContent = post.message ? escapeHtml(post.message) : (post.story ? escapeHtml(post.story) : '<em style="color:var(--text-subtle);">No text content available.</em>');
 
-            return '<div class="fb-post-card">' +
-              '<div class="fb-post-header">' +
-                '<div style="display:flex; align-items:center; gap:0.5rem; flex:1;">' +
-                  '<div class="fb-post-avatar">NS</div>' +
-                  '<div>' +
-                    '<div class="fb-post-page-name">' + escapeHtml(data.pageInfo?.name || 'NorthSoft') + '</div>' +
-                    '<div class="fb-post-time" title="' + escapeHtml(fullDate) + '">' + escapeHtml(timeAgo) + '</div>' +
-                  '</div>' +
+            return '<div class="fb-rail-post-card">' +
+              '<div class="fb-rail-post-header">' +
+                '<div class="fb-rail-post-avatar">NS</div>' +
+                '<div style="flex:1; min-width:0;">' +
+                  '<div class="fb-rail-post-name">' + escapeHtml(data.pageInfo?.name || 'NorthSoft') + '</div>' +
+                  '<div class="fb-rail-post-time" title="' + escapeHtml(fullDate) + '">' + escapeHtml(timeAgo) + '</div>' +
                 '</div>' +
-                postTypeBadge +
               '</div>' +
-              '<div class="fb-post-body">' + msgContent + '</div>' +
-              (post.fullPicture ? '<div class="fb-post-image-wrap"><img src="' + escapeHtml(post.fullPicture) + '" alt="Post image" class="fb-post-image" loading="lazy"></div>' : '') +
-              '<div class="fb-post-footer">' +
-                '<span class="fb-post-id" title="' + escapeHtml(post.id) + '">ID: ' + escapeHtml(post.id.length > 20 ? post.id.substring(0, 17) + '...' : post.id) + '</span>' +
-                (post.permalinkUrl ? '<a href="' + escapeHtml(post.permalinkUrl) + '" target="_blank" rel="noopener noreferrer" class="fb-post-permalink">View on Facebook &rarr;</a>' : '') +
+              '<div class="fb-rail-post-text">' + msgContent + '</div>' +
+              (post.fullPicture ? '<div class="fb-rail-post-img-wrap"><img src="' + escapeHtml(post.fullPicture) + '" alt="Post image" loading="lazy"></div>' : '') +
+              '<div class="fb-rail-post-footer">' +
+                '<span style="font-size:0.7rem; color:var(--text-subtle);" title="' + escapeHtml(post.id) + '">ID: ' + escapeHtml(post.id.length > 15 ? post.id.substring(0, 12) + '...' : post.id) + '</span>' +
+                (post.permalinkUrl ? '<a href="' + escapeHtml(post.permalinkUrl) + '" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook &rarr;</a>' : '') +
               '</div>' +
             '</div>';
           }).join('');
 
-          if (isAppend && container) {
-            container.innerHTML += cardsHtml;
-          } else if (container) {
-            container.innerHTML = cardsHtml;
+          if (isAppend && railContainer) {
+            railContainer.innerHTML += railCardsHtml;
+          } else if (railContainer) {
+            railContainer.innerHTML = railCardsHtml;
           }
 
-          // Handle Load More button visibility
-          if (loadMoreContainer && loadMoreBtn) {
+          if (isAppend && pageContainer) {
+            pageContainer.innerHTML += railCardsHtml;
+          } else if (pageContainer) {
+            pageContainer.innerHTML = railCardsHtml;
+          }
+
+          if (loadMoreWrap) {
             if (fbHasMore && fbNextCursor) {
-              loadMoreContainer.style.display = 'block';
-              loadMoreBtn.disabled = false;
-              loadMoreBtn.textContent = 'Load more';
+              loadMoreWrap.style.display = 'block';
             } else {
-              loadMoreContainer.style.display = 'none';
+              loadMoreWrap.style.display = 'none';
             }
           }
-
-          // Show metadata
-          if (metaEl) {
-            metaEl.style.display = 'flex';
-            const fetchedAtEl = document.getElementById('fb-posts-fetched-at');
-            const countEl = document.getElementById('fb-posts-count');
-            if (fetchedAtEl) fetchedAtEl.textContent = 'Fetched: ' + new Date(data.fetchedAt || Date.now()).toLocaleTimeString();
-            if (countEl) countEl.textContent = loadedFbPostIds.size + ' posts loaded via Meta Graph API v26.0';
-          }
         } else if (!isAppend) {
-          if (statusBadge) {
-            statusBadge.innerHTML = '<span class="status-badge status-active">CONNECTED</span>';
-          }
-          if (container) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; margin-bottom:0.25rem;">No posts found</div><div style="font-size:0.85rem;">The Facebook Page feed is empty or returned no results.</div></div>';
-          }
-          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+          const emptyHtml = '<div style="text-align:center; padding:1.5rem 0.5rem; color:var(--text-muted); font-size:0.825rem;">No posts found on page.</div>';
+          if (railContainer) railContainer.innerHTML = emptyHtml;
+          if (pageContainer) pageContainer.innerHTML = emptyHtml;
+          if (loadMoreWrap) loadMoreWrap.style.display = 'none';
         }
 
         fbPostsLoaded = true;
       } catch (err) {
         console.error('Failed to load Facebook Page posts:', err);
-        if (statusBadge) {
-          statusBadge.innerHTML = '<span class="status-badge status-alert">ERROR</span>';
+        if (fbReadCard) fbReadCard.innerHTML = '<span class="status-badge status-alert">● Error</span>';
+        if (railReadStatus) {
+          railReadStatus.className = 'fb-rail-status-chip status-alert';
+          railReadStatus.innerHTML = '● READ: Error';
         }
-        if (container && !isAppend) {
-          container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.85rem; margin-bottom:1rem;">Could not connect to the server. Check your network and try again.</div><button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
-        }
-        if (loadMoreContainer) loadMoreContainer.style.display = 'none';
-      } finally {
-        if (refreshBtn) {
-          refreshBtn.disabled = false;
-          refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; vertical-align:middle; margin-right:0.25rem;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh';
-        }
-        if (loadMoreBtn && fbHasMore && fbNextCursor) {
-          loadMoreBtn.disabled = false;
-          loadMoreBtn.textContent = 'Load more';
-        }
+        if (railBadge) railBadge.innerHTML = '<span class="status-badge status-alert">ERROR</span>';
+        const errHtml = '<div style="text-align:center; padding:1.5rem 0.5rem; color:var(--accent-rose); font-size:0.825rem;">Connection error loading feed</div>';
+        if (railContainer && !isAppend) railContainer.innerHTML = errHtml;
       }
     }
 
-    async function loadMoreFacebookPagePosts() {
-      const loadMoreBtn = document.getElementById('fb-posts-load-more-btn');
-      if (!fbNextCursor || !fbHasMore) return;
-      if (loadMoreBtn) {
-        loadMoreBtn.disabled = true;
-        loadMoreBtn.textContent = 'Loading...';
-      }
-      await loadFacebookPagePosts(true);
-    }
+    function formatFbTimeAgo(isoString) {
+      if (!isoString) return '';
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return isoString;
+      const now = Date.now();
+      const diffSec = Math.floor((now - d.getTime()) / 1000);
 
-    function formatFbTimeAgo(isoDate) {
-      if (!isoDate) return 'Unknown';
-      const d = new Date(isoDate);
-      if (isNaN(d.getTime())) return isoDate;
-      const now = new Date();
-      const diffMs = now.getTime() - d.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return diffMins + 'm ago';
-      if (diffHours < 24) return diffHours + 'h ago';
-      if (diffDays < 7) return diffDays + 'd ago';
-      if (diffDays < 30) return Math.floor(diffDays / 7) + 'w ago';
+      if (diffSec < 60) return 'Just now';
+      if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
+      if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h ago';
+      if (diffSec < 604800) return Math.floor(diffSec / 86400) + 'd ago';
 
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return monthNames[d.getMonth()] + ' ' + d.getDate() + (d.getFullYear() !== now.getFullYear() ? ', ' + d.getFullYear() : '');
+      return monthNames[d.getMonth()] + ' ' + d.getDate() + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    function renderAuditRows(recentActivity) {
+      if (!recentActivity || recentActivity.length === 0) {
+        return '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events recorded</div></td></tr>';
+      }
+
+      return recentActivity.map(act => {
+        const evt = formatAuditEvent(act.eventType);
+        const actorInfo = formatAuditActor(act.actor, act.details);
+        const entInfo = formatAuditEntity(act.entityType, act.entityId);
+        const dtItems = formatAuditDetails(act.details);
+        const tsInfo = formatAuditTimestamp(act.timestamp);
+
+        return \`
+          <tr>
+            <td>
+              <div style="display:flex; align-items:center; gap:0.4rem;">
+                <span class="status-badge \${evt.badgeClass}">\${evt.category}</span>
+                <div>
+                  <strong style="font-size:0.875rem; color:var(--text-main);">\${evt.title}</strong>
+                  <div style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;" title="Technical Event Type">\${act.eventType}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="status-badge \${actorInfo.badgeClass}">\${actorInfo.label}</span>
+              \${actorInfo.subtext ? \`<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">\${actorInfo.subtext}</div>\` : ''}
+            </td>
+            <td>
+              <div style="font-weight:600; font-size:0.825rem;">\${entInfo.typeLabel}</div>
+              <div style="font-size:0.725rem; color:var(--text-subtle); font-family:monospace;" title="\${entInfo.fullId}">\${entInfo.truncatedId}</div>
+            </td>
+            <td>
+              <div class="audit-details-compact">
+                \${dtItems.length > 0 ? dtItems.map(d => \`<span class="detail-pill"><span class="detail-key">\${d.label}:</span> <span class="detail-val">\${d.value}</span></span>\`).join('') : '<span style="color:var(--text-subtle); font-size:0.8rem;">—</span>'}
+              </div>
+            </td>
+            <td style="white-space:nowrap; font-size:0.8rem; color:var(--text-muted);" title="\${tsInfo.full}">
+              \${tsInfo.compact}
+            </td>
+          </tr>
+        \`;
+      }).join('');
+    }
+
+    function formatAuditEvent(eventType) {
+      const norm = (eventType || '').toUpperCase().trim();
+      switch (norm) {
+        case 'AUTH_LOGIN_SUCCESS': return { title: 'Login successful', category: 'SUCCESS', badgeClass: 'status-healthy' };
+        case 'AUTH_LOGIN_FAILURE': return { title: 'Login failed', category: 'FAILED', badgeClass: 'status-alert' };
+        case 'AUTH_LOGOUT': return { title: 'User signed out', category: 'INFO', badgeClass: 'status-disabled' };
+        case 'SESSION_CREATED': return { title: 'Session created', category: 'INFO', badgeClass: 'status-active' };
+        case 'SESSION_REVOKED': return { title: 'Session revoked', category: 'INFO', badgeClass: 'status-disabled' };
+        case 'ADMIN_PASSWORD_CHANGED': return { title: 'Password changed', category: 'SUCCESS', badgeClass: 'status-healthy' };
+        case 'ADMIN_PASSWORD_RESET_REQUESTED': return { title: 'Password reset requested', category: 'INFO', badgeClass: 'status-disabled' };
+        case 'ADMIN_PASSWORD_RESET_COMPLETED': return { title: 'Password reset completed', category: 'SUCCESS', badgeClass: 'status-healthy' };
+        case 'ADMIN_PASSWORD_RESET_FAILED': return { title: 'Password reset failed', category: 'FAILED', badgeClass: 'status-alert' };
+        case 'ADMIN_RECOVERY_EMAIL_UPDATED': return { title: 'Recovery email updated', category: 'UPDATED', badgeClass: 'status-active' };
+        case 'RESEARCH_STARTED': case 'RESEARCH_RUN_STARTED': case 'AI_RESEARCH_STARTED': return { title: 'Research started', category: 'STARTED', badgeClass: 'status-active' };
+        case 'RESEARCH_COMPLETED': case 'RESEARCH_RUN_COMPLETED': case 'AI_RESEARCH_COMPLETED': return { title: 'Research completed', category: 'SUCCESS', badgeClass: 'status-healthy' };
+        case 'POST_GENERATED': case 'POST_GENERATION_STARTED': return { title: 'Post draft generated', category: 'CREATED', badgeClass: 'status-active' };
+        case 'QUALITY_GATE': return { title: 'Quality gate evaluation', category: 'EVALUATION', badgeClass: 'status-active' };
+        case 'POST_APPROVED': case 'QA_PASSED': case 'POLICY_REVIEW_PASSED': case 'STATIC_VALIDATION_PASSED': return { title: 'Post approved', category: 'APPROVED', badgeClass: 'status-healthy' };
+        case 'POST_BLOCKED': case 'POST_REJECTED': case 'QA_FAILED': case 'POLICY_REVIEW_FAILED': case 'STATIC_VALIDATION_FAILED': return { title: 'Post rejected / blocked', category: 'BLOCKED', badgeClass: 'status-alert' };
+        case 'POST_SCHEDULED': case 'PUBLICATION_SCHEDULED': case 'PUBLICATION_CREATED': return { title: 'Publication scheduled', category: 'SCHEDULED', badgeClass: 'status-active' };
+        case 'PUBLICATION_STARTED': case 'FACEBOOK_PUBLISH_ATTEMPT': return { title: 'Publication attempt', category: 'ATTEMPT', badgeClass: 'status-active' };
+        case 'PUBLICATION_SUCCEEDED': case 'FACEBOOK_PUBLISH_SUCCESS': return { title: 'Publication succeeded', category: 'SUCCESS', badgeClass: 'status-healthy' };
+        case 'PUBLICATION_FAILED': case 'FACEBOOK_PUBLISH_FAILED': return { title: 'Publication failed', category: 'FAILED', badgeClass: 'status-alert' };
+        case 'CONFIG_CHANGED': return { title: 'Configuration updated', category: 'CONFIG', badgeClass: 'status-active' };
+        case 'SYSTEM_ERROR': case 'WORKFLOW_FAILED': return { title: 'System error', category: 'ERROR', badgeClass: 'status-alert' };
+        default: {
+          const words = norm.split('_').filter(Boolean).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+          const isErr = norm.includes('FAIL') || norm.includes('ERR') || norm.includes('BLOCK') || norm.includes('REJECT');
+          const isSucc = norm.includes('SUCCESS') || norm.includes('COMPLET') || norm.includes('PASS');
+          return { title: words || 'System Event', category: isErr ? 'FAILED' : isSucc ? 'SUCCESS' : 'INFO', badgeClass: isErr ? 'status-alert' : isSucc ? 'status-healthy' : 'status-disabled' };
+        }
+      }
+    }
+
+    function formatAuditActor(actor, details) {
+      const act = (actor || 'system').toLowerCase().trim();
+      let label = 'SYSTEM';
+      let badgeClass = 'status-disabled';
+      if (act === 'admin') { label = 'ADMIN'; badgeClass = 'status-active'; }
+      else if (act === 'ai') { label = 'AI ENGINE'; badgeClass = 'status-healthy'; }
+      const username = details && (details.username || details.actorName);
+      return { label, subtext: typeof username === 'string' && username.trim() ? username.trim() : null, badgeClass };
+    }
+
+    function formatAuditEntity(entityType, entityId) {
+      const typeMap = { admin_user: 'Admin user', admin_session: 'Admin session', publication: 'Publication', post: 'Post draft', post_version: 'Post version', topic: 'Research topic', research_run: 'Research run', orchestrator: 'Orchestrator' };
+      const rawType = (entityType || '').toLowerCase().trim();
+      const typeLabel = typeMap[rawType] || rawType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'System';
+      const fullId = String(entityId || '—');
+      const truncatedId = fullId.length > 14 ? fullId.substring(0, 8) + '…' : fullId;
+      return { typeLabel, truncatedId, fullId };
+    }
+
+    function formatAuditDetails(detailsInput) {
+      let details = {};
+      if (typeof detailsInput === 'string') {
+        try { details = JSON.parse(detailsInput); } catch { details = { info: detailsInput }; }
+      } else if (detailsInput && typeof detailsInput === 'object') {
+        details = detailsInput;
+      }
+      const labelMap = { username: 'Username', clientIp: 'IP', emailConfigured: 'Email', expiresAt: 'Expires', adminUserId: 'User ID', triggerType: 'Trigger', trigger: 'Trigger', reason: 'Reason', status: 'Status', neuronsUsed: 'Neurons', neurons: 'Neurons', errorMessage: 'Error', error: 'Error' };
+      const items = [];
+      for (const [key, rawVal] of Object.entries(details)) {
+        if (rawVal === undefined || rawVal === null) continue;
+        const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        let value = '';
+        if (typeof rawVal === 'boolean') { value = rawVal ? 'Configured' : 'Not configured'; }
+        else if (typeof rawVal === 'object') { value = JSON.stringify(rawVal); }
+        else if (key.toLowerCase().includes('time') || key.toLowerCase().includes('expires')) {
+          const parsedDate = new Date(String(rawVal));
+          value = isNaN(parsedDate.getTime()) ? String(rawVal) : parsedDate.toLocaleString();
+        } else { value = String(rawVal); }
+        if (value.length > 36) value = value.substring(0, 33) + '…';
+        items.push({ key, label, value: escapeHtml(value) });
+      }
+      return items;
+    }
+
+    function formatAuditTimestamp(isoDate) {
+      const d = new Date(isoDate);
+      if (isNaN(d.getTime())) return { compact: isoDate || '—', full: isoDate || '—' };
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const day = d.getUTCDate();
+      const month = monthNames[d.getUTCMonth()];
+      const hours = String(d.getUTCHours()).padStart(2, '0');
+      const mins = String(d.getUTCMinutes()).padStart(2, '0');
+      const secs = String(d.getUTCSeconds()).padStart(2, '0');
+      return {
+        compact: day + ' ' + month + ', ' + hours + ':' + mins + ' UTC',
+        full: d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0') + ' ' + hours + ':' + mins + ':' + secs + ' UTC'
+      };
     }
 
     function escapeHtml(str) {
-      if (!str) return '';
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (typeof str !== 'string') return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
-    // Manual Publisher Handlers & Live Preview
-    function initManualPublisherEvents() {
+    // Manual Publisher Client Functions
+    async function loadManualPublisherData() {
       const contentEl = document.getElementById('manual-post-content');
-      const linkEl = document.getElementById('manual-post-link');
-
-      if (contentEl) {
+      if (contentEl && !contentEl.dataset.listened) {
+        contentEl.dataset.listened = 'true';
         contentEl.addEventListener('input', updateManualPreview);
       }
-      if (linkEl) {
+      const linkEl = document.getElementById('manual-post-link');
+      if (linkEl && !linkEl.dataset.listened) {
+        linkEl.dataset.listened = 'true';
         linkEl.addEventListener('input', updateManualPreview);
       }
+      updateManualPreview();
     }
-
-    document.addEventListener('DOMContentLoaded', initManualPublisherEvents);
 
     function updateManualPreview() {
       const content = (document.getElementById('manual-post-content')?.value || '').trim();
       const link = (document.getElementById('manual-post-link')?.value || '').trim();
-      const charCounter = document.getElementById('manual-char-counter');
-      const previewText = document.getElementById('preview-text');
-      const previewCard = document.getElementById('preview-link-card');
-      const previewDomain = document.getElementById('preview-link-domain');
-      const previewUrl = document.getElementById('preview-link-url');
 
-      const len = content.length;
-      if (charCounter) {
-        charCounter.textContent = len.toLocaleString() + ' / 63,206 characters';
-        if (len > 63206) {
-          charCounter.style.color = 'var(--accent-red)';
-          charCounter.style.fontWeight = '700';
-        } else if (len > 60000) {
-          charCounter.style.color = '#f59e0b';
-          charCounter.style.fontWeight = '600';
+      const counterEl = document.getElementById('manual-char-counter');
+      if (counterEl) {
+        counterEl.textContent = content.length + ' / 63206 characters';
+        counterEl.style.color = content.length > 63206 ? 'var(--accent-rose)' : 'var(--text-muted)';
+      }
+
+      const previewTextEl = document.getElementById('preview-text');
+      if (previewTextEl) {
+        previewTextEl.innerHTML = content ? escapeHtml(content) : 'Write your Facebook post...';
+        previewTextEl.style.color = content ? '#e4e6eb' : '#b0b3b8';
+      }
+
+      const linkCardEl = document.getElementById('preview-link-card');
+      if (linkCardEl) {
+        if (link) {
+          try {
+            const parsed = new URL(link);
+            document.getElementById('preview-link-domain').textContent = parsed.hostname.toUpperCase();
+            document.getElementById('preview-link-title').textContent = 'Attached External Link';
+            document.getElementById('preview-link-url').textContent = link;
+            linkCardEl.style.display = 'block';
+          } catch {
+            linkCardEl.style.display = 'none';
+          }
         } else {
-          charCounter.style.color = 'var(--text-muted)';
-          charCounter.style.fontWeight = 'normal';
+          linkCardEl.style.display = 'none';
         }
-      }
-
-      if (previewText) {
-        previewText.textContent = content || 'Write your Facebook post...';
-      }
-
-      if (link && previewCard && previewUrl && previewDomain) {
-        try {
-          const urlObj = new URL(link);
-          previewDomain.textContent = urlObj.hostname.toUpperCase();
-          previewUrl.textContent = link;
-          previewCard.style.display = 'block';
-        } catch {
-          previewCard.style.display = 'none';
-        }
-      } else if (previewCard) {
-        previewCard.style.display = 'none';
-      }
-    }
-
-    async function loadManualPublisherData() {
-      initManualPublisherEvents();
-      updateManualPreview();
-      try {
-        const res = await fetch('/api/admin/meta/status');
-        if (!res.ok) return;
-        const data = await res.json();
-        const badge = document.getElementById('manual-meta-status-badge');
-        if (badge) {
-          const st = (data.status || 'NOT_CONFIGURED').toUpperCase();
-          let cls = 'status-disabled';
-          if (st === 'READY') cls = 'status-healthy';
-          else if (st === 'DEGRADED') cls = 'status-alert';
-          else if (st === 'DISABLED') cls = 'status-active';
-          badge.innerHTML = '<span class="status-badge ' + cls + '">META ' + st.replace('_', ' ') + '</span>';
-        }
-      } catch (err) {
-        console.error('Failed to load Meta status for Manual Publisher:', err);
       }
     }
 
     function validateManualForm() {
-      const alertEl = document.getElementById('manual-pub-alert');
       const content = (document.getElementById('manual-post-content')?.value || '').trim();
       const link = (document.getElementById('manual-post-link')?.value || '').trim();
+      const alertEl = document.getElementById('manual-pub-alert');
 
       if (!content) {
         if (alertEl) {
@@ -1242,7 +1307,7 @@ export function getAdminScripts(): string {
 
       if (content.length > 63206) {
         if (alertEl) {
-          alertEl.textContent = 'Validation error: Post content exceeds Meta Graph API maximum limit of 63,206 characters (' + content.length + ' entered).';
+          alertEl.textContent = 'Validation error: Post content exceeds Meta Graph API 63,206 character limit.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }

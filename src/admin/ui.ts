@@ -1,8 +1,11 @@
 /**
  * NorthSoft.AI.ContentCreator — Admin Dashboard UI Entry Point
  *
- * Renders the single-page Admin Interface at /admin and /admin/*.
- * Composes modular styles, component structure, and client-side JavaScript.
+ * Renders the single-page Admin Interface at /admin.
+ * Implements Facebook / Meta Business style 3-column layout:
+ * - Left Sidebar (Navigation)
+ * - Center Workspace (Main active tab)
+ * - Right Facebook Rail (Persistent live feed preview & health status)
  */
 
 import { getAdminScripts } from './ui/scripts.js';
@@ -90,40 +93,87 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- DASHBOARD SCREEN -->
+  <!-- DASHBOARD 3-COLUMN SCREEN -->
   <div id="dashboard-screen">
     <div class="app-layout">
-      <!-- Sidebar -->
+
+      <!-- 1. LEFT SIDEBAR NAVIGATION -->
       <aside class="sidebar">
         <div class="sidebar-brand">
-          <div class="brand-logo" style="width:36px; height:36px;">
+          <div class="brand-logo" style="width:36px; height:36px; margin-bottom:0;">
             <svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:white; stroke-width:2;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           </div>
           <div>
             <div class="sidebar-brand-name">NorthSoft AI</div>
-            <div style="font-size:0.75rem; color:var(--text-muted);">Content Creator</div>
+            <div class="sidebar-brand-sub">ContentCreator</div>
           </div>
         </div>
 
-        <ul class="nav-list">
-          <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">Dashboard</a></li>
-          <li class="nav-item" id="nav-manual-publisher"><a href="#manual-publisher" onclick="switchTab('manual-publisher')">Manual Publisher <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Meta</span></a></li>
-          <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">Research <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3A</span></a></li>
-          <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">Content <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3B</span></a></li>
-          <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">Schedules <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 3C</span></a></li>
-          <li class="nav-item" id="nav-publications"><a href="#publications" onclick="switchTab('publications')">Publications <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 4</span></a></li>
-          <li class="nav-item" id="nav-security"><a href="#security" onclick="switchTab('security')">Account & Security <span class="status-badge status-healthy" style="font-size:0.65rem; padding:2px 6px;">Phase 5.3</span></a></li>
-        </ul>
+        <nav style="flex:1;">
+          <div class="nav-section-title">MAIN</div>
+          <ul class="nav-list">
+            <li class="nav-item active" id="nav-dashboard"><a href="#dashboard" onclick="switchTab('dashboard')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              Dashboard
+            </a></li>
+          </ul>
+
+          <div class="nav-section-title">CONTENT</div>
+          <ul class="nav-list">
+            <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Content Drafts
+            </a></li>
+            <li class="nav-item" id="nav-research"><a href="#research" onclick="switchTab('research')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Topic Research
+            </a></li>
+          </ul>
+
+          <div class="nav-section-title">PUBLISHING</div>
+          <ul class="nav-list">
+            <li class="nav-item" id="nav-schedules"><a href="#schedules" onclick="switchTab('schedules')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Scheduled Queue
+            </a></li>
+            <li class="nav-item" id="nav-publications"><a href="#publications" onclick="switchTab('publications')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+              Publications
+            </a></li>
+            <li class="nav-item" id="nav-manual-publisher"><a href="#manual-publisher" onclick="switchTab('manual-publisher')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              Manual Publisher
+            </a></li>
+          </ul>
+
+          <div class="nav-section-title">SYSTEM</div>
+          <ul class="nav-list">
+            <li class="nav-item" id="nav-audit"><a href="#audit" onclick="switchTab('audit')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Audit Log
+            </a></li>
+            <li class="nav-item" id="nav-security"><a href="#security" onclick="switchTab('security')">
+              <svg viewBox="0 0 24 24" class="nav-icon"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Account & Security
+            </a></li>
+          </ul>
+        </nav>
       </aside>
 
-      <!-- Main Content -->
+      <!-- 2. CENTER WORKSPACE -->
       <main class="main-content">
         <header class="header">
-          <div style="font-weight:600; font-size:0.95rem;" id="header-app-name">NorthSoft AI — Content Creator</div>
+          <div class="header-left">
+            <div class="header-app-title">NorthSoft AI ContentCreator</div>
+            <div class="header-app-sub">Automated Content Research, Generation & Publishing</div>
+          </div>
 
           <div class="header-user">
             <span id="env-badge" class="env-tag env-staging">STAGING</span>
-            <div style="font-size:0.85rem; font-weight:500;" id="user-display">Administrator</div>
+            <div class="user-pill">
+              <span class="user-avatar">👤</span>
+              <span id="user-display">Administrator</span>
+            </div>
             <button id="logout-btn" class="btn-logout">Sign Out</button>
           </div>
         </header>
@@ -132,46 +182,59 @@ export function renderAdminHtml(): string {
 
           <!-- TAB 1: DASHBOARD OVERVIEW -->
           <div id="tab-dashboard" class="tab-section active-tab">
-            <h1 class="page-title">Admin Dashboard</h1>
-            <p class="page-subtitle">System status, content pipeline overview, and security controls.</p>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Dashboard</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">NorthSoft AI ContentCreator — Automated content research, generation, and publishing control panel.</p>
+              </div>
+            </div>
 
-            <!-- System Status Grid -->
-            <h2 style="font-size:1.1rem; margin-bottom:1rem;">System Status</h2>
+            <!-- Truthful System & Integration Status Grid -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <h2 style="font-size:1.05rem; font-weight:700; color:var(--text-main);">System &amp; Integration Status</h2>
+              <span id="system-status-summary-badge" class="status-badge status-healthy">OPERATIONAL</span>
+            </div>
+
             <div class="section-grid" id="status-grid">
               <div class="card">
-                <div class="card-label">Worker Status</div>
+                <div class="card-label">Cloudflare Worker</div>
                 <div class="card-val" id="val-worker"><span class="status-badge status-healthy">Healthy</span></div>
-                <div class="card-sub">Cloudflare Worker runtime</div>
+                <div class="card-sub">Edge Runtime</div>
               </div>
               <div class="card">
                 <div class="card-label">Database (D1)</div>
                 <div class="card-val" id="val-db"><span class="status-badge status-healthy">Connected</span></div>
-                <div class="card-sub">SQLite at Edge</div>
+                <div class="card-sub">SQLite Database</div>
               </div>
               <div class="card">
                 <div class="card-label">AI Engine</div>
                 <div class="card-val" id="val-ai"><span class="status-badge status-active">Configured</span></div>
-                <div class="card-sub">Workers AI (Zero Cost)</div>
+                <div class="card-sub">Workers AI</div>
               </div>
               <div class="card">
-                <div class="card-label">Facebook Publisher</div>
-                <div class="card-val" id="val-fb"><span class="status-badge status-disabled">Not configured</span></div>
-                <div class="card-sub">Meta Graph API v19.0</div>
+                <div class="card-label">Facebook Configuration</div>
+                <div class="card-val" id="val-fb-config"><span class="status-badge status-disabled">Checking...</span></div>
+                <div class="card-sub">Page ID &amp; Token</div>
               </div>
               <div class="card">
-                <div class="card-label">Publishing Pipeline</div>
-                <div class="card-val" id="val-publishing"><span class="status-badge status-disabled">Disabled</span></div>
-                <div class="card-sub">Production Safety Lock</div>
+                <div class="card-label">Facebook READ API</div>
+                <div class="card-val" id="val-fb-read"><span class="status-badge status-active">Checking...</span></div>
+                <div class="card-sub">Graph API v26.0 /posts</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Facebook Publishing</div>
+                <div class="card-val" id="val-fb-publishing"><span class="status-badge status-disabled">Disabled</span></div>
+                <div class="card-sub">FACEBOOK_PUBLISH_ENABLED</div>
               </div>
             </div>
 
-            <!-- Content Pipeline Grid -->
-            <h2 style="font-size:1.1rem; margin-bottom:1rem;">Content Pipeline</h2>
+            <!-- Content Pipeline Summary Cards -->
+            <h2 style="font-size:1.05rem; font-weight:700; color:var(--text-main); margin-bottom:0.75rem;">Content Pipeline</h2>
             <div class="section-grid" id="pipeline-grid">
               <div class="card">
                 <div class="card-label">Ideas</div>
                 <div class="card-val" id="cnt-ideas">0</div>
-                <div class="card-sub">Backlog topics</div>
+                <div class="card-sub">Discovered topics</div>
               </div>
               <div class="card">
                 <div class="card-label">Drafts</div>
@@ -200,7 +263,7 @@ export function renderAdminHtml(): string {
               </div>
               <div class="card">
                 <div class="card-label">Blocked</div>
-                <div class="card-val" id="cnt-blocked" style="color:var(--accent-red);">0</div>
+                <div class="card-val" id="cnt-blocked" style="color:var(--accent-rose);">0</div>
                 <div class="card-sub">Failed policy/QA check</div>
               </div>
             </div>
@@ -232,13 +295,13 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- AI Quota & Neuron Usage Panel -->
+            <!-- AI Quota & Budget Enforcement Panel -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Cloudflare Workers AI Quota & Budget Enforcement</div>
+                <div class="panel-title">Cloudflare Workers AI Quota &amp; Budget Enforcement</div>
                 <div id="ai-quota-badge"><span class="status-badge status-healthy">FREE CAPACITY AVAILABLE</span></div>
               </div>
-              <div class="section-grid" style="margin-bottom:1.5rem;">
+              <div class="section-grid" style="margin-bottom:0;">
                 <div>
                   <div class="card-label">AI Inference Engine</div>
                   <div style="font-size:1.1rem; font-weight:700;" id="ai-provider-name">Cloudflare Workers AI</div>
@@ -261,59 +324,13 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Facebook Page — Live Posts (READ-ONLY) -->
+            <!-- Recent System Audit Activity Log Preview -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">
-                  <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:var(--accent-blue); stroke-width:2; margin-right:0.4rem; vertical-align:middle;"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-                  Facebook Page — Live Posts
-                </div>
-                <div style="display:flex; align-items:center; gap:0.75rem;">
-                  <button id="fb-posts-refresh-btn" class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem; background:var(--bg-hover); color:var(--text-primary); border:1px solid var(--border-color);" onclick="loadFacebookPagePosts()">
-                    <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; vertical-align:middle; margin-right:0.25rem;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Refresh
-                  </button>
-                  <div id="fb-posts-status-badge"><span class="status-badge status-disabled">NOT LOADED</span></div>
-                </div>
-              </div>
-
-              <!-- Page Info Header -->
-              <div id="fb-page-info" style="display:none; padding:1rem; background:rgba(24,119,242,0.06); border:1px solid rgba(24,119,242,0.15); border-radius:8px; margin-bottom:1.25rem;">
-                <div style="display:flex; align-items:center; gap:0.75rem;">
-                  <div id="fb-page-avatar" style="width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg, #1877f2, #0056b3); display:flex; align-items:center; justify-content:center; font-weight:700; color:white; font-size:0.9rem; flex-shrink:0;">NS</div>
-                  <div style="flex:1;">
-                    <div style="font-weight:600; font-size:0.95rem;" id="fb-page-name">NorthSoft</div>
-                    <div style="font-size:0.8rem; color:var(--text-muted); display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.15rem;">
-                      <span id="fb-page-category"></span>
-                      <span id="fb-page-fans"></span>
-                    </div>
-                  </div>
-                  <a id="fb-page-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none; color:var(--accent-blue); font-size:0.82rem; text-decoration:none; border:1px solid rgba(24,119,242,0.3); padding:0.3rem 0.65rem; border-radius:6px; white-space:nowrap;">
-                    View Page ↗
-                  </a>
-                </div>
-              </div>
-
-              <!-- Posts Grid -->
-              <div id="fb-posts-container" style="display:grid; grid-template-columns:1fr; gap:1rem;">
-                <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-muted);">
-                  <svg viewBox="0 0 24 24" style="width:40px; height:40px; fill:none; stroke:var(--text-subtle); stroke-width:1.5; margin-bottom:0.75rem;"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-                  <div style="font-weight:600; margin-bottom:0.25rem;">Facebook Page Posts</div>
-                  <div style="font-size:0.85rem;">Click <strong>Refresh</strong> to fetch the latest posts from the NorthSoft Facebook Page.</div>
-                </div>
-              </div>
-
-              <!-- Fetch Metadata -->
-              <div id="fb-posts-meta" style="display:none; margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border-color); font-size:0.78rem; color:var(--text-subtle); display:flex; justify-content:space-between;">
-                <span id="fb-posts-fetched-at"></span>
-                <span id="fb-posts-count"></span>
-              </div>
-            </div>
-
-            <!-- Recent Audit Activity Log -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">System Audit Log</div>
+                <div class="panel-title">Recent System Audit Activity</div>
+                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="switchTab('audit')">
+                  View Full Audit Log &rarr;
+                </button>
               </div>
               <div class="table-container">
                 <table>
@@ -327,113 +344,53 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="recent-activity-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit log...</td></tr>
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit activity...</td></tr>
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- TAB: MANUAL FACEBOOK PUBLISHER -->
-          <div id="tab-manual-publisher" class="tab-section">
+          <!-- TAB: CONTENT DRAFTS -->
+          <div id="tab-content" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
-                <h1 class="page-title">Manual Facebook Publisher</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Publish content directly to the configured NorthSoft Facebook Page via official Meta Publisher.</p>
-              </div>
-              <div id="manual-meta-status-badge">
-                <span class="status-badge status-healthy">META READY</span>
+                <h1 class="page-title">Content Pipeline &amp; Post Drafts</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Autonomous post draft generation, static checks, independent QA review, policy evaluation, and quality gate results.</p>
               </div>
             </div>
 
-            <div id="manual-pub-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+            <div id="content-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
-            <div class="manual-publisher-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items:start;">
-              <!-- Left Column: Composer Form -->
-              <div class="panel">
-                <div class="panel-header">
-                  <div class="panel-title">Post content</div>
-                </div>
-
-                <form id="manual-post-form" onsubmit="return false;">
-                  <div class="form-group">
-                    <label class="form-label" for="manual-post-content">Facebook post content</label>
-                    <textarea id="manual-post-content" class="form-input" style="min-height: 180px; resize: vertical; font-family: inherit; line-height: 1.5;" placeholder="Write your Facebook post..." required maxlength="63206"></textarea>
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">
-                      <span>Meta Graph API limit</span>
-                      <span id="manual-char-counter">0 / 63206 characters</span>
-                    </div>
-                  </div>
-
-                  <div class="form-group" style="margin-top: 1.25rem;">
-                    <label class="form-label" for="manual-post-link">Attachment Link (Optional)</label>
-                    <input type="url" id="manual-post-link" class="form-input" placeholder="https://northsoft.is/article">
-                    <div class="card-sub" style="margin-top:0.3rem;">Attach an external website or article link to the post.</div>
-                  </div>
-
-                  <!-- Media Capability Notice -->
-                  <div style="background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--border-color); border-radius: 8px; padding: 1rem; margin-top: 1.25rem;">
-                    <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary);">
-                      <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                      Media (Images / Video)
-                    </div>
-                    <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-                      <strong>Video &amp; direct file upload: Not available in the current publisher configuration.</strong><br>
-                      Direct binary file upload requires Cloudflare R2 media storage and Meta <code>pages_manage_posts</code> photos/videos permissions. URL Link attachments are supported above.
-                    </div>
-                  </div>
-
-                  <!-- Composer Controls -->
-                  <div style="display:flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
-                    <button type="button" id="manual-clear-btn" class="btn-logout" onclick="clearManualForm()">Clear</button>
-                    <button type="button" id="manual-validate-btn" class="btn-primary" style="background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color);" onclick="validateManualForm()">Validate</button>
-                    <button type="button" id="manual-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="openPublishConfirmation()">Publish to Facebook</button>
-                  </div>
-                </form>
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Generated Post Drafts &amp; Quality Gate Status</div>
               </div>
-
-              <!-- Right Column: Live Facebook Post Preview -->
-              <div class="panel">
-                <div class="panel-header">
-                  <div class="panel-title">Preview</div>
-                  <span class="status-badge status-healthy" style="font-size:0.7rem;">FACEBOOK POST PREVIEW</span>
-                </div>
-
-                <div class="fb-preview-card" style="background: #18191a; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.25rem; color: #e4e6eb;">
-                  <!-- Header -->
-                  <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.85rem;">
-                    <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #00c6ff, #0072ff); display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 0.95rem; flex-shrink:0;">
-                      NS
-                    </div>
-                    <div>
-                      <div style="font-weight: 600; font-size: 0.95rem; color: #e4e6eb;">NorthSoft</div>
-                      <div style="font-size: 0.75rem; color: #b0b3b8; display: flex; align-items: center; gap: 0.25rem;">
-                        <span>Just now</span> &middot; <span>🌐</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Body Text -->
-                  <div id="preview-text" style="font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; line-height: 1.45; color: #e4e6eb; margin-bottom: 0.75rem; min-height: 80px;">Write your Facebook post...</div>
-
-                  <!-- Link Attachment Card Preview -->
-                  <div id="preview-link-card" style="display: none; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; overflow: hidden; background: #242526; margin-top: 0.75rem;">
-                    <div style="padding: 0.75rem;">
-                      <div style="font-size: 0.75rem; color: #b0b3b8; text-transform: uppercase;" id="preview-link-domain">NORTHSOFT.IS</div>
-                      <div style="font-weight: 600; font-size: 0.9rem; color: #e4e6eb; margin-top: 0.2rem;" id="preview-link-title">Attached External Link</div>
-                      <div style="font-size: 0.8rem; color: #b0b3b8; margin-top: 0.2rem;" id="preview-link-url">https://northsoft.is</div>
-                    </div>
-                  </div>
-                </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Post Title &amp; Version Body</th>
+                      <th>Status</th>
+                      <th>Current Version</th>
+                      <th>QA Score</th>
+                      <th>Quality Decision</th>
+                      <th>Created At</th>
+                    </tr>
+                  </thead>
+                  <tbody id="posts-table-body">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading generated post drafts...</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
 
-          <!-- TAB 2: RESEARCH ENGINE -->
+          <!-- TAB: TOPIC RESEARCH -->
           <div id="tab-research" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
-                <h1 class="page-title">Research Engine & Topic Discovery</h1>
+                <h1 class="page-title">Research Engine &amp; Topic Discovery</h1>
                 <p class="page-subtitle" style="margin-bottom:0;">Autonomous discovery, curation, and prioritization of candidate tech topics.</p>
               </div>
               <button id="run-research-btn" class="btn-primary" onclick="runResearchNow()">
@@ -441,9 +398,8 @@ export function renderAdminHtml(): string {
               </button>
             </div>
 
-            <div id="research-run-alert" class="alert-success"></div>
+            <div id="research-run-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
-            <!-- Metrics Grid -->
             <div class="section-grid">
               <div class="card">
                 <div class="card-label">Curated Sources</div>
@@ -462,7 +418,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Candidate Topics List -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Discovered Candidate Topics</div>
@@ -471,7 +426,7 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
-                      <th>Title & Description</th>
+                      <th>Title &amp; Description</th>
                       <th>Category</th>
                       <th>Relevance Score</th>
                       <th>Status</th>
@@ -485,7 +440,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Research Sources Table -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Configured Research Sources</div>
@@ -508,7 +462,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Execution Log -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Research Pipeline Execution History</div>
@@ -533,43 +486,7 @@ export function renderAdminHtml(): string {
             </div>
           </div>
 
-          <!-- TAB 3: CONTENT PIPELINE -->
-          <div id="tab-content" class="tab-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-              <div>
-                <h1 class="page-title">Content Pipeline & Post Drafts</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Autonomous post draft generation, static checks, independent QA review, policy evaluation, and quality gate results.</p>
-              </div>
-            </div>
-
-            <div id="content-alert" class="alert-success"></div>
-
-            <!-- Posts List Table -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Generated Post Drafts & Quality Gate Status</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Post Title & Version Body</th>
-                      <th>Status</th>
-                      <th>Current Version</th>
-                      <th>QA Score</th>
-                      <th>Quality Decision</th>
-                      <th>Created At</th>
-                    </tr>
-                  </thead>
-                  <tbody id="posts-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading generated post drafts...</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB 4: SCHEDULED PUBLICATIONS -->
+          <!-- TAB: SCHEDULED QUEUE -->
           <div id="tab-schedules" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
@@ -578,7 +495,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Schedules Table -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Scheduled Publications Queue</div>
@@ -604,7 +520,7 @@ export function renderAdminHtml(): string {
             </div>
           </div>
 
-          <!-- TAB 5: PUBLICATIONS & META ADAPTER -->
+          <!-- TAB: PUBLICATIONS -->
           <div id="tab-publications" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
@@ -615,7 +531,6 @@ export function renderAdminHtml(): string {
 
             <div id="publication-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
 
-            <!-- Meta Configuration Status Panel -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Meta Graph API Configuration Status</div>
@@ -632,7 +547,7 @@ export function renderAdminHtml(): string {
                 </div>
                 <div>
                   <div class="card-label">Graph API Version</div>
-                  <div style="font-weight:600; color:var(--accent-blue);" id="meta-version-val">v19.0</div>
+                  <div style="font-weight:600; color:var(--accent-blue);" id="meta-version-val">v26.0</div>
                 </div>
                 <div>
                   <div class="card-label">Publishing Safety Lock</div>
@@ -641,7 +556,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Publications Table -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Facebook Publications Log</div>
@@ -650,7 +564,7 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
-                      <th>Post Title & Version Preview</th>
+                      <th>Post Title &amp; Version Preview</th>
                       <th>Provider</th>
                       <th>Quality Gate</th>
                       <th>Publication Status</th>
@@ -667,12 +581,136 @@ export function renderAdminHtml(): string {
             </div>
           </div>
 
-          <!-- TAB 6: ACCOUNT SECURITY & PASSWORD MANAGEMENT -->
+          <!-- TAB: MANUAL FACEBOOK PUBLISHER -->
+          <div id="tab-manual-publisher" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">Manual Facebook Publisher</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Publish content directly to the configured NorthSoft Facebook Page via official Meta Publisher.</p>
+              </div>
+              <div id="manual-meta-status-badge">
+                <span class="status-badge status-healthy">META READY</span>
+              </div>
+            </div>
+
+            <div id="manual-pub-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+
+            <div class="manual-publisher-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items:start;">
+              <!-- Left Column: Composer Form -->
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Post Content</div>
+                </div>
+
+                <form id="manual-post-form" onsubmit="return false;">
+                  <div class="form-group">
+                    <label class="form-label" for="manual-post-content">Facebook Post Content</label>
+                    <textarea id="manual-post-content" class="form-input" style="min-height: 180px; resize: vertical; font-family: inherit; line-height: 1.5;" placeholder="Write your Facebook post..." required maxlength="63206"></textarea>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted);">
+                      <span>Meta Graph API limit</span>
+                      <span id="manual-char-counter">0 / 63206 characters</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group" style="margin-top: 1.25rem;">
+                    <label class="form-label" for="manual-post-link">Attachment Link (Optional)</label>
+                    <input type="url" id="manual-post-link" class="form-input" placeholder="https://northsoft.is/article">
+                    <div class="card-sub" style="margin-top:0.3rem;">Attach an external website or article link to the post.</div>
+                  </div>
+
+                  <div style="background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--border-color); border-radius: 8px; padding: 1rem; margin-top: 1.25rem;">
+                    <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted);">
+                      <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                      Media Attachments
+                    </div>
+                    <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+                      URL link attachments supported. Direct binary file upload requires Cloudflare R2 media storage integration.
+                    </div>
+                  </div>
+
+                  <div style="display:flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
+                    <button type="button" id="manual-clear-btn" class="btn-logout" onclick="clearManualForm()">Clear</button>
+                    <button type="button" id="manual-validate-btn" class="btn-secondary" onclick="validateManualForm()">Validate</button>
+                    <button type="button" id="manual-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="openPublishConfirmation()">Publish to Facebook</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Right Column: Live Facebook Post Preview -->
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Post Preview</div>
+                  <span class="status-badge status-healthy" style="font-size:0.7rem;">META PREVIEW</span>
+                </div>
+
+                <div class="fb-preview-card" style="background: #18191a; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.25rem; color: #e4e6eb;">
+                  <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.85rem;">
+                    <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #1877f2, #0056b3); display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 0.95rem; flex-shrink:0;">
+                      NS
+                    </div>
+                    <div>
+                      <div style="font-weight: 600; font-size: 0.95rem; color: #e4e6eb;">NorthSoft</div>
+                      <div style="font-size: 0.75rem; color: #b0b3b8; display: flex; align-items: center; gap: 0.25rem;">
+                        <span>Just now</span> &middot; <span>🌐</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="preview-text" style="font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; line-height: 1.45; color: #e4e6eb; margin-bottom: 0.75rem; min-height: 80px;">Write your Facebook post...</div>
+
+                  <div id="preview-link-card" style="display: none; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; overflow: hidden; background: #242526; margin-top: 0.75rem;">
+                    <div style="padding: 0.75rem;">
+                      <div style="font-size: 0.75rem; color: #b0b3b8; text-transform: uppercase;" id="preview-link-domain">NORTHSOFT.IS</div>
+                      <div style="font-weight: 600; font-size: 0.9rem; color: #e4e6eb; margin-top: 0.2rem;" id="preview-link-title">Attached External Link</div>
+                      <div style="font-size: 0.8rem; color: #b0b3b8; margin-top: 0.2rem;" id="preview-link-url">https://northsoft.is</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: AUDIT LOG -->
+          <div id="tab-audit" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <div>
+                <h1 class="page-title">System Audit Log</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Complete immutable system event ledger and administrative activity trail.</p>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">System Audit Log Records</div>
+                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="loadAuditData()">
+                  🔄 Refresh
+                </button>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Event Type</th>
+                      <th>Actor</th>
+                      <th>Entity</th>
+                      <th>Details</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody id="full-audit-body">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading full audit log records...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: ACCOUNT SECURITY -->
           <div id="tab-security" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
-                <h1 class="page-title">Account & Password Security</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Rotate administrator password, manage active sessions, and review security invariants.</p>
+                <h1 class="page-title">Account &amp; Password Security</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Rotate administrator password, manage active recovery email, and review security status.</p>
               </div>
             </div>
 
@@ -728,6 +766,52 @@ export function renderAdminHtml(): string {
 
         </div>
       </main>
+
+      <!-- 3. RIGHT FACEBOOK LIVE PREVIEW RAIL -->
+      <aside class="facebook-rail">
+        <div class="fb-rail-header">
+          <div class="fb-rail-title">
+            <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:#1877f2; flex-shrink:0;"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+            <span>Facebook Feed</span>
+          </div>
+          <div id="fb-rail-status-badge"><span class="status-badge status-healthy">LIVE</span></div>
+        </div>
+
+        <div class="fb-rail-page-box">
+          <div class="fb-rail-page-header">
+            <div id="fb-rail-avatar" class="fb-rail-avatar">NS</div>
+            <div>
+              <div id="fb-rail-page-name" class="fb-rail-page-title">NorthSoft</div>
+              <div id="fb-rail-page-id" class="fb-rail-page-sub">Page ID: 107455558114139</div>
+            </div>
+          </div>
+          <div class="fb-rail-status-row">
+            <div id="fb-rail-read-status" class="fb-rail-status-chip status-healthy">● READ: Connected</div>
+            <div id="fb-rail-pub-status" class="fb-rail-status-chip status-active">● Pub: Enabled</div>
+          </div>
+        </div>
+
+        <div class="fb-rail-feed-header">
+          <span style="font-weight:600; font-size:0.85rem; color:var(--text-main);">Latest Page Posts</span>
+          <button id="fb-rail-refresh-btn" class="btn-icon-refresh" onclick="loadFacebookPagePosts()" title="Refresh Facebook Feed">
+            <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+
+        <div id="fb-rail-posts-container" class="fb-rail-posts-list">
+          <div style="text-align:center; padding:2rem 0; color:var(--text-muted);">
+            <div class="fb-post-loading-spinner"></div>
+            <div style="margin-top:0.75rem; font-size:0.825rem;">Loading Facebook feed...</div>
+          </div>
+        </div>
+
+        <div id="fb-rail-load-more-wrap" style="display:none; margin-top:1rem; text-align:center;">
+          <button id="fb-rail-load-more-btn" class="btn-secondary" style="width:100%; padding:0.5rem; font-size:0.825rem;" onclick="loadFacebookPagePosts(true)">
+            Load More Posts
+          </button>
+        </div>
+      </aside>
+
     </div>
   </div>
 
@@ -738,7 +822,7 @@ export function renderAdminHtml(): string {
       <p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.5; margin-bottom:1.5rem;">
         This will publish the prepared content directly to the configured NorthSoft Facebook Page.
       </p>
-      <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+      <div style="display:flex; gap:0.75rem; justify-flex-end;">
         <button type="button" class="btn-logout" onclick="closePublishConfirmation()">Cancel</button>
         <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="submitManualPublication()">Publish</button>
       </div>
