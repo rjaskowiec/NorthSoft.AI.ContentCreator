@@ -23,6 +23,7 @@ export const facebookRouter = new Hono<AppEnv>();
 interface MetaPagePost {
   id: string;
   message?: string;
+  story?: string;
   created_time?: string;
   permalink_url?: string;
   full_picture?: string;
@@ -61,14 +62,14 @@ interface MetaPageInfoResponse {
 /**
  * GET /api/admin/facebook/page-posts
  *
- * Fetches the latest published posts from the configured Facebook Page.
+ * Fetches the latest published posts from the configured Facebook Page using Meta Graph API v26.0.
  * Returns sanitized post data without any access tokens or secrets.
  * Protected by requireAdmin middleware (inherited from parent router).
  */
 facebookRouter.get('/facebook/page-posts', async (c) => {
   const pageId = (c.env.META_PAGE_ID || '').trim();
   const accessToken = (c.env.META_PAGE_ACCESS_TOKEN || '').trim();
-  const apiVersion = META_API.DEFAULT_GRAPH_API_VERSION;
+  const apiVersion = META_API.READ_GRAPH_API_VERSION;
   const envName = getEnvironment(c.env?.ENVIRONMENT);
 
   // 1. Configuration Check — both Page ID and Access Token must exist
@@ -114,8 +115,8 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       };
     }
 
-    // 3. Fetch Latest Posts from Page Feed — GET only
-    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,created_time,permalink_url,full_picture,is_published,type,status_type&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
+    // 3. Fetch Latest Posts from Page Posts endpoint — GET only
+    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,story,created_time,permalink_url,full_picture,is_published,type,status_type&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
     if (after) {
       postsUrl += `&after=${encodeURIComponent(after)}`;
     }
@@ -137,10 +138,10 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       });
     }
 
-    // 4. Map & sanitize posts — NEVER include access tokens
+    // 4. Map & sanitize posts — NEVER include access tokens; fallback to story if message missing
     const posts = (postsData.data || []).map((post) => ({
       id: post.id,
-      message: post.message || null,
+      message: post.message || post.story || null,
       createdTime: post.created_time || null,
       permalinkUrl: post.permalink_url || null,
       fullPicture: post.full_picture || null,

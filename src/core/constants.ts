@@ -24,6 +24,7 @@ export const CONTENT_INVARIANTS = {
 /** Meta Graph API Invariants */
 export const META_API = {
   DEFAULT_GRAPH_API_VERSION: 'v19.0',
+  READ_GRAPH_API_VERSION: 'v26.0',
   GRAPH_API_BASE_URL: 'https://graph.facebook.com',
 } as const;
 
