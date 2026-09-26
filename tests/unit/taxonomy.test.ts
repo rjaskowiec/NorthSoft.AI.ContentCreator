@@ -7,6 +7,7 @@ import {
   determineContentPillar,
   evaluateRelevance,
   isExcludedTopic,
+  selectDiverseCandidates,
 } from '../../src/services/research/taxonomy';
 
 describe('Content Taxonomy & Relevance Model', () => {
@@ -102,6 +103,59 @@ describe('Content Taxonomy & Relevance Model', () => {
         'Heated debate between candidates over policy issues',
       );
       expect(evalRes.passed).toBe(false);
+    });
+  });
+
+  describe('selectDiverseCandidates', () => {
+    it('prevents single pillar from dominating candidate pool (max 2 per pillar)', () => {
+      const candidates = [
+        { item: 'ai-1', pillar: 'AI_AUTOMATION' as const, score: 98 },
+        { item: 'ai-2', pillar: 'AI_AUTOMATION' as const, score: 96 },
+        { item: 'ai-3', pillar: 'AI_AUTOMATION' as const, score: 95 },
+        { item: 'ai-4', pillar: 'AI_AUTOMATION' as const, score: 94 },
+        { item: 'mkt-1', pillar: 'MARKETING' as const, score: 92 },
+        { item: 'web-1', pillar: 'WEB_TECHNOLOGY' as const, score: 90 },
+        { item: 'biz-1', pillar: 'SMALL_BUSINESS' as const, score: 88 },
+        { item: 'pres-1', pillar: 'ONLINE_PRESENCE' as const, score: 85 },
+      ];
+
+      const selected = selectDiverseCandidates(candidates, 6, 2);
+
+      expect(selected).toHaveLength(6);
+      const aiSelected = selected.filter(s => s.pillar === 'AI_AUTOMATION');
+      expect(aiSelected).toHaveLength(2); // Maximum 2 AI_AUTOMATION items
+    });
+
+    it('returns fewer candidates when total pool is small', () => {
+      const candidates = [
+        { item: 'ai-1', pillar: 'AI_AUTOMATION' as const, score: 90 },
+        { item: 'ai-2', pillar: 'AI_AUTOMATION' as const, score: 88 },
+        { item: 'mkt-1', pillar: 'MARKETING' as const, score: 85 },
+      ];
+
+      const selected = selectDiverseCandidates(candidates, 6, 2);
+      expect(selected).toHaveLength(3);
+    });
+
+    it('returns empty array when candidate pool is empty', () => {
+      const selected = selectDiverseCandidates([], 6, 2);
+      expect(selected).toHaveLength(0);
+    });
+
+    it('strictly limits total selected to maxTotal (6)', () => {
+      const candidates = [
+        { item: 'web-1', pillar: 'WEB_TECHNOLOGY' as const, score: 99 },
+        { item: 'web-2', pillar: 'WEB_TECHNOLOGY' as const, score: 98 },
+        { item: 'mkt-1', pillar: 'MARKETING' as const, score: 97 },
+        { item: 'mkt-2', pillar: 'MARKETING' as const, score: 96 },
+        { item: 'biz-1', pillar: 'SMALL_BUSINESS' as const, score: 95 },
+        { item: 'biz-2', pillar: 'SMALL_BUSINESS' as const, score: 94 },
+        { item: 'pres-1', pillar: 'ONLINE_PRESENCE' as const, score: 93 },
+        { item: 'pres-2', pillar: 'ONLINE_PRESENCE' as const, score: 92 },
+      ];
+
+      const selected = selectDiverseCandidates(candidates, 6, 2);
+      expect(selected).toHaveLength(6);
     });
   });
 });

@@ -157,8 +157,12 @@ export function evaluateRelevance(title: string, summary: string, categories: st
 
   let score = 50; // Baseline score
 
-  // Positive signals
-  const businessSignals = ['business', 'customer', 'website', 'online', 'sales', 'growth', 'local', 'service', 'automation', 'productivity', 'seo', 'google'];
+  // Positive signals relating to NorthSoft audience (websites, digital presence, marketing, AI, automation)
+  const businessSignals = [
+    'business', 'customer', 'website', 'web', 'online', 'digital', 'sales', 'growth',
+    'local', 'service', 'automation', 'productivity', 'seo', 'google', 'marketing',
+    'lead', 'conversion', 'ai', 'ux', 'ui', 'tool', 'search', 'traffic', 'design',
+  ];
   const matchedSignals = businessSignals.filter(sig => text.includes(sig));
   score += Math.min(30, matchedSignals.length * 6);
 
@@ -183,4 +187,41 @@ export function evaluateRelevance(title: string, summary: string, categories: st
       ? `Relevant to NorthSoft small-business target audience (${pillar})`
       : `Score ${score} below NorthSoft relevance threshold of 55`,
   };
+}
+
+export interface SelectableCandidate<T> {
+  item: T;
+  pillar: ContentPillar;
+  score: number;
+}
+
+export const MAX_AI_RESEARCH_CANDIDATES_PER_RUN = 6;
+export const MAX_CANDIDATES_PER_PILLAR = 2;
+
+/**
+ * Multi-pillar diversity selection: Selects up to maxTotal candidates
+ * while enforcing maxPerPillar constraint to avoid single-pillar domination.
+ */
+export function selectDiverseCandidates<T>(
+  candidates: SelectableCandidate<T>[],
+  maxTotal = MAX_AI_RESEARCH_CANDIDATES_PER_RUN,
+  maxPerPillar = MAX_CANDIDATES_PER_PILLAR,
+): SelectableCandidate<T>[] {
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
+  const pillarCounts: Record<string, number> = {};
+  const selected: SelectableCandidate<T>[] = [];
+
+  for (const candidate of sorted) {
+    if (selected.length >= maxTotal) {
+      break;
+    }
+
+    const currentCount = pillarCounts[candidate.pillar] || 0;
+    if (currentCount < maxPerPillar) {
+      selected.push(candidate);
+      pillarCounts[candidate.pillar] = currentCount + 1;
+    }
+  }
+
+  return selected;
 }
