@@ -119,7 +119,10 @@ export function getAdminScripts(): string {
 
       currentTab = tabName;
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active-tab'));
+      document.querySelectorAll('.tab-section').forEach(el => {
+        el.classList.remove('active-tab');
+        el.style.display = 'none';
+      });
 
       const navEl = document.getElementById('nav-' + tabName);
       if (navEl) navEl.classList.add('active');
@@ -127,6 +130,7 @@ export function getAdminScripts(): string {
       const tabEl = document.getElementById('tab-' + tabName);
       if (tabEl) {
         tabEl.classList.add('active-tab');
+        tabEl.style.display = 'block';
       }
 
       if (window.location.hash !== '#' + tabName) {
