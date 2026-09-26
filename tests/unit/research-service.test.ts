@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getAIProvider } from '../../src/ai/factory';
 import { MockAIProvider } from '../../src/ai/mock-provider';
 import { ResearchService } from '../../src/services/research/research-service';
 
@@ -169,5 +170,112 @@ describe('ResearchService Pipeline', () => {
     expect(summary.status).toBe('completed');
     expect(summary.topicsCreated).toBe(0);
     expect(summary.rejectedIrrelevant).toBeGreaterThanOrEqual(1);
+  });
+
+  it('throws an explicit error when env.AI binding is missing in production or staging', () => {
+    const mockEnv = { ENVIRONMENT: 'production' } as unknown as Env;
+
+    expect(() => getAIProvider(mockEnv, 'researcher')).toThrow(
+      /Cloudflare Workers AI binding \(env\.AI\) is missing/,
+    );
+  });
+
+  it('explicitly records AI inference requests vs fallback executions', async () => {
+    const mockSources = [
+      {
+        id: 'src-tech',
+        name: 'Tech Blog',
+        url: 'https://tech.example.com/rss',
+        type: 'rss',
+        category: 'WEBSITE',
+        enabled: 1,
+        priority: 10,
+      },
+    ];
+
+    const mockItems = [
+      {
+        id: 'item-tech-1',
+        source_id: 'src-tech',
+        title: '3 Simple Website Updates That Increase Client Inquiries for Local Services',
+        url: 'https://tech.example.com/website-tips',
+        url_hash: 'hash-tech-1',
+        content_summary: 'Simple practical ways to improve local service business contact rates.',
+        published_at: new Date().toISOString(),
+      },
+    ];
+
+    const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes("status = 'running'")) return createMockStatement(null);
+      if (sql.includes('FROM research_sources')) return createMockStatement(null, mockSources);
+      if (sql.includes('FROM research_items')) return createMockStatement(null, mockItems);
+      return createMockStatement(null, []);
+    });
+
+    const mockDb = { prepare: prepareMock } as unknown as D1Database;
+    const mockAi = new MockAIProvider();
+    const service = new ResearchService(mockDb, mockAi);
+
+    const summary = await service.runResearchPipeline('manual');
+
+    expect(summary.aiInferenceRequests).toBeGreaterThanOrEqual(1);
+    expect(summary.aiProviderName).toBe('mock');
+    expect(summary.fallbackExecutions).toBe(1);
+  });
+
+  it('handles NO_USEFUL_ANGLE gracefully without forcing artificial content ideas', async () => {
+    const mockSources = [
+      {
+        id: 'src-niche',
+        name: 'Niche Feed',
+        url: 'https://niche.example.com/rss',
+        type: 'rss',
+        category: 'WEBSITE',
+        enabled: 1,
+        priority: 10,
+      },
+    ];
+
+    const mockItems = [
+      {
+        id: 'item-niche',
+        source_id: 'src-niche',
+        title: 'Compiler Bytecode Optimization Techniques in Rust 1.85',
+        url: 'https://niche.example.com/rust-compiler',
+        url_hash: 'hash-niche',
+        content_summary: 'Deep internal compiler bytecode transformations.',
+        published_at: new Date().toISOString(),
+      },
+    ];
+
+    const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes("status = 'running'")) return createMockStatement(null);
+      if (sql.includes('FROM research_sources')) return createMockStatement(null, mockSources);
+      if (sql.includes('FROM research_items')) return createMockStatement(null, mockItems);
+      return createMockStatement(null, []);
+    });
+
+    const mockDb = { prepare: prepareMock } as unknown as D1Database;
+    const mockAiProvider = {
+      name: 'cloudflare-workers-ai',
+      complete: vi.fn().mockResolvedValue({
+        content: JSON.stringify({ usefulAngle: false, reason: 'NO_USEFUL_ANGLE' }),
+        model: '@cf/meta/llama-3.1-8b-instruct',
+        provider: 'cloudflare-workers-ai',
+        usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+        finishReason: 'stop',
+        durationMs: 150,
+      }),
+      healthCheck: vi.fn().mockResolvedValue(true),
+    };
+
+    const service = new ResearchService(mockDb, mockAiProvider as unknown as MockAIProvider);
+    const summary = await service.runResearchPipeline('manual');
+
+    expect(summary.aiInferenceRequests).toBe(1);
+    expect(summary.aiInferenceSuccessful).toBe(1);
+    expect(summary.noUsefulAngleCount).toBe(1);
+    expect(summary.ideasQueued).toBe(0);
+    expect(summary.fallbackExecutions).toBe(0);
   });
 });

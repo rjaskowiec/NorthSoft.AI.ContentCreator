@@ -32,14 +32,24 @@ export function getAIProvider(env: Env, role: AIRole = 'researcher'): IAIProvide
   providerName = providerName.toLowerCase().trim();
 
   // Primary free provider: Cloudflare Workers AI binding
-  if (providerName === 'cloudflare-workers-ai' && env.AI) {
-    const model = env.AI_RESEARCH_MODEL || '@cf/meta/llama-3.1-8b-instruct';
-    return new CloudflareWorkersAIProvider({
-      aiBinding: env.AI,
-      defaultModel: model,
-    });
+  if (providerName === 'cloudflare-workers-ai') {
+    if (env.AI) {
+      const model = env.AI_RESEARCH_MODEL || '@cf/meta/llama-3.1-8b-instruct';
+      return new CloudflareWorkersAIProvider({
+        aiBinding: env.AI,
+        defaultModel: model,
+      });
+    }
+
+    // In production or staging, missing env.AI binding is a configuration error
+    if (env.ENVIRONMENT === 'production' || env.ENVIRONMENT === 'staging') {
+      throw new Error(
+        `Cloudflare Workers AI binding (env.AI) is missing in ${env.ENVIRONMENT} environment. ` +
+          `Free AI inference requires Cloudflare Workers AI. Check wrangler configuration.`,
+      );
+    }
   }
 
-  // Fallback to MockAIProvider for test/development or when env.AI binding is absent
+  // Fallback to MockAIProvider ONLY in test/development environment
   return new MockAIProvider();
 }

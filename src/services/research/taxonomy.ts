@@ -199,7 +199,7 @@ export function evaluateRelevance(title: string, summary: string, categories: st
   }
 
   score = Math.max(0, Math.min(100, score));
-  const passed = score >= 40; // Fair baseline for simple inspiration ideas
+  const passed = score >= 25; // Inclusive baseline tolerance for simple small-business inspiration
 
   return {
     score,
@@ -207,7 +207,7 @@ export function evaluateRelevance(title: string, summary: string, categories: st
     pillar,
     reason: passed
       ? `Relevant to NorthSoft target audience (${pillar})`
-      : `Score ${score} below baseline relevance threshold of 40`,
+      : `Score ${score} below baseline relevance threshold of 25`,
   };
 }
 
@@ -219,18 +219,30 @@ export interface DiversityScoreParams {
   freshnessDays: number;
   isDuplicateAngle: boolean;
   recentPillarCount: number; // Number of recent publications in this pillar
+  practicalValue?: number;
+  simplicity?: number;
+  topicNovelty?: number;
+  sourceRelevance?: number;
+  recentTopicPenalty?: number;
 }
 
 /**
- * Calculates holistic Content Score evaluating usefulness, engagement, commercial relevance,
- * freshness, angle novelty, and diversity penalties.
+ * Calculates holistic Content Score evaluating usefulness, simplicity, practical value,
+ * engagement, commercial relevance, freshness, angle novelty, and rotation penalties.
  */
 export function calculateContentScore(params: DiversityScoreParams): number {
   let score = 0;
-  score += params.sourceUsefulness * 0.2;
-  score += params.businessRelevance * 0.2;
-  score += params.engagementPotential * 0.3;
-  score += params.commercialRelevance * 0.3;
+  const practicalValue = params.practicalValue ?? 80;
+  const simplicity = params.simplicity ?? 85;
+  const topicNovelty = params.topicNovelty ?? 80;
+  const sourceRelevance = params.sourceRelevance ?? 75;
+
+  score += practicalValue * 0.25;
+  score += simplicity * 0.2;
+  score += params.engagementPotential * 0.2;
+  score += params.commercialRelevance * 0.15;
+  score += topicNovelty * 0.1;
+  score += sourceRelevance * 0.1;
 
   // Freshness bonus
   if (params.freshnessDays <= 2) score += 10;
@@ -240,7 +252,12 @@ export function calculateContentScore(params: DiversityScoreParams): number {
   if (params.recentPillarCount === 0) {
     score += 15; // Diversity bonus for underrepresented pillars
   } else {
-    score -= Math.min(30, params.recentPillarCount * 10); // Recent topic penalty
+    score -= Math.min(30, params.recentPillarCount * 10);
+  }
+
+  // Topic rotation penalty
+  if (params.recentTopicPenalty) {
+    score -= Math.min(40, params.recentTopicPenalty);
   }
 
   // Duplicate angle penalty
@@ -257,8 +274,8 @@ export interface SelectableCandidate<T> {
   score: number;
 }
 
-export const MAX_AI_RESEARCH_CANDIDATES_PER_RUN = 12;
-export const MAX_CANDIDATES_PER_PILLAR = 3;
+export const MAX_AI_RESEARCH_CANDIDATES_PER_RUN = 25;
+export const MAX_CANDIDATES_PER_PILLAR = 5;
 
 /**
  * Multi-pillar diversity selection: Selects candidates up to maxTotal

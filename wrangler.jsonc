@@ -56,6 +56,9 @@
           "migrations_dir": "migrations"
         }
       ],
+      "ai": {
+        "binding": "AI"
+      },
       "vars": {
         "ENVIRONMENT": "staging",
         "FACEBOOK_PUBLISH_ENABLED": "false",

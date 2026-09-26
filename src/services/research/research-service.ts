@@ -47,12 +47,19 @@ export interface ResearchRunSummary {
   knownSourcesCount: number;
   sourceReuseCandidates: number;
   potentialAnglesDiscovered: number;
+  noUsefulAngleCount: number;
   rejectedTooTechnical: number;
   rejectedIrrelevant: number;
   rejectedDuplicateAngle: number;
   rejectedRecentCooldown: number;
   ideasQueued: number;
   ideasDeferred: number;
+  aiProviderName: string;
+  aiModelName: string;
+  aiInferenceRequests: number;
+  aiInferenceSuccessful: number;
+  aiInferenceFailed: number;
+  fallbackExecutions: number;
   topicsCreated: number; // Backward compatibility
   duplicatesFound: number; // Backward compatibility
   itemsDiscovered: number; // Backward compatibility
@@ -100,12 +107,19 @@ export class ResearchService {
         knownSourcesCount: 0,
         sourceReuseCandidates: 0,
         potentialAnglesDiscovered: 0,
+        noUsefulAngleCount: 0,
         rejectedTooTechnical: 0,
         rejectedIrrelevant: 0,
         rejectedDuplicateAngle: 0,
         rejectedRecentCooldown: 0,
         ideasQueued: 0,
         ideasDeferred: 0,
+        aiProviderName: this.aiProvider.name,
+        aiModelName: '@cf/meta/llama-3.1-8b-instruct',
+        aiInferenceRequests: 0,
+        aiInferenceSuccessful: 0,
+        aiInferenceFailed: 0,
+        fallbackExecutions: 0,
         topicsCreated: 0,
         duplicatesFound: 0,
         itemsDiscovered: 0,
@@ -144,6 +158,15 @@ export class ResearchService {
     let knownSourcesCount = 0;
     let sourceReuseCandidates = 0;
     let potentialAnglesDiscovered = 0;
+    let noUsefulAngleCount = 0;
+    let aiInferenceRequests = 0;
+    let aiInferenceSuccessful = 0;
+    let aiInferenceFailed = 0;
+    let fallbackExecutions = 0;
+
+    if (this.aiProvider.name === 'mock') {
+      fallbackExecutions++;
+    }
 
     let rejectedIrrelevant = 0;
     let rejectedTooTechnical = 0;
@@ -319,25 +342,34 @@ export class ResearchService {
 
         const aiStartTime = Date.now();
 
-        const systemInstructions = `You are a Senior Content Discovery Specialist for NorthSoft AI.
+        const systemInstructions = `You are a Content Scout for NorthSoft AI.
 NorthSoft builds websites, landing pages, local SEO, online marketing, automation, and AI solutions for small and local businesses.
-Your objective is to read the provided article/news item and extract a simple, practical, highly engaging SOCIAL MEDIA POST IDEA for a small business owner.
+Your objective is to read the provided source item and extract a SIMPLE, PRACTICAL, HIGHLY ENGAGING SOCIAL MEDIA POST IDEA (Facebook/Instagram) for a small business owner.
 
-GUIDELINES:
-- DO NOT create long academic articles or expert technical analyses.
-- Create a simple, engaging content angle that delivers a quick bite of useful knowledge.
-- The idea must encourage interaction (likes, comments, shares) and naturally show how NorthSoft can help.
-- Identify the most appropriate Content Pillar from: WEBSITE, MARKETING, SALES, AI, SMALL_BUSINESS, CUSTOMER_EXPERIENCE, LOCAL_BUSINESS.
+CORE PHILOSOPHY:
+- Treat the source item as INSPIRATION / FACT ANCHOR, NOT as a text to translate or summarize.
+- Ask: "Why would a small business owner want to read this?" (getting clients, saving time, improving service, automating annoying tasks).
+- Prefer simple social formats: LIST ("5 rzeczy..."), CHECKLIST ("Sprawdź czy..."), QUESTION ("Czy Twoja firma...?"), STAT_INSIGHT ("Coraz więcej firm..."), MYTH, TIPS ("3 proste sposoby..."), COMPARISON ("FB vs własna strona"), PROBLEM_SOLUTION, ENGAGEMENT.
+
+CRITICAL RULES:
+1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. The following buzzwords are FORBIDDEN:
+   "odblokuj potencjał", "transformacja cyfrowa", "game changer", "holistyczne podejście", "skalowanie biznesu",
+   "nowa era przedsiębiorczości", "rewolucjonizuje sposób", "wykorzystaj synergię", "maksymalizuj konwersję".
+2. FACT PRESERVATION RULE: If referencing specific numbers, percentages, or statistics from the source, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not present in the source. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
+3. Write in friendly, human conversational Polish.
+4. NO ARTIFICIAL BRIDGES: If the source item does NOT offer a genuine, logical, or clear inspiration for a small business owner post (e.g. internal compiler releases, framework updates, corporate announcements without small-business application), DO NOT FORCE AN ARTIFICIAL POST. Instead, return: {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
 
 Return ONLY a valid JSON object matching this schema:
 {
-  "title": "Short, catchy social post headline for a small business owner",
-  "angle": "Simple explanation of the content angle and why it matters to a small business owner",
-  "hook": "Scroll-stopping first sentence or hook for the post",
-  "summary": "2-3 sentence overview of the idea",
-  "keyPoints": ["Key takeaway 1", "Key takeaway 2", "Key takeaway 3"],
+  "usefulAngle": true,
+  "title": "Chwytliwy nagłówek posta w prostym języku dla właściciela małej firmy",
+  "angle": "Proste wyjaśnienie ujęcia tematu i dlaczego ma znaczenie dla przedsiębiorcy",
+  "hook": "Pierwsze zdanie przykuwające uwagę w social media",
+  "summary": "Krótki zarys treści posta (2-3 zdania)",
+  "keyPoints": ["Praktyczny punkt 1", "Praktyczny punkt 2", "Praktyczny punkt 3"],
   "contentPillar": "WEBSITE | MARKETING | SALES | AI | SMALL_BUSINESS | CUSTOMER_EXPERIENCE | LOCAL_BUSINESS",
-  "engagementQuestion": "Engaging question to prompt comments from business owners",
+  "postType": "LIST | CHECKLIST | QUESTION | STAT_INSIGHT | MYTH | TIPS | COMPARISON | PROBLEM_SOLUTION | ENGAGEMENT",
+  "engagementQuestion": "Proste pytanie na końcu posta zachęcające klientów do dyskusji",
   "commercialRelevance": 85,
   "engagementPotential": 90,
   "relevanceScore": 80
@@ -350,6 +382,7 @@ Return ONLY a valid JSON object matching this schema:
         );
 
         try {
+          aiInferenceRequests++;
           const completion = await this.aiProvider.complete({
             role: 'researcher',
             messages: [
@@ -359,6 +392,7 @@ Return ONLY a valid JSON object matching this schema:
             temperature: 0.3,
             responseFormat: 'json',
           });
+          aiInferenceSuccessful++;
 
           await this.quotaManager.recordUsage(this.db, {
             provider: completion.provider,
@@ -377,6 +411,28 @@ Return ONLY a valid JSON object matching this schema:
           }
 
           const ideaData = valRes.data;
+
+          if (ideaData.usefulAngle === false) {
+            noUsefulAngleCount++;
+            await this.auditLogger.log({
+              eventType: 'AI_RESEARCH_COMPLETED',
+              entityType: 'research_item',
+              entityId: item.id,
+              actor: 'ai',
+              level: 'INFO',
+              status: 'COMPLETED',
+              operation: 'Content Scout Inference',
+              correlationId: runId,
+              durationMs: completion.durationMs,
+              details: {
+                provider: completion.provider,
+                model: completion.model,
+                result: 'NO_USEFUL_ANGLE',
+                reason: ideaData.noUsefulAngleReason || 'NO_USEFUL_ANGLE',
+              },
+            });
+            continue;
+          }
 
           // Check if angle is a substantive duplicate against TopicRegistry history
           const scheduling = topicRegistry.calculateSuggestedPublishDate(
@@ -505,6 +561,7 @@ Return ONLY a valid JSON object matching this schema:
             },
           });
         } catch (aiErr: unknown) {
+          aiInferenceFailed++;
           rejectedTooTechnical++;
           const aiErrMsg = aiErr instanceof Error ? aiErr.message : 'AI completion failed';
 
@@ -574,6 +631,7 @@ Return ONLY a valid JSON object matching this schema:
         knownSourcesCount,
         sourceReuseCandidates,
         potentialAnglesDiscovered,
+        noUsefulAngleCount,
         rejectedTooTechnical,
         rejectedIrrelevant,
         rejectedDuplicateAngle,
@@ -581,8 +639,26 @@ Return ONLY a valid JSON object matching this schema:
         ideasQueued,
         ideasDeferred,
         pillarBreakdown,
+        aiProviderName: this.aiProvider.name,
+        aiModelName: '@cf/meta/llama-3.1-8b-instruct',
+        aiInferenceRequests,
+        aiInferenceSuccessful,
+        aiInferenceFailed,
+        fallbackExecutions,
       },
     });
+
+    console.log(
+      `[AI DISCOVERY METRICS]\n` +
+        `AI provider: ${this.aiProvider.name}\n` +
+        `Model: @cf/meta/llama-3.1-8b-instruct\n` +
+        `Inference requests: ${aiInferenceRequests}\n` +
+        `Successful responses: ${aiInferenceSuccessful}\n` +
+        `Failed responses: ${aiInferenceFailed}\n` +
+        `NO_USEFUL_ANGLE: ${noUsefulAngleCount}\n` +
+        `Useful angles: ${ideasQueued}\n` +
+        `Fallback executions: ${fallbackExecutions}`,
+    );
 
     return {
       runId,
@@ -594,12 +670,19 @@ Return ONLY a valid JSON object matching this schema:
       knownSourcesCount,
       sourceReuseCandidates,
       potentialAnglesDiscovered,
+      noUsefulAngleCount,
       rejectedTooTechnical,
       rejectedIrrelevant,
       rejectedDuplicateAngle,
       rejectedRecentCooldown,
       ideasQueued,
       ideasDeferred,
+      aiProviderName: this.aiProvider.name,
+      aiModelName: '@cf/meta/llama-3.1-8b-instruct',
+      aiInferenceRequests,
+      aiInferenceSuccessful,
+      aiInferenceFailed,
+      fallbackExecutions,
       topicsCreated: ideasQueued,
       duplicatesFound: rejectedDuplicateAngle,
       itemsDiscovered: rawItemsDiscovered,

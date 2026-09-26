@@ -135,6 +135,7 @@ describe('Admin Dashboard Integration & Security', () => {
 
     const mockEnv = {
       DB: { prepare: prepareMock } as unknown as D1Database,
+      AI: { run: vi.fn() },
       ENVIRONMENT: 'staging',
       FACEBOOK_PUBLISH_ENABLED: 'false',
       LOG_LEVEL: 'debug',
@@ -157,7 +158,7 @@ describe('Admin Dashboard Integration & Security', () => {
     expect(data.systemStatus.environment).toBe('Staging');
     expect(data.systemStatus.worker).toBe('Healthy');
     expect(data.systemStatus.database).toBe('Connected');
-    expect(data.systemStatus.aiProvider).toBe('Mock (Development)');
+    expect(data.systemStatus.aiProvider).toBe('CLOUDFLARE-WORKERS-AI');
     expect(data.systemStatus.facebookPublisher).toBe('NOT_CONFIGURED');
     expect(data.systemStatus.publishing).toBe('Disabled');
 

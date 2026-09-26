@@ -13,6 +13,7 @@ export interface CandidateIdeaPayload {
   summary: string;
   keyPoints: string[];
   contentPillar: ContentPillar;
+  postType?: string;
   engagementQuestion: string;
   commercialRelevance: number; // 0 - 100
   engagementPotential: number; // 0 - 100
@@ -20,6 +21,8 @@ export interface CandidateIdeaPayload {
   sourceUrl: string;
   sourceName: string;
   publishedAt: string;
+  usefulAngle?: boolean;
+  noUsefulAngleReason?: string;
 }
 
 export interface CandidateTopicPayload {
@@ -71,6 +74,37 @@ export function validateCandidateIdeaOutput(
   }
 
   const obj = parsed as Record<string, unknown>;
+
+  // Check if AI explicitly determined NO_USEFUL_ANGLE
+  if (
+    obj.usefulAngle === false ||
+    obj.useful_angle === false ||
+    obj.status === 'NO_USEFUL_ANGLE' ||
+    obj.reason === 'NO_USEFUL_ANGLE' ||
+    obj.usefulAngle === 'false'
+  ) {
+    return {
+      valid: true,
+      data: {
+        title: '',
+        angle: '',
+        hook: '',
+        summary: '',
+        keyPoints: [],
+        contentPillar: 'WEBSITE',
+        engagementQuestion: '',
+        commercialRelevance: 0,
+        engagementPotential: 0,
+        relevanceScore: 0,
+        sourceUrl: '',
+        sourceName: '',
+        publishedAt: '',
+        usefulAngle: false,
+        noUsefulAngleReason: typeof obj.reason === 'string' ? obj.reason : 'NO_USEFUL_ANGLE',
+      },
+    };
+  }
+
   const errors: string[] = [];
 
   // Title validation
@@ -131,6 +165,14 @@ export function validateCandidateIdeaOutput(
 
   const contentPillar = determineContentPillar(title, summary, [pillarInput]);
 
+  // Post Type validation
+  const postType =
+    typeof obj.postType === 'string'
+      ? obj.postType.trim()
+      : typeof obj.post_type === 'string'
+      ? obj.post_type.trim()
+      : 'TIPS';
+
   // Engagement Question validation
   const engagementQuestion =
     typeof obj.engagementQuestion === 'string'
@@ -190,6 +232,7 @@ export function validateCandidateIdeaOutput(
       summary,
       keyPoints,
       contentPillar,
+      postType,
       engagementQuestion,
       commercialRelevance,
       engagementPotential,

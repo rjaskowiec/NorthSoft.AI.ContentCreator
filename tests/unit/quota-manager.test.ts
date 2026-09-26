@@ -125,13 +125,23 @@ describe('AI Provider Factory — Zero Paid Fallback Policy', () => {
   });
 
   it('never falls back to OpenAI or paid provider', () => {
-    const env = {
-      ENVIRONMENT: 'production',
+    const devEnv = {
+      ENVIRONMENT: 'development',
       OPENAI_API_KEY: 'sk-proj-malicious-key',
     } as unknown as Env;
 
-    const provider = getAIProvider(env, 'researcher');
-    expect(provider.name).toBe('mock');
-    expect(provider.name).not.toBe('openai');
+    const devProvider = getAIProvider(devEnv, 'researcher');
+    expect(devProvider.name).toBe('mock');
+    expect(devProvider.name).not.toBe('openai');
+
+    const prodEnv = {
+      ENVIRONMENT: 'production',
+      AI: { run: vi.fn() },
+      OPENAI_API_KEY: 'sk-proj-malicious-key',
+    } as unknown as Env;
+
+    const prodProvider = getAIProvider(prodEnv, 'researcher');
+    expect(prodProvider.name).toBe('cloudflare-workers-ai');
+    expect(prodProvider.name).not.toBe('openai');
   });
 });

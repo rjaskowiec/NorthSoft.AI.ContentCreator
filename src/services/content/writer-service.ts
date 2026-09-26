@@ -75,31 +75,37 @@ export class WriterService {
       };
     }
 
-    const systemPrompt = `You are a Senior Social Media Copywriter for NorthSoft AI.
-Your objective is to craft a short, engaging, practical social media post for small business owners.
+    const systemPrompt = `You are a Social Media Copywriter for NorthSoft AI.
+Your objective is to craft a short, engaging, highly practical social media post (Facebook/Instagram) for small business owners in Polish.
 
 NorthSoft Brand Voice Guidelines:
-- Tone: Accessible, conversational, human, engaging, practical, confident.
-- Format: Short, punchy paragraphs with clear bullet points.
+- Tone: Natural, friendly, human conversational Polish speaking to a small business owner.
+- Language: MUST be written in Polish ("pl").
 - Structure:
   1. Scroll-stopping hook (first 1-2 lines).
   2. Quick bite of useful value / practical tip (3-5 bullet points).
   3. Engaging question to encourage comments & shares.
   4. Subtle, natural bridge showing how NorthSoft can help.
 - Target post body length: 300 to 900 characters.
-- Hashtags: 2-3 relevant hashtags (#SmallBusiness #Websites #Automation).
+- Hashtags: 2-3 relevant hashtags (#MalyBiznes #StronyWWW #Automatyzacja).
+
+CRITICAL RULES:
+1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. The following buzzwords are FORBIDDEN:
+   "odblokuj potencjał", "transformacja cyfrowa", "game changer", "holistyczne podejście", "skalowanie biznesu",
+   "nowa era przedsiębiorczości", "rewolucjonizuje sposób", "wykorzystaj synergię", "maksymalizuj konwersję".
+2. FACT PRESERVATION RULE: If the post uses specific numbers, percentages, or statistics from the source material, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not in the source material. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
 
 Return ONLY a valid JSON object matching this schema:
 {
-  "title": "Clear headline for the post",
-  "body": "Full post body text",
-  "language": "en",
+  "title": "Chwytliwy nagłówek posta po polsku",
+  "body": "Pełna treść posta social media po polsku",
+  "language": "pl",
   "tone": "conversational",
   "claims": [
-    { "text": "Main practical insight", "sourceIds": ["src-1"] }
+    { "text": "Kluczowa praktyczna obserwacja", "sourceIds": ["src-1"] }
   ],
-  "hashtags": ["#Category1", "#Category2"],
-  "callToAction": "Subtle CTA text"
+  "hashtags": ["#MalyBiznes", "#StronyWWW"],
+  "callToAction": "Subtelne wezwanie do działania / pytanie na końcu"
 }`;
 
     const researchContext =
