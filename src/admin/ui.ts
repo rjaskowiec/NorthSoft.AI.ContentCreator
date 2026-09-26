@@ -418,6 +418,17 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
+            <!-- Last Research Run Diagnostics Summary Card -->
+            <div class="panel" id="res-diag-panel" style="display:none;">
+              <div class="panel-header" style="margin-bottom:0.75rem;">
+                <div class="panel-title" style="font-size:0.95rem; font-weight:600;">Last Research Run Operational Diagnostics</div>
+                <span id="res-diag-status" class="status-badge status-healthy">COMPLETED</span>
+              </div>
+              <div style="display:flex; gap:1.5rem; flex-wrap:wrap; font-size:0.85rem;" id="res-diag-content">
+                <!-- Populated via JS -->
+              </div>
+            </div>
+
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Discovered Candidate Topics</div>
@@ -427,7 +438,7 @@ export function renderAdminHtml(): string {
                   <thead>
                     <tr>
                       <th>Title &amp; Description</th>
-                      <th>Category</th>
+                      <th>Category / Pillar</th>
                       <th>Relevance Score</th>
                       <th>Status</th>
                       <th>Date Discovered</th>
@@ -473,13 +484,14 @@ export function renderAdminHtml(): string {
                       <th>Started At</th>
                       <th>Trigger</th>
                       <th>Status</th>
-                      <th>Sources Checked</th>
-                      <th>Items Found</th>
-                      <th>Topics Created</th>
+                      <th>Discovered</th>
+                      <th>Unique</th>
+                      <th>Filtered (Irr / Low Q / Dup)</th>
+                      <th>Final Candidates</th>
                     </tr>
                   </thead>
                   <tbody id="runs-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading execution log...</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading execution log...</td></tr>
                   </tbody>
                 </table>
               </div>

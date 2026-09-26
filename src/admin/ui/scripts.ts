@@ -632,6 +632,40 @@ export function getAdminScripts(): string {
         const lastRun = document.getElementById('res-last-run');
         if (lastRun) lastRun.textContent = data.stats.lastRunAt ? new Date(data.stats.lastRunAt).toLocaleTimeString() : 'Never';
 
+        // Operational Diagnostics Summary Panel
+        const diagPanel = document.getElementById('res-diag-panel');
+        const diagContent = document.getElementById('res-diag-content');
+        const diagStatus = document.getElementById('res-diag-status');
+
+        if (data.runs && data.runs.length > 0 && diagPanel && diagContent) {
+          const latestRun = data.runs[0];
+          diagPanel.style.display = 'block';
+          if (diagStatus) {
+            diagStatus.className = 'status-badge ' + (latestRun.status === 'completed' ? 'status-healthy' : 'status-alert');
+            diagStatus.textContent = String(latestRun.status || 'COMPLETED').toUpperCase();
+          }
+
+          let pillarStr = 'None';
+          if (latestRun.pillar_breakdown) {
+            try {
+              const pb = typeof latestRun.pillar_breakdown === 'string' ? JSON.parse(latestRun.pillar_breakdown) : latestRun.pillar_breakdown;
+              pillarStr = Object.entries(pb).map(([k, v]) => '<strong>' + escapeHtml(k) + ':</strong> ' + v).join(', ');
+            } catch {
+              pillarStr = String(latestRun.pillar_breakdown);
+            }
+          }
+
+          diagContent.innerHTML = \`
+            <div><strong>Discovered:</strong> \${latestRun.items_discovered || latestRun.items_found || 0} raw items</div>
+            <div><strong>Normalized:</strong> \${latestRun.items_normalized || 0} unique</div>
+            <div><strong>Irrelevant:</strong> \${latestRun.rejected_irrelevant || 0}</div>
+            <div><strong>Low Quality:</strong> \${latestRun.rejected_low_quality || 0}</div>
+            <div><strong>Duplicates:</strong> \${latestRun.duplicates_found || 0}</div>
+            <div><strong>Final Candidates:</strong> \${latestRun.topics_created || 0}</div>
+            <div style="width:100%; font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Pillars: \${pillarStr}</div>
+          \`;
+        }
+
         // Topics Table
         const topicsBody = document.getElementById('topics-table-body');
         if (topicsBody) {
@@ -670,16 +704,23 @@ export function getAdminScripts(): string {
         // Runs Table
         const runsBody = document.getElementById('runs-table-body');
         if (runsBody && data.runs && data.runs.length > 0) {
-          runsBody.innerHTML = data.runs.map(r => \`
-            <tr>
-              <td class="code-tag">\${new Date(r.started_at).toLocaleString()}</td>
-              <td><span class="code-tag">\${escapeHtml(r.trigger_type)}</span></td>
-              <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(r.status).toUpperCase()}</span></td>
-              <td>\${r.sources_checked}</td>
-              <td>\${r.items_found}</td>
-              <td><strong>\${r.topics_created}</strong></td>
-            </tr>
-          \`).join('');
+          runsBody.innerHTML = data.runs.map(r => {
+            const irr = r.rejected_irrelevant || 0;
+            const lowQ = r.rejected_low_quality || 0;
+            const dup = r.duplicates_found || 0;
+
+            return \`
+              <tr>
+                <td class="code-tag">\${new Date(r.started_at).toLocaleString()}</td>
+                <td><span class="code-tag">\${escapeHtml(r.trigger_type)}</span></td>
+                <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(r.status).toUpperCase()}</span></td>
+                <td>\${r.items_discovered || r.items_found || 0}</td>
+                <td>\${r.items_normalized || 0}</td>
+                <td style="font-size:0.8rem; color:var(--text-muted);">\${irr} irr / \${lowQ} low / \${dup} dup</td>
+                <td><strong>\${r.topics_created}</strong></td>
+              </tr>
+            \`;
+          }).join('');
         }
       } catch (err) {
         console.error('Failed to load research data:', err);
@@ -694,7 +735,7 @@ export function getAdminScripts(): string {
 
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = 'Executing...';
+        btn.innerHTML = 'Executing Research Pipeline...';
       }
 
       try {
@@ -709,7 +750,31 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (alertEl) {
           if (res.ok && data.success) {
-            alertEl.textContent = 'Research run completed successfully! Discovered ' + (data.summary?.topicsCreated || 0) + ' candidate topics.';
+            const s = data.summary || {};
+            const created = s.topicsCreated || 0;
+            let breakdownText = 'None';
+            if (s.pillarBreakdown) {
+              breakdownText = Object.entries(s.pillarBreakdown).map(([k, v]) => k + ': ' + v).join(', ');
+            }
+
+            if (created > 0) {
+              alertEl.innerHTML = \`
+                <strong>Research run completed! Discovered \${created} candidate topics.</strong>
+                <div style="margin-top:0.35rem; font-size:0.85rem; line-height:1.4;">
+                  Discovered: \${s.itemsDiscovered || 0} raw | Unique: \${s.itemsNormalized || 0} | Irrelevant: \${s.rejectedIrrelevant || 0} | Low Quality: \${s.rejectedLowQuality || 0} | Duplicates: \${s.duplicatesFound || 0}<br/>
+                  <em>Pillars: \${escapeHtml(breakdownText)}</em>
+                </div>
+              \`;
+            } else {
+              alertEl.innerHTML = \`
+                <strong>Research run completed with 0 candidate topics.</strong>
+                <div style="margin-top:0.35rem; font-size:0.85rem; line-height:1.4;">
+                  Discovered: \${s.itemsDiscovered || 0} raw | Unique: \${s.itemsNormalized || 0} | Irrelevant: \${s.rejectedIrrelevant || 0} | Low Quality: \${s.rejectedLowQuality || 0} | Duplicates: \${s.duplicatesFound || 0}<br/>
+                  <em>Primary reason: No candidate topics passed NorthSoft relevance and quality thresholds.</em>
+                </div>
+              \`;
+            }
+
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
             loadResearchData();

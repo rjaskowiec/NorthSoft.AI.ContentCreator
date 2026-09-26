@@ -37,7 +37,7 @@ researchRouter.get('/research', async (c) => {
   // 3. Fetch Recent Research Runs
   const runsRes = await db
     .prepare(
-      'SELECT id, trigger_type, status, sources_checked, items_found, topics_created, error_message, started_at, completed_at FROM research_runs ORDER BY started_at DESC LIMIT 10',
+      'SELECT * FROM research_runs ORDER BY started_at DESC LIMIT 10',
     )
     .all();
 
