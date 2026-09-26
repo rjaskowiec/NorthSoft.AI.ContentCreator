@@ -543,10 +543,10 @@ export function getAdminScripts(): string {
           if (pageInd) pageInd.textContent = 'Page ' + data.pagination.page + ' of ' + currentAuditTotalPages;
 
           const prevBtn = document.getElementById('audit-prev-btn');
-          if (prevBtn) (prevBtn as HTMLButtonElement).disabled = currentAuditPage <= 1;
+          if (prevBtn) prevBtn.disabled = currentAuditPage <= 1;
 
           const nextBtn = document.getElementById('audit-next-btn');
-          if (nextBtn) (nextBtn as HTMLButtonElement).disabled = currentAuditPage >= currentAuditTotalPages;
+          if (nextBtn) nextBtn.disabled = currentAuditPage >= currentAuditTotalPages;
         }
 
         const fullBody = document.getElementById('full-audit-body');
@@ -558,7 +558,7 @@ export function getAdminScripts(): string {
       }
     }
 
-    function setAuditCategory(category: string) {
+    function setAuditCategory(category) {
       currentAuditCategory = category;
       currentAuditPage = 1;
 
@@ -575,19 +575,19 @@ export function getAdminScripts(): string {
     }
 
     function executeAuditSearch() {
-      const input = document.getElementById('audit-search-input') as HTMLInputElement | null;
+      const input = document.getElementById('audit-search-input');
       currentAuditSearch = input ? input.value.trim() : '';
       currentAuditPage = 1;
       loadAuditData();
     }
 
-    function handleAuditSearch(e: KeyboardEvent) {
+    function handleAuditSearch(e) {
       if (e.key === 'Enter') {
         executeAuditSearch();
       }
     }
 
-    function changeAuditPage(delta: number) {
+    function changeAuditPage(delta) {
       const newPage = currentAuditPage + delta;
       if (newPage >= 1 && newPage <= currentAuditTotalPages) {
         currentAuditPage = newPage;
@@ -595,19 +595,19 @@ export function getAdminScripts(): string {
       }
     }
 
-    function toggleAuditDetail(detailId: string) {
+    function toggleAuditDetail(detailId) {
       const row = document.getElementById(detailId);
       if (row) {
         row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
       }
     }
 
-    (window as any).loadAuditData = loadAuditData;
-    (window as any).setAuditCategory = setAuditCategory;
-    (window as any).executeAuditSearch = executeAuditSearch;
-    (window as any).handleAuditSearch = handleAuditSearch;
-    (window as any).changeAuditPage = changeAuditPage;
-    (window as any).toggleAuditDetail = toggleAuditDetail;
+    window.loadAuditData = loadAuditData;
+    window.setAuditCategory = setAuditCategory;
+    window.executeAuditSearch = executeAuditSearch;
+    window.handleAuditSearch = handleAuditSearch;
+    window.changeAuditPage = changeAuditPage;
+    window.toggleAuditDetail = toggleAuditDetail;
 
     // Load Research Tab Data
     async function loadResearchData() {

@@ -119,9 +119,9 @@ describe('Admin Audit Log API (/api/admin/audit)', () => {
     };
 
     expect(body.events).toHaveLength(1);
-    expect(body.events[0].eventType).toBe('AI_RESEARCH_FAILED');
-    expect(body.events[0].operation).toBe('Performance Improvements in .NET 11');
-    expect(body.events[0].error.message).toBe('Cloudflare Workers AI HTTP 500');
+    expect(body.events[0]!.eventType).toBe('AI_RESEARCH_FAILED');
+    expect(body.events[0]!.operation).toBe('Performance Improvements in .NET 11');
+    expect(body.events[0]!.error.message).toBe('Cloudflare Workers AI HTTP 500');
 
     expect(body.pagination).toEqual({
       page: 1,
