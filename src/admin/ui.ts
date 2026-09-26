@@ -289,17 +289,44 @@ export function renderAdminHtml(): string {
                   <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-result-val">Result: —</div>
                 </div>
                 <div>
-                  <div class="card-label">Est. Neurons (Last Run)</div>
-                  <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Est. Neurons</div>
+                <div>
+                  <div class="card-label">Last Run Est. Tokens</div>
+                  <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Est. Tokens</div>
                 </div>
               </div>
             </div>
 
-            <!-- AI Quota & Budget Enforcement Panel -->
+            <!-- Panel 1: Cloudflare Verified Telemetry (Official Cloudflare Analytics) -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Cloudflare Workers AI Quota &amp; Budget Enforcement</div>
-                <div id="ai-quota-badge"><span class="status-badge status-healthy">FREE CAPACITY AVAILABLE</span></div>
+                <div class="panel-title">Cloudflare Verified Telemetry (Official Cloudflare Analytics)</div>
+                <div id="cf-telemetry-badge"><span class="status-badge status-active">CHECKING...</span></div>
+              </div>
+              <div class="section-grid" style="margin-bottom:0.75rem;">
+                <div>
+                  <div class="card-label">Actual Cloudflare Neurons</div>
+                  <div style="font-size:1.25rem; font-weight:700; color:var(--accent-cyan);" id="cf-neurons-val">Checking API...</div>
+                  <div class="card-sub" id="cf-period-sub">Period: Today (UTC)</div>
+                </div>
+                <div>
+                  <div class="card-label">Actual Cloudflare Requests</div>
+                  <div style="font-size:1.1rem; font-weight:700;" id="cf-requests-val">—</div>
+                  <div class="card-sub" id="cf-synced-sub">Last Synced: —</div>
+                </div>
+                <div>
+                  <div class="card-label">Telemetry Source</div>
+                  <div style="font-size:0.95rem; font-weight:600;" id="cf-source-val">Cloudflare Analytics API</div>
+                  <div class="card-sub"><a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:underline;">Open Cloudflare Dashboard ↗</a></div>
+                </div>
+              </div>
+              <div id="cf-notice-box" style="display:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border-radius:6px; font-size:0.85rem; color:var(--text-muted); border-left:3px solid var(--accent-orange);"></div>
+            </div>
+
+            <!-- Panel 2: Application Execution Metrics & Local Safety Budget -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Application Execution Metrics &amp; Local Safety Budget</div>
+                <div id="ai-quota-badge"><span class="status-badge status-healthy">LOCAL SAFETY BUDGET OK</span></div>
               </div>
               <div class="section-grid" style="margin-bottom:0;">
                 <div>
@@ -309,17 +336,18 @@ export function renderAdminHtml(): string {
                 </div>
                 <div>
                   <div class="card-label">Daily Request Count</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-today-text">0 / 10,000 requests</div>
+                  <div style="font-size:1.1rem; font-weight:700;" id="ai-today-text">0 / 300 requests</div>
                   <div class="progress-bar-container">
                     <div id="ai-today-bar" class="progress-bar-fill" style="width: 0%;"></div>
                   </div>
                 </div>
                 <div>
-                  <div class="card-label">Daily Est. Neuron Usage</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 / 7,500 Est. Neurons (Hard Stop)</div>
+                  <div class="card-label">Daily Est. Tokens (Local Safety Cap)</div>
+                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 / 7,500 Est. Tokens (Local Cap)</div>
                   <div class="progress-bar-container">
                     <div id="ai-neurons-bar" class="progress-bar-fill" style="width: 0%;"></div>
                   </div>
+                  <div class="card-sub" style="margin-top:0.25rem;">Local cap to prevent runaway requests (char/4 heuristic).</div>
                 </div>
               </div>
             </div>

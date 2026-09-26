@@ -18,7 +18,7 @@ export const researchRouter = new Hono<AppEnv>();
 researchRouter.get('/research', async (c) => {
   const db = c.env.DB;
   const quotaManager = new QuotaManager();
-  const aiUsage = await quotaManager.getUsageSummary(db);
+  const aiUsage = await quotaManager.getUsageSummary(db, c.env);
 
   // 1. Fetch Research Sources
   const sourcesRes = await db
@@ -106,7 +106,7 @@ researchRouter.get('/research', async (c) => {
 researchRouter.get('/ai-usage', async (c) => {
   const db = c.env.DB;
   const quotaManager = new QuotaManager();
-  const summary = await quotaManager.getUsageSummary(db);
+  const summary = await quotaManager.getUsageSummary(db, c.env);
 
   return c.json({
     usage: summary,

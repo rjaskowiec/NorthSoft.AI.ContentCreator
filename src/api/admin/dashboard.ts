@@ -89,9 +89,9 @@ dashboardRouter.get('/dashboard', async (c) => {
     recentActivity = [];
   }
 
-  // AI Quota Summary
+  // AI Quota & Telemetry Summary
   const quotaManager = new QuotaManager();
-  const aiUsage = await quotaManager.getUsageSummary(db);
+  const aiUsage = await quotaManager.getUsageSummary(db, c.env);
 
   // 3. Fetch Last Orchestrator Run Metrics
   let lastRun: Record<string, unknown> | null;

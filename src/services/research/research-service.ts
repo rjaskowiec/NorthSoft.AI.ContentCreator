@@ -68,6 +68,10 @@ export interface ResearchRunSummary {
   pillarBreakdown: Record<string, number>;
   errorMessage?: string;
   durationMs: number;
+  localEstimatedTokens: number;
+  cloudflareVerifiedUsage: number | null;
+  usageSource: string;
+  usageTimestamp: string;
 }
 
 export class ResearchService {
@@ -77,6 +81,7 @@ export class ResearchService {
     private db: D1Database,
     private aiProvider: IAIProvider,
     private auditLogger: IAuditLogger = new D1AuditLogger(db),
+    private env?: Env,
   ) {
     this.quotaManager = new QuotaManager();
   }
@@ -128,6 +133,10 @@ export class ResearchService {
         pillarBreakdown: {},
         errorMessage: 'Skipped: Another research run is currently in progress',
         durationMs: Date.now() - startTime,
+        localEstimatedTokens: 0,
+        cloudflareVerifiedUsage: null,
+        usageSource: 'none',
+        usageTimestamp: nowIso,
       };
     }
 
@@ -614,6 +623,13 @@ Return ONLY a valid JSON object matching this schema:
       // Fallback
     }
 
+    // Fetch Telemetry Summary (Cloudflare Verified & Local Safety Budget)
+    const telemetry = await this.quotaManager.getFullUsageSummary(this.db, this.env);
+    const localEstTokens = telemetry.applicationMetrics.todayEstimatedTokens;
+    const cfVerifiedNeurons = telemetry.cloudflareVerifiedUsage.actualNeurons;
+    const usageSource = telemetry.cloudflareVerifiedUsage.source;
+    const usageTimestamp = telemetry.cloudflareVerifiedUsage.lastUpdated || new Date().toISOString();
+
     await this.auditLogger.log({
       eventType: 'RESEARCH_RUN_COMPLETED',
       entityType: 'research_run',
@@ -645,6 +661,10 @@ Return ONLY a valid JSON object matching this schema:
         aiInferenceSuccessful,
         aiInferenceFailed,
         fallbackExecutions,
+        localEstimatedTokens: localEstTokens,
+        cloudflareVerifiedUsage: cfVerifiedNeurons,
+        usageSource,
+        usageTimestamp,
       },
     });
 
@@ -657,7 +677,10 @@ Return ONLY a valid JSON object matching this schema:
         `Failed responses: ${aiInferenceFailed}\n` +
         `NO_USEFUL_ANGLE: ${noUsefulAngleCount}\n` +
         `Useful angles: ${ideasQueued}\n` +
-        `Fallback executions: ${fallbackExecutions}`,
+        `Fallback executions: ${fallbackExecutions}\n` +
+        `Local Estimated Tokens: ${localEstTokens}\n` +
+        `Cloudflare Verified Neurons: ${cfVerifiedNeurons ?? 'Not Available'}\n` +
+        `Usage Source: ${usageSource}`,
     );
 
     return {
@@ -691,6 +714,10 @@ Return ONLY a valid JSON object matching this schema:
       pillarBreakdown,
       errorMessage: runErrorMessage,
       durationMs,
+      localEstimatedTokens: localEstTokens,
+      cloudflareVerifiedUsage: cfVerifiedNeurons,
+      usageSource,
+      usageTimestamp,
     };
   }
 }

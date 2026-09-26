@@ -428,35 +428,98 @@ export function getAdminScripts(): string {
         const cntBlocked = document.getElementById('cnt-blocked');
         if (cntBlocked) cntBlocked.textContent = data.pipeline.rejected || data.pipeline.blocked || 0;
 
-        // AI Quota & Usage Panel
+        // Cloudflare Verified Telemetry & Application Execution Metrics
         if (data.aiUsage) {
           const usage = data.aiUsage;
+          const cf = usage.cloudflareVerifiedUsage;
+          const app = usage.applicationMetrics || usage;
+
+          // 1. Cloudflare Verified Telemetry Panel
+          const cfBadge = document.getElementById('cf-telemetry-badge');
+          const cfNeurons = document.getElementById('cf-neurons-val');
+          const cfReqs = document.getElementById('cf-requests-val');
+          const cfSource = document.getElementById('cf-source-val');
+          const cfSynced = document.getElementById('cf-synced-sub');
+          const cfPeriod = document.getElementById('cf-period-sub');
+          const cfNotice = document.getElementById('cf-notice-box');
+
+          if (cf) {
+            if (cfBadge) {
+              if (cf.status === 'VERIFIED') {
+                cfBadge.className = 'status-badge status-healthy';
+                cfBadge.textContent = 'VERIFIED TELEMETRY';
+              } else if (cf.status === 'NOT_CONFIGURED') {
+                cfBadge.className = 'status-badge status-active';
+                cfBadge.textContent = 'NOT CONFIGURED';
+              } else {
+                cfBadge.className = 'status-badge status-alert';
+                cfBadge.textContent = cf.status || 'UNAVAILABLE';
+              }
+            }
+
+            if (cfNeurons) {
+              cfNeurons.textContent = cf.actualNeurons !== null && cf.actualNeurons !== undefined
+                ? cf.actualNeurons.toLocaleString() + ' Neurons'
+                : 'Not Available';
+            }
+
+            if (cfReqs) {
+              cfReqs.textContent = cf.actualRequests !== null && cf.actualRequests !== undefined
+                ? cf.actualRequests.toLocaleString() + ' requests'
+                : 'Not Available';
+            }
+
+            if (cfSource) cfSource.textContent = cf.source || 'Cloudflare Analytics API';
+            if (cfPeriod) cfPeriod.textContent = 'Period: ' + (cf.period || 'Today (UTC)');
+            if (cfSynced) {
+              cfSynced.textContent = cf.lastUpdated
+                ? 'Last Synced: ' + new Date(cf.lastUpdated).toLocaleTimeString()
+                : 'Last Synced: Unconfigured';
+            }
+
+            if (cfNotice) {
+              if (cf.reason) {
+                cfNotice.style.display = 'block';
+                cfNotice.textContent = cf.reason;
+              } else {
+                cfNotice.style.display = 'none';
+              }
+            }
+          }
+
+          // 2. Application Execution Metrics & Local Safety Budget Panel
           const providerName = document.getElementById('ai-provider-name');
-          if (providerName) providerName.textContent = sys.aiProvider || 'Cloudflare Workers AI';
+          if (providerName) providerName.textContent = sys.aiProvider || 'Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct-fp8)';
+
+          const todayRequests = app.todayRequests ?? usage.todayRequests ?? 0;
+          const dailyLimit = app.dailyLimit ?? usage.dailyLimit ?? 300;
+          const todayEstTokens = app.todayEstimatedTokens ?? usage.todayNeurons ?? 0;
+          const localCap = app.localSafetyCap ?? usage.hardNeuronLimit ?? 7500;
 
           const todayText = document.getElementById('ai-today-text');
-          if (todayText) todayText.textContent = usage.todayRequests + ' / ' + usage.dailyLimit + ' requests';
+          if (todayText) todayText.textContent = todayRequests + ' / ' + dailyLimit + ' requests';
 
           const neuronsText = document.getElementById('ai-neurons-text');
-          if (neuronsText) neuronsText.textContent = usage.todayNeurons + ' / ' + (usage.hardNeuronLimit || 7500) + ' Est. Neurons (Hard Stop)';
+          if (neuronsText) neuronsText.textContent = todayEstTokens + ' / ' + localCap + ' Est. Tokens (Local Cap)';
 
-          const todayPct = Math.min(100, Math.round((usage.todayRequests / usage.dailyLimit) * 100));
-          const neuronPct = Math.min(100, Math.round((usage.todayNeurons / (usage.hardNeuronLimit || 7500)) * 100));
+          const todayPct = Math.min(100, Math.round((todayRequests / dailyLimit) * 100));
+          const estTokenPct = Math.min(100, Math.round((todayEstTokens / localCap) * 100));
 
           const todayBar = document.getElementById('ai-today-bar');
           if (todayBar) todayBar.style.width = todayPct + '%';
 
           const neuronBar = document.getElementById('ai-neurons-bar');
-          if (neuronBar) neuronBar.style.width = neuronPct + '%';
+          if (neuronBar) neuronBar.style.width = estTokenPct + '%';
 
           const badgeEl = document.getElementById('ai-quota-badge');
           if (badgeEl) {
-            if (usage.status === 'FREE_CAPACITY_AVAILABLE') {
+            const status = app.status || usage.status;
+            if (status === 'FREE_CAPACITY_AVAILABLE') {
               badgeEl.className = 'status-badge status-healthy';
-              badgeEl.textContent = 'FREE CAPACITY AVAILABLE';
+              badgeEl.textContent = 'LOCAL SAFETY BUDGET OK';
             } else {
               badgeEl.className = 'status-badge status-alert';
-              badgeEl.textContent = usage.status;
+              badgeEl.textContent = status;
             }
           }
         }
@@ -477,7 +540,7 @@ export function getAdminScripts(): string {
           if (resVal) resVal.textContent = 'Result: ' + String(r.result_status || '—').toUpperCase();
 
           const neurVal = document.getElementById('orch-neurons-val');
-          if (neurVal) neurVal.textContent = (r.neurons_used || 0) + ' Est. Neurons';
+          if (neurVal) neurVal.textContent = (r.neurons_used || 0) + ' Est. Tokens';
         }
 
         // Audit Activity Table (Recent Activity Preview)

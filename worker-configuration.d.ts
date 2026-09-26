@@ -43,4 +43,6 @@ interface Env {
   NORTHSOFT_MAIL_API_KEY?: string;
   NORTHSOFT_MAIL_GATEWAY_URL?: string;
   ADMIN_RECOVERY_EMAIL?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
 }
