@@ -66,7 +66,14 @@ export function getAdminScripts(): string {
       document.getElementById('dashboard-screen').style.display = 'flex';
       const userDisp = document.getElementById('user-display');
       if (userDisp) userDisp.textContent = user.username;
-      loadDashboardData();
+
+      const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
+      const validTabs = ['dashboard', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      if (hash && validTabs.includes(hash)) {
+        switchTab(hash);
+      } else {
+        switchTab('dashboard');
+      }
     }
 
     function switchTab(tabName) {
@@ -98,6 +105,14 @@ export function getAdminScripts(): string {
         loadSecurityData();
       }
     }
+
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
+      const validTabs = ['dashboard', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      if (hash && validTabs.includes(hash)) {
+        switchTab(hash);
+      }
+    });
 
     // Login Form Handler
     document.getElementById('login-form')?.addEventListener('submit', async (e) => {
@@ -862,6 +877,20 @@ export function getAdminScripts(): string {
       }
     }
 
+    function formatDateSafe(isoStr) {
+      if (!isoStr) return '—';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      return d.toLocaleString();
+    }
+
+    function formatDateUtcSafe(isoStr) {
+      if (!isoStr) return '—';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      return d.toUTCString();
+    }
+
     // Load Content Tab Data
     async function loadContentData() {
       try {
@@ -879,14 +908,14 @@ export function getAdminScripts(): string {
             postsBody.innerHTML = data.posts.map(p => \`
               <tr>
                 <td>
-                  <strong>\${escapeHtml(p.title)}</strong>
+                  <strong>\${escapeHtml(p.title || 'Untitled Post')}</strong>
                   <div style="font-size:0.8rem; color:var(--text-muted); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(p.latest_body || '')}</div>
                 </td>
-                <td><span class="status-badge \${p.status === 'approved' ? 'status-healthy' : p.status === 'rejected' || p.status === 'blocked' ? 'status-alert' : 'status-active'}">\${escapeHtml(p.status).toUpperCase()}</span></td>
-                <td><span class="code-tag">v\${p.current_version}</span></td>
+                <td><span class="status-badge \${p.status === 'approved' ? 'status-healthy' : p.status === 'rejected' || p.status === 'blocked' ? 'status-alert' : 'status-active'}">\${escapeHtml(p.status || '').toUpperCase()}</span></td>
+                <td><span class="code-tag">v\${p.current_version || 1}</span></td>
                 <td><span class="status-badge status-healthy">\${p.quality_score || 0}/100</span></td>
                 <td><span class="status-badge \${p.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(p.quality_decision || 'PASS')}</span></td>
-                <td class="code-tag">\${new Date(p.created_at).toLocaleString()}</td>
+                <td class="code-tag">\${formatDateSafe(p.created_at)}</td>
               </tr>
             \`).join('');
           } else {
@@ -961,13 +990,13 @@ export function getAdminScripts(): string {
           if (data.schedules && data.schedules.length > 0) {
             schedBody.innerHTML = data.schedules.map(sched => \`
               <tr>
-                <td><strong>\${escapeHtml(sched.post_title)}</strong></td>
-                <td class="code-tag">\${new Date(sched.scheduled_at).toUTCString()}</td>
-                <td><span class="status-badge status-healthy">\${escapeHtml(sched.status).toUpperCase()}</span></td>
-                <td><span class="code-tag">v\${sched.current_version}</span></td>
+                <td><strong>\${escapeHtml(sched.post_title || 'Untitled Post')}</strong></td>
+                <td class="code-tag">\${formatDateUtcSafe(sched.scheduled_at)}</td>
+                <td><span class="status-badge status-healthy">\${escapeHtml(sched.status || '').toUpperCase()}</span></td>
+                <td><span class="code-tag">v\${sched.current_version || 1}</span></td>
                 <td><span class="status-badge status-healthy">\${sched.quality_score || 0}/100</span></td>
                 <td><span class="status-badge \${sched.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(sched.quality_decision || 'PASS')}</span></td>
-                <td class="code-tag">\${new Date(sched.created_at).toLocaleString()}</td>
+                <td class="code-tag">\${formatDateSafe(sched.created_at)}</td>
               </tr>
             \`).join('');
           } else {
@@ -1030,14 +1059,14 @@ export function getAdminScripts(): string {
                     <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pub.postBody || '')}</div>
                     \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-rose); margin-top:2px;">\${escapeHtml(pub.errorMessage)}</div>\` : ''}
                   </td>
-                  <td><span class="code-tag">\${escapeHtml(pub.provider)}</span></td>
+                  <td><span class="code-tag">\${escapeHtml(pub.provider || 'facebook')}</span></td>
                   <td><span class="status-badge \${isApproved ? 'status-healthy' : 'status-alert'}">\${isApproved ? 'PASS' : 'UNAPPROVED'}</span></td>
                   <td>
-                    <span class="status-badge \${statusClass}">\${escapeHtml(pub.status).toUpperCase()}</span>
+                    <span class="status-badge \${statusClass}">\${escapeHtml(pub.status || '').toUpperCase()}</span>
                     \${errCategory ? \`<div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">\${escapeHtml(errCategory)}</div>\` : ''}
                   </td>
                   <td class="code-tag">\${escapeHtml(pub.facebookPostId || '—')}</td>
-                  <td class="code-tag">\${pub.publishedAt ? new Date(pub.publishedAt).toLocaleString() : '—'}</td>
+                  <td class="code-tag">\${formatDateSafe(pub.publishedAt)}</td>
                   <td>
                     \${isApproved && pub.status !== 'published' && pub.status !== 'publishing' ? \`
                       <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${pub.postId}')">Publish Now</button>
@@ -1733,5 +1762,35 @@ export function getAdminScripts(): string {
         }
       }
     }
+
+    // Attach all client functions to window object for global availability
+    window.switchTab = switchTab;
+    window.showDashboard = showDashboard;
+    window.showLoginForm = showLoginForm;
+    window.showForgotForm = showForgotForm;
+    window.showResetForm = showResetForm;
+    window.loadDashboardData = loadDashboardData;
+    window.loadManualPublisherData = loadManualPublisherData;
+    window.loadResearchData = loadResearchData;
+    window.loadContentData = loadContentData;
+    window.loadSchedulesData = loadSchedulesData;
+    window.loadPublicationsData = loadPublicationsData;
+    window.loadAuditData = loadAuditData;
+    window.loadSecurityData = loadSecurityData;
+    window.runResearchNow = runResearchNow;
+    window.runPipelineNow = runPipelineNow;
+    window.clearManualForm = clearManualForm;
+    window.validateManualForm = validateManualForm;
+    window.openPublishConfirmation = openPublishConfirmation;
+    window.closePublishConfirmation = closePublishConfirmation;
+    window.submitManualPublication = submitManualPublication;
+    window.publishNow = publishNow;
+    window.retryPub = retryPub;
+    window.loadFacebookPagePosts = loadFacebookPagePosts;
+    window.setAuditCategory = setAuditCategory;
+    window.executeAuditSearch = executeAuditSearch;
+    window.handleAuditSearch = handleAuditSearch;
+    window.changeAuditPage = changeAuditPage;
+    window.toggleAuditDetail = toggleAuditDetail;
   `;
 }
