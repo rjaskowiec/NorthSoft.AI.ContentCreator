@@ -8,7 +8,11 @@ export function getAdminScripts(): string {
     let currentTab = 'dashboard';
 
     // Initialize State Check
-    document.addEventListener('DOMContentLoaded', checkSession);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', checkSession);
+    } else {
+      checkSession();
+    }
 
     async function checkSession() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -82,7 +86,7 @@ export function getAdminScripts(): string {
       if (userDisp) userDisp.textContent = user.username;
 
       const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-      const validTabs = ['dashboard', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
       if (hash && validTabs.includes(hash)) {
         switchTab(hash);
       } else {
@@ -94,7 +98,7 @@ export function getAdminScripts(): string {
       if (evt && typeof evt.preventDefault === 'function') {
         evt.preventDefault();
       }
-      const validTabs = ['dashboard', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
       if (!validTabs.includes(tabName)) {
         tabName = 'dashboard';
       }
@@ -122,6 +126,8 @@ export function getAdminScripts(): string {
       try {
         if (tabName === 'dashboard') {
           loadDashboardData();
+        } else if (tabName === 'pipeline') {
+          loadPipelineData();
         } else if (tabName === 'manual-publisher') {
           loadManualPublisherData();
         } else if (tabName === 'research') {
@@ -144,7 +150,7 @@ export function getAdminScripts(): string {
 
     window.addEventListener('hashchange', () => {
       const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-      const validTabs = ['dashboard', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
+      const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
       if (hash && validTabs.includes(hash)) {
         switchTab(hash);
       }
@@ -1800,6 +1806,379 @@ export function getAdminScripts(): string {
       }
     }
 
+    async function loadPipelineData() {
+      const alertEl = document.getElementById('pipeline-control-alert');
+      try {
+        const res = await fetch('/api/admin/pipeline/scheduler');
+        if (res.ok) {
+          const data = await res.json();
+          const cfg = data.config || {};
+          const masterSwitch = document.getElementById('sched-master-switch');
+          const freqSelect = document.getElementById('sched-frequency');
+          const timeInput = document.getElementById('sched-time');
+          const tzInput = document.getElementById('sched-timezone');
+          const stgDisc = document.getElementById('sched-stage-discovery');
+          const stgGen = document.getElementById('sched-stage-generation');
+          const stgEval = document.getElementById('sched-stage-evaluation');
+          const stgPub = document.getElementById('sched-stage-publishing');
+          const statusBadge = document.getElementById('scheduler-status-badge');
+
+          if (masterSwitch) masterSwitch.value = cfg.enabled ? '1' : '0';
+          if (freqSelect) freqSelect.value = cfg.frequency || 'daily';
+          if (timeInput) timeInput.value = cfg.publicationTime || '09:00';
+          if (tzInput) tzInput.value = cfg.timezone || 'UTC';
+          if (stgDisc) stgDisc.checked = cfg.discoveryEnabled !== false;
+          if (stgGen) stgGen.checked = cfg.generationEnabled !== false;
+          if (stgEval) stgEval.checked = cfg.evaluationEnabled !== false;
+          if (stgPub) stgPub.checked = cfg.publishingEnabled !== false;
+
+          if (statusBadge) {
+            if (cfg.enabled) {
+              statusBadge.innerHTML = '<span class="status-badge status-healthy">SCHEDULER ON (ACTIVE)</span>';
+            } else {
+              statusBadge.innerHTML = '<span class="status-badge status-disabled">SCHEDULER OFF</span>';
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load scheduler config:', err);
+      }
+
+      try {
+        const res = await fetch('/api/admin/pipeline/history');
+        const historyBody = document.getElementById('pipeline-history-body');
+        if (res.ok && historyBody) {
+          const data = await res.json();
+          const runs = data.history || data.runs || [];
+          if (runs.length === 0) {
+            historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No pipeline execution runs logged yet. Click <strong>Run Full Pipeline Now</strong> above to start.</td></tr>';
+          } else {
+            historyBody.innerHTML = runs.map(r => {
+              const statusClass = r.status === 'completed' || r.status === 'SUCCESS' ? 'status-healthy' : r.status === 'running' || r.status === 'RUNNING' ? 'status-active' : 'status-alert';
+              const neurons = r.neurons_used !== null && r.neurons_used !== undefined ? Number(r.neurons_used).toLocaleString() + ' Neurons' : '—';
+              const duration = r.started_at && r.finished_at ? Math.max(0, Math.round((new Date(r.finished_at).getTime() - new Date(r.started_at).getTime()) / 1000)) + 's' : 'In Progress';
+              const trigger = String(r.trigger_type || 'manual').toUpperCase();
+              const resultStr = escapeHtml(String(r.result_status || r.error_message || r.status || '—'));
+              
+              let details = 'Stage Execution Log';
+              if (r.topics_discovered !== undefined) {
+                details = 'Discovered: ' + (r.topics_discovered || 0) + ' | Selected: ' + (r.topics_selected || 0);
+              }
+              if (r.post_id) {
+                details += ' | Post: ' + escapeHtml(r.post_id.substring(0, 8));
+              }
+
+              return '<tr>' +
+                '<td>' + formatDateSafe(r.started_at) + ' ' + formatTimeSafe(r.started_at) + '</td>' +
+                '<td><span class="status-badge status-neutral">' + trigger + '</span></td>' +
+                '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(String(r.status).toUpperCase()) + '</span></td>' +
+                '<td>' + resultStr + '</td>' +
+                '<td>' + details + '</td>' +
+                '<td style="color:var(--accent-cyan); font-weight:600;">' + neurons + '</td>' +
+                '<td>' + duration + '</td>' +
+              '</tr>';
+            }).join('');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load pipeline execution history:', err);
+      }
+    }
+
+    async function runDiscoveryNow() {
+      const btn = document.getElementById('stage-discovery-btn');
+      const alertEl = document.getElementById('pipeline-control-alert');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Running Content Scout Discovery...'; }
+      if (alertEl) alertEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/pipeline/discovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          const r = data.result || {};
+          let html = '<strong>Stage 1 — Content Discovery Completed Successfully!</strong><br><br>' +
+            '• Sources checked: <strong>' + (r.sourcesChecked || 0) + '</strong><br>' +
+            '• Raw items found: <strong>' + (r.rawItemsDiscovered || 0) + '</strong><br>' +
+            '• AI Inference requests: <strong>' + (r.aiInferenceRequests || 0) + '</strong> (Successful: ' + (r.aiInferenceSuccessful || 0) + ', Failed: ' + (r.aiInferenceFailed || 0) + ')<br>' +
+            '• Useful inspirations: <strong>' + (r.usefulInspirations || 0) + '</strong><br>' +
+            '• NO_USEFUL_ANGLE count: <strong>' + (r.noUsefulAngleCount || 0) + '</strong><br>' +
+            '• Duplicates skipped: <strong>' + (r.duplicatesFound || 0) + '</strong><br>' +
+            '• Rejected: <strong>' + (r.rejectedCount || 0) + '</strong><br>' +
+            '• New proposals added: <strong>' + (r.newProposalsCount || 0) + '</strong><br>' +
+            '• Cloudflare Verified Neurons: <strong style="color:var(--accent-cyan);">' + (r.cloudflareVerifiedNeurons !== null ? r.cloudflareVerifiedNeurons.toLocaleString() + ' Neurons' : 'Not Configured') + '</strong><br>' +
+            '• Duration: <strong>' + ((r.durationMs || 0) / 1000).toFixed(1) + 's</strong>';
+
+          if (r.proposals && r.proposals.length > 0) {
+            html += '<br><br><strong>Generated Topic Proposals:</strong><ul style="margin-top:0.4rem; padding-left:1.2rem;">';
+            r.proposals.forEach(p => {
+              html += '<li><strong>' + escapeHtml(p.title) + '</strong> (' + escapeHtml(p.contentPillar) + '): <em>' + escapeHtml(p.contentAngle) + '</em></li>';
+            });
+            html += '</ul>';
+          }
+
+          if (alertEl) {
+            alertEl.innerHTML = html;
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>Stage 1 Content Discovery Failed:</strong> ' + escapeHtml(data.error || 'Unknown error');
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'Network error while running Content Discovery.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔎 Run Content Discovery'; }
+        loadPipelineData();
+      }
+    }
+
+    async function runPostGenerationNow() {
+      const btn = document.getElementById('stage-generation-btn');
+      const alertEl = document.getElementById('pipeline-control-alert');
+      if (btn) { btn.disabled = true; btn.textContent = '✍ Generating & Evaluating Post...'; }
+      if (alertEl) alertEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/pipeline/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
+        });
+        const data = await res.json();
+        const r = data.result || {};
+
+        if (res.ok && data.success && r.finalDecision === 'PASS') {
+          const c = r.classification || {};
+          let html = '<strong>Stage 2 — Post Generation & Quality Evaluation Passed!</strong><br><br>' +
+            '• Post Title: <strong>' + escapeHtml(r.title) + '</strong><br>' +
+            '• Quality Score: <strong>' + (r.qualityScore || 0) + ' / 100</strong><br>' +
+            '• Final Decision: <span class="status-badge status-healthy">PASS</span><br>' +
+            '• Pillar: <strong>' + escapeHtml(c.pillar || 'GENERAL') + '</strong> | Type: <strong>' + escapeHtml(c.postType || 'SHORT_POST') + '</strong><br>' +
+            '• Sub-scores — Engagement: ' + (c.engagementPotential || 0) + ' | Clarity: ' + (c.clarity || 0) + ' | Value: ' + (c.practicalValue || 0) + ' | Brand: ' + (c.brandRelevance || 0) + ' | Originality: ' + (c.originality || 0) + '<br>' +
+            '• Suggested Publication Time: <strong>' + (r.suggestedPublishTime ? new Date(r.suggestedPublishTime).toUTCString() : 'Immediate') + '</strong><br><br>' +
+            '<div style="background:rgba(0,0,0,0.3); padding:0.8rem; border-radius:6px; font-family:monospace; white-space:pre-wrap; max-height:150px; overflow-y:auto; font-size:0.85rem;">' + escapeHtml(r.body || '') + '</div>';
+
+          if (alertEl) {
+            alertEl.innerHTML = html;
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          let html = '<strong>Stage 2 — Post Generation Rejected / Failed:</strong><br>';
+          if (r.finalDecision === 'REJECTED' || r.finalDecision === 'BLOCKED') {
+            html += 'Decision: <span class="status-badge status-alert">' + r.finalDecision + '</span><br>' +
+              'Reason: ' + escapeHtml(r.rejectionReason || data.error || 'Post draft failed quality gate controls.');
+          } else {
+            html += escapeHtml(data.error || 'Failed to generate post.');
+          }
+          if (alertEl) {
+            alertEl.innerHTML = html;
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'Network error while running Post Generation & Quality evaluation.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '✍ Generate & Process Selected'; }
+        loadPipelineData();
+      }
+    }
+
+    async function runPublishNow() {
+      const btn = document.getElementById('stage-publishing-btn');
+      const alertEl = document.getElementById('pipeline-control-alert');
+      if (btn) { btn.disabled = true; btn.textContent = '📤 Publishing to Facebook Page...'; }
+      if (alertEl) alertEl.style.display = 'none';
+
+      try {
+        const postsRes = await fetch('/api/admin/content');
+        const postsData = await postsRes.json();
+        const readyPost = (postsData.posts || []).find(p => p.quality_decision === 'PASS' || p.status === 'approved' || p.status === 'draft');
+
+        if (!readyPost) {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>Stage 3 Facebook Publishing Failed:</strong> No approved post drafts ready in queue. Run Stage 2 first.';
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+          return;
+        }
+
+        const res = await fetch('/api/admin/pipeline/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ postId: readyPost.id })
+        });
+        const data = await res.json();
+        const r = data.result || {};
+
+        if (res.ok && data.success && r.success) {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>Stage 3 — Published to Facebook Successfully!</strong><br><br>' +
+              '• Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + escapeHtml(r.facebookPostId || 'Confirmed') + '</code><br>' +
+              '• Published At: <strong>' + (r.publishedAt ? new Date(r.publishedAt).toUTCString() : new Date().toUTCString()) + '</strong><br>' +
+              '• Target: <strong>NorthSoft Facebook Page</strong>';
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>PUBLISH FAILED:</strong><br>' +
+              'Reason: ' + escapeHtml(r.error || data.error || 'Meta Facebook API rejected publication.') + '<br>' +
+              'No post status was changed to published.';
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'Network error while attempting Facebook publication.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '📤 Publish Selected Post'; }
+        loadPipelineData();
+      }
+    }
+
+    async function runFullPipelineNow() {
+      const btn = document.getElementById('run-full-pipeline-btn');
+      const alertEl = document.getElementById('pipeline-control-alert');
+      if (btn) { btn.disabled = true; btn.textContent = '🚀 Executing Full Pipeline (End-to-End)...'; }
+      if (alertEl) alertEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/pipeline/run-full', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
+        });
+        const data = await res.json();
+        const r = data.result || {};
+
+        if (res.status === 409 || data.code === 'PIPELINE_ALREADY_RUNNING') {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>PIPELINE ALREADY RUNNING:</strong> A pipeline execution is currently in progress. Please wait for it to finish.';
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+          return;
+        }
+
+        if (res.ok && data.success && r.status === 'SUCCESS') {
+          const s1 = r.stage1Discovery || {};
+          const s2 = r.stage2Generation || {};
+          const s3 = r.stage3Publishing || {};
+
+          let html = '<strong>🚀 1-Click Full Pipeline Executed Successfully!</strong><br><br>' +
+            '• Stage 1 Content Discovery: <span class="status-badge status-healthy">SUCCESS</span> (' + (s1.newProposalsCount || 0) + ' new topics)<br>' +
+            '• Stage 2 Post Generation: <span class="status-badge status-healthy">SUCCESS</span> ("' + escapeHtml(s2.title || '') + '", QA Score: ' + (s2.qualityScore || 0) + ')<br>' +
+            '• Stage 3 Quality Evaluation: <span class="status-badge status-healthy">PASS</span><br>' +
+            '• Stage 4 Facebook Publishing: <span class="status-badge status-healthy">SUCCESS</span> (Post ID: <code>' + escapeHtml(s3.facebookPostId || r.facebookPostId || '') + '</code>)<br>' +
+            '• Published Posts Count: <strong>EXACTLY 1 POST</strong><br>' +
+            '• Total Duration: <strong>' + ((r.durationMs || 0) / 1000).toFixed(1) + 's</strong>';
+
+          if (alertEl) {
+            alertEl.innerHTML = html;
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>Full Pipeline Execution Failed:</strong><br>' +
+              'Reason: ' + escapeHtml(data.error || r.errorMessage || 'One of the pipeline stages failed execution.') + '<br>' +
+              'No unverified posts were published.';
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'Network error while executing Full Pipeline.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🚀 RUN FULL PIPELINE NOW'; }
+        loadPipelineData();
+      }
+    }
+
+    async function saveSchedulerConfig(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const btn = document.getElementById('save-scheduler-btn');
+      const alertEl = document.getElementById('pipeline-control-alert');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving Settings...'; }
+
+      const masterSwitch = document.getElementById('sched-master-switch');
+      const freqSelect = document.getElementById('sched-frequency');
+      const timeInput = document.getElementById('sched-time');
+      const tzInput = document.getElementById('sched-timezone');
+      const stgDisc = document.getElementById('sched-stage-discovery');
+      const stgGen = document.getElementById('sched-stage-generation');
+      const stgEval = document.getElementById('sched-stage-evaluation');
+      const stgPub = document.getElementById('sched-stage-publishing');
+
+      const body = {
+        enabled: masterSwitch ? masterSwitch.value === '1' : false,
+        frequency: freqSelect ? freqSelect.value : 'daily',
+        publicationTime: timeInput ? timeInput.value : '09:00',
+        timezone: tzInput ? tzInput.value : 'UTC',
+        discoveryEnabled: stgDisc ? stgDisc.checked : true,
+        generationEnabled: stgGen ? stgGen.checked : true,
+        evaluationEnabled: stgEval ? stgEval.checked : true,
+        publishingEnabled: stgPub ? stgPub.checked : true,
+      };
+
+      try {
+        const res = await fetch('/api/admin/pipeline/scheduler', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          if (alertEl) {
+            alertEl.innerHTML = '<strong>Automatic Scheduler configuration saved successfully!</strong> Status: <strong>' + (data.config?.enabled ? 'ACTIVE (ON)' : 'DISABLED (OFF)') + '</strong>';
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+        } else {
+          if (alertEl) {
+            alertEl.textContent = 'Failed to save scheduler configuration: ' + (data.error || 'Unknown error');
+            alertEl.className = 'alert-error';
+            alertEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (alertEl) {
+          alertEl.textContent = 'Network error saving scheduler configuration.';
+          alertEl.className = 'alert-error';
+          alertEl.style.display = 'block';
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Save Scheduler Settings'; }
+        loadPipelineData();
+      }
+    }
+
     // Attach all client functions to window object for global availability
     window.switchTab = switchTab;
     window.showDashboard = showDashboard;
@@ -1807,6 +2186,7 @@ export function getAdminScripts(): string {
     window.showForgotForm = showForgotForm;
     window.showResetForm = showResetForm;
     window.loadDashboardData = loadDashboardData;
+    window.loadPipelineData = loadPipelineData;
     window.loadManualPublisherData = loadManualPublisherData;
     window.loadResearchData = loadResearchData;
     window.loadContentData = loadContentData;
@@ -1814,6 +2194,11 @@ export function getAdminScripts(): string {
     window.loadPublicationsData = loadPublicationsData;
     window.loadAuditData = loadAuditData;
     window.loadSecurityData = loadSecurityData;
+    window.runDiscoveryNow = runDiscoveryNow;
+    window.runPostGenerationNow = runPostGenerationNow;
+    window.runPublishNow = runPublishNow;
+    window.runFullPipelineNow = runFullPipelineNow;
+    window.saveSchedulerConfig = saveSchedulerConfig;
     window.runResearchNow = runResearchNow;
     window.runPipelineNow = runPipelineNow;
     window.clearManualForm = clearManualForm;

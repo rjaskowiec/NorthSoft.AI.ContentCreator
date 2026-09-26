@@ -120,6 +120,10 @@ export function renderAdminHtml(): string {
 
           <div class="nav-section-title">CONTENT</div>
           <ul class="nav-list">
+            <li class="nav-item" id="nav-pipeline"><a href="#pipeline" onclick="switchTab('pipeline', event)">
+              <svg viewBox="0 0 24 24" class="nav-icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              Pipeline Control
+            </a></li>
             <li class="nav-item" id="nav-content"><a href="#content" onclick="switchTab('content', event)">
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Content Drafts
@@ -392,6 +396,155 @@ export function renderAdminHtml(): string {
                   </thead>
                   <tbody id="recent-activity-body">
                     <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading audit activity...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: PIPELINE CONTROL CENTER -->
+          <div id="tab-pipeline" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <h1 class="page-title">Content Automation &amp; Pipeline Control</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Manual triggers, 1-Click end-to-end pipeline execution, automatic scheduler configuration, and stage observability.</p>
+              </div>
+              <button id="run-full-pipeline-btn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:0.95rem; padding:0.75rem 1.4rem;" onclick="runFullPipelineNow()">
+                🚀 RUN FULL PIPELINE NOW
+              </button>
+            </div>
+
+            <div id="pipeline-control-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+
+            <!-- Manual Stage Triggers Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Manual Pipeline Stage Triggers</div>
+                <span class="status-badge status-healthy">DECOUPLED STAGES</span>
+              </div>
+
+              <div class="section-grid" style="margin-bottom:0.5rem;">
+                <div class="card" style="padding:1.25rem;">
+                  <div class="card-label">Etap 1 — Content Discovery</div>
+                  <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
+                    Scouts RSS feeds for random inspiration, evaluates angles using Workers AI, and queues candidate topics into backlog.
+                  </p>
+                  <button id="stage-discovery-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runDiscoveryNow()">
+                    🔎 Run Content Discovery
+                  </button>
+                </div>
+
+                <div class="card" style="padding:1.25rem;">
+                  <div class="card-label">Etap 2 — Post Generation &amp; Quality</div>
+                  <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
+                    Generates short social post from queued topic idea, runs static checks, independent QA evaluation, and policy review.
+                  </p>
+                  <button id="stage-generation-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPostGenerationNow()">
+                    ✍ Generate &amp; Process Selected
+                  </button>
+                </div>
+
+                <div class="card" style="padding:1.25rem;">
+                  <div class="card-label">Etap 3 — Facebook Publishing</div>
+                  <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
+                    Publishes an approved post draft directly to the configured NorthSoft Facebook Page via official Meta Graph API.
+                  </p>
+                  <button id="stage-publishing-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPublishNow()">
+                    📤 Publish Selected Post
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Automatic Scheduler Configuration Panel -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Automatic Scheduler Configuration</div>
+                <div id="scheduler-status-badge"><span class="status-badge status-disabled">SCHEDULER OFF</span></div>
+              </div>
+
+              <form id="scheduler-config-form" onsubmit="saveSchedulerConfig(event)">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1.25rem; margin-bottom:1.25rem;">
+                  <div>
+                    <label class="form-label">Automation Master Switch</label>
+                    <select id="sched-master-switch" class="form-input">
+                      <option value="0">Scheduler OFF (Manual Only)</option>
+                      <option value="1">Scheduler ON (Automated Execution)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="form-label">Execution Frequency</label>
+                    <select id="sched-frequency" class="form-input">
+                      <option value="daily">Daily (Every 24 Hours)</option>
+                      <option value="12h">Every 12 Hours</option>
+                      <option value="6h">Every 6 Hours</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="form-label">Target Publication Time (UTC)</label>
+                    <input type="text" id="sched-time" class="form-input" value="09:00" placeholder="09:00" />
+                  </div>
+
+                  <div>
+                    <label class="form-label">Timezone</label>
+                    <input type="text" id="sched-timezone" class="form-input" value="UTC" readonly />
+                  </div>
+                </div>
+
+                <div style="margin-bottom:1.25rem; padding:1rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px;">
+                  <label class="form-label" style="margin-bottom:0.75rem;">Automated Pipeline Stage Switches</label>
+                  <div style="display:flex; flex-wrap:wrap; gap:1.5rem; font-size:0.875rem;">
+                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                      <input type="checkbox" id="sched-stage-discovery" checked />
+                      <span>Stage 1: Content Discovery</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                      <input type="checkbox" id="sched-stage-generation" checked />
+                      <span>Stage 2: Post Generation</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                      <input type="checkbox" id="sched-stage-evaluation" checked />
+                      <span>Stage 3: Quality Evaluation</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                      <input type="checkbox" id="sched-stage-publishing" checked />
+                      <span>Stage 4: Facebook Publishing</span>
+                    </label>
+                  </div>
+                </div>
+
+                <button type="submit" id="save-scheduler-btn" class="btn-primary">
+                  Save Scheduler Settings
+                </button>
+              </form>
+            </div>
+
+            <!-- Pipeline Execution History & Observability Ledger -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Pipeline Execution &amp; Run History Ledger</div>
+                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="loadPipelineData()">
+                  🔄 Refresh Log
+                </button>
+              </div>
+
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Started At</th>
+                      <th>Trigger</th>
+                      <th>Status</th>
+                      <th>Result</th>
+                      <th>Stage Details</th>
+                      <th>Cloudflare Neurons</th>
+                      <th>Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pipeline-history-body">
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Loading pipeline execution history...</td></tr>
                   </tbody>
                 </table>
               </div>
