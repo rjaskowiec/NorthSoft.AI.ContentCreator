@@ -116,7 +116,7 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
     }
 
     // 3. Fetch Latest Posts from Page Posts endpoint — GET only
-    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,story,created_time,permalink_url,full_picture,is_published,type,status_type&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
+    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,story,created_time,permalink_url,full_picture,is_published&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
     if (after) {
       postsUrl += `&after=${encodeURIComponent(after)}`;
     }
@@ -146,8 +146,6 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       permalinkUrl: post.permalink_url || null,
       fullPicture: post.full_picture || null,
       isPublished: post.is_published !== false,
-      type: post.type || null,
-      statusType: post.status_type || null,
     }));
 
     const hasMore = Boolean(postsData.paging?.next || postsData.paging?.cursors?.after);
