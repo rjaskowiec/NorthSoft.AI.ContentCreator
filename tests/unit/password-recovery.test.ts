@@ -28,7 +28,7 @@ describe('NorthSoftMailGatewayClient Unit Tests', () => {
     expect(res.error).toContain('GATEWAY_TOKEN is not configured');
   });
 
-  it('should make POST request to NorthSoft Mail Gateway when configured', async () => {
+  it('should make POST request to NorthSoft Mail Gateway endpoint /v1/send when configured', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -50,7 +50,7 @@ describe('NorthSoftMailGatewayClient Unit Tests', () => {
     expect(res.success).toBe(true);
     expect(res.messageId).toBe('msg-12345');
     expect(mockFetch).toHaveBeenCalledOnce();
-    expect(mockFetch.mock.calls[0]![0]).toBe('https://mail.northsoft.is/api/send');
+    expect(mockFetch.mock.calls[0]![0]).toBe('https://mail.northsoft.is/v1/send');
 
     const headers = mockFetch.mock.calls[0]![1]?.headers as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer valid_gateway_token_xyz');
@@ -59,6 +59,79 @@ describe('NorthSoftMailGatewayClient Unit Tests', () => {
     expect(sentBody.from.email).toBe('no-reply@northsoft.is');
     expect(sentBody.to[0].email).toBe('admin@northsoft.is');
     expect(sentBody.subject).toBe('Reset Password');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should handle Gateway HTTP 4xx errors properly without leaking GATEWAY_TOKEN', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ success: false, error: 'Forbidden' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const secretToken = 'SECRET_GATEWAY_TOKEN_999';
+    const client = new NorthSoftMailGatewayClient({
+      GATEWAY_TOKEN: secretToken,
+    });
+
+    const res = await client.sendEmail({
+      to: 'admin@northsoft.is',
+      subject: 'Test',
+      text: 'Body',
+      html: '<p>Body</p>',
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Mail Gateway HTTP 403');
+    expect(res.error).not.toContain(secretToken);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should handle Gateway HTTP 5xx errors properly', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: async () => JSON.stringify({ success: false, error: 'Bad Gateway' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new NorthSoftMailGatewayClient({
+      GATEWAY_TOKEN: 'token_123',
+    });
+
+    const res = await client.sendEmail({
+      to: 'admin@northsoft.is',
+      subject: 'Test',
+      text: 'Body',
+      html: '<p>Body</p>',
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Mail Gateway HTTP 502');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should handle network exceptions gracefully', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('Connection refused'));
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new NorthSoftMailGatewayClient({
+      GATEWAY_TOKEN: 'token_123',
+    });
+
+    const res = await client.sendEmail({
+      to: 'admin@northsoft.is',
+      subject: 'Test',
+      text: 'Body',
+      html: '<p>Body</p>',
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Mail Gateway network exception: Connection refused');
 
     vi.unstubAllGlobals();
   });

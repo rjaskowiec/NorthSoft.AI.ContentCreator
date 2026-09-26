@@ -158,10 +158,15 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        alertEl.className = 'alert-success';
-        alertEl.textContent = data.message || 'If an account matches this information, a password reset email has been sent.';
+        if (res.ok) {
+          alertEl.className = 'alert-success';
+          alertEl.textContent = data.message || 'If an account matches this information, a password reset email has been sent.';
+          document.getElementById('forgot-email').value = '';
+        } else {
+          alertEl.className = 'alert-error';
+          alertEl.textContent = data.message || 'Failed to submit password recovery request.';
+        }
         alertEl.style.display = 'block';
-        document.getElementById('forgot-email').value = '';
       } catch (err) {
         alertEl.className = 'alert-error';
         alertEl.textContent = 'Failed to submit password recovery request.';

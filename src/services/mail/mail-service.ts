@@ -44,7 +44,7 @@ export class NorthSoftMailGatewayClient implements IMailGatewayClient {
   constructor(env: MailGatewayEnv) {
     this.apiKey = (env.GATEWAY_TOKEN || env.NORTHSOFT_MAIL_API_KEY || '').trim();
     this.gatewayUrl = (
-      env.NORTHSOFT_MAIL_GATEWAY_URL || 'https://mail.northsoft.is/api/send'
+      env.NORTHSOFT_MAIL_GATEWAY_URL || 'https://mail.northsoft.is/v1/send'
     ).trim();
   }
 

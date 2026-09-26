@@ -359,12 +359,29 @@ NorthSoft AI Security Team`;
 </html>`;
 
     // Recipient address MUST come strictly from user.email (D1 database record)
-    await this.mailGateway.sendEmail({
+    const mailResult = await this.mailGateway.sendEmail({
       to: user.email,
       subject: 'Reset your NorthSoft.AI.ContentCreator password',
       text: textBody,
       html: htmlBody,
     });
+
+    if (!mailResult.success) {
+      console.error('Password reset email transmission failed:', mailResult.error);
+      await this.auditLogger.log({
+        eventType: 'ADMIN_PASSWORD_RESET_FAILED',
+        entityType: 'admin_user',
+        entityId: user.id,
+        actor: 'system',
+        details: {
+          username: user.username,
+          clientIp,
+          reason: 'email_delivery_failed',
+          gatewayError: mailResult.error ? mailResult.error.substring(0, 200) : 'Unknown error',
+        },
+      });
+      return genericResponse;
+    }
 
     await this.auditLogger.log({
       eventType: 'ADMIN_PASSWORD_RESET_REQUESTED',
