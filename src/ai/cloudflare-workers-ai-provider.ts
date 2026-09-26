@@ -61,6 +61,9 @@ export class CloudflareWorkersAIProvider implements IAIProvider {
       }
 
       const durationMs = Date.now() - startTime;
+      // IMPORTANT: Cloudflare Workers AI does NOT return token counts or neuron usage
+      // in inference responses. These are rough CHARACTER-BASED ESTIMATES (chars / 4).
+      // They are NOT real token counts and NOT Cloudflare-verified neuron consumption.
       const promptTokens = Math.ceil(JSON.stringify(request.messages).length / 4);
       const completionTokens = Math.ceil(text.length / 4);
 

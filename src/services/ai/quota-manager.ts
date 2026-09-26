@@ -255,7 +255,8 @@ export class QuotaManager {
     const outputTokens = params.outputTokens ?? 0;
     const totalTokens = inputTokens + outputTokens;
 
-    // Calculate/estimate neurons used if not explicitly provided (1 token ~= 1 neuron for 8B LLM)
+    // ESTIMATED neurons — Cloudflare Workers AI does not return neuron counts in responses.
+    // This is a local heuristic (1 estimated-token ≈ 1 neuron for 8B LLM). NOT verified usage.
     const neuronsUsed = params.neuronsUsed ?? Math.max(10, Math.ceil(totalTokens * 1.0));
     const failedIncrement = params.success ? 0 : 1;
 

@@ -438,7 +438,7 @@ export function getAdminScripts(): string {
           if (todayText) todayText.textContent = usage.todayRequests + ' / ' + usage.dailyLimit + ' requests';
 
           const neuronsText = document.getElementById('ai-neurons-text');
-          if (neuronsText) neuronsText.textContent = usage.todayNeurons + ' / ' + (usage.hardNeuronLimit || 7500) + ' Neurons (Hard Stop)';
+          if (neuronsText) neuronsText.textContent = usage.todayNeurons + ' / ' + (usage.hardNeuronLimit || 7500) + ' Est. Neurons (Hard Stop)';
 
           const todayPct = Math.min(100, Math.round((usage.todayRequests / usage.dailyLimit) * 100));
           const neuronPct = Math.min(100, Math.round((usage.todayNeurons / (usage.hardNeuronLimit || 7500)) * 100));
@@ -477,7 +477,7 @@ export function getAdminScripts(): string {
           if (resVal) resVal.textContent = 'Result: ' + String(r.result_status || '—').toUpperCase();
 
           const neurVal = document.getElementById('orch-neurons-val');
-          if (neurVal) neurVal.textContent = (r.neurons_used || 0) + ' Neurons';
+          if (neurVal) neurVal.textContent = (r.neurons_used || 0) + ' Est. Neurons';
         }
 
         // Audit Activity Table (Recent Activity Preview)
@@ -1456,7 +1456,7 @@ export function getAdminScripts(): string {
       } else if (detailsInput && typeof detailsInput === 'object') {
         details = detailsInput;
       }
-      const labelMap = { username: 'Username', clientIp: 'IP', emailConfigured: 'Email', expiresAt: 'Expires', adminUserId: 'User ID', triggerType: 'Trigger', trigger: 'Trigger', reason: 'Reason', status: 'Status', neuronsUsed: 'Neurons', neurons: 'Neurons', errorMessage: 'Error', error: 'Error' };
+      const labelMap = { username: 'Username', clientIp: 'IP', emailConfigured: 'Email', expiresAt: 'Expires', adminUserId: 'User ID', triggerType: 'Trigger', trigger: 'Trigger', reason: 'Reason', status: 'Status', neuronsUsed: 'Est. Neurons', neurons: 'Est. Neurons', errorMessage: 'Error', error: 'Error' };
       const items = [];
       for (const [key, rawVal] of Object.entries(details)) {
         if (rawVal === undefined || rawVal === null) continue;

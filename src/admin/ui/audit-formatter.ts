@@ -213,8 +213,8 @@ export function formatAuditDetails(detailsInput: unknown): DetailItem[] {
     trigger: 'Trigger',
     reason: 'Reason',
     status: 'Status',
-    neuronsUsed: 'Neurons',
-    neurons: 'Neurons',
+    neuronsUsed: 'Est. Neurons',
+    neurons: 'Est. Neurons',
     errorMessage: 'Error',
     error: 'Error',
   };

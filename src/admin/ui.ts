@@ -289,8 +289,8 @@ export function renderAdminHtml(): string {
                   <div style="font-size:0.8rem; color:var(--text-muted);" id="orch-result-val">Result: —</div>
                 </div>
                 <div>
-                  <div class="card-label">Neurons Consumed (Last Run)</div>
-                  <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Neurons</div>
+                  <div class="card-label">Est. Neurons (Last Run)</div>
+                  <div style="font-weight:600; color:var(--accent-cyan);" id="orch-neurons-val">0 Est. Neurons</div>
                 </div>
               </div>
             </div>
@@ -315,8 +315,8 @@ export function renderAdminHtml(): string {
                   </div>
                 </div>
                 <div>
-                  <div class="card-label">Daily Neuron Usage</div>
-                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 / 7,500 Neurons (Hard Stop)</div>
+                  <div class="card-label">Daily Est. Neuron Usage</div>
+                  <div style="font-size:1.1rem; font-weight:700;" id="ai-neurons-text">0 / 7,500 Est. Neurons (Hard Stop)</div>
                   <div class="progress-bar-container">
                     <div id="ai-neurons-bar" class="progress-bar-fill" style="width: 0%;"></div>
                   </div>
