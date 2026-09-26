@@ -7,6 +7,20 @@ export function getAdminScripts(): string {
     let csrfToken = '';
     let currentTab = 'dashboard';
 
+    // Safe String & Utility Normalizers for API Resilience
+    function safeStr(val, defaultVal = '') {
+      if (val === null || val === undefined) return defaultVal;
+      return String(val);
+    }
+
+    function safeUpper(val, defaultVal = '') {
+      return safeStr(val, defaultVal).toUpperCase();
+    }
+
+    function safeLower(val, defaultVal = '') {
+      return safeStr(val, defaultVal).toLowerCase();
+    }
+
     // Initialize State Check
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', checkSession);
@@ -26,9 +40,9 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/auth/session');
         const data = await res.json();
-        if (data.authenticated) {
-          csrfToken = data.csrfToken;
-          showDashboard(data.user);
+        if (data && data.authenticated) {
+          csrfToken = safeStr(data.csrfToken);
+          showDashboard(data.user || {});
         } else {
           showLoginForm();
         }
@@ -56,7 +70,7 @@ export function getAdminScripts(): string {
 
     let activeResetToken = '';
     function showResetForm(token) {
-      activeResetToken = token;
+      activeResetToken = safeStr(token);
       document.getElementById('login-screen').style.display = 'flex';
       document.getElementById('dashboard-screen').style.display = 'none';
       document.getElementById('login-form').style.display = 'none';
@@ -68,14 +82,14 @@ export function getAdminScripts(): string {
     function formatTimeSafe(isoStr) {
       if (!isoStr) return '—';
       const d = new Date(isoStr);
-      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      if (isNaN(d.getTime())) return escapeHtml(safeStr(isoStr));
       return d.toLocaleTimeString();
     }
 
     function formatDateOnlySafe(isoStr) {
       if (!isoStr) return '—';
       const d = new Date(isoStr);
-      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      if (isNaN(d.getTime())) return escapeHtml(safeStr(isoStr));
       return d.toLocaleDateString();
     }
 
@@ -83,7 +97,7 @@ export function getAdminScripts(): string {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard-screen').style.display = 'flex';
       const userDisp = document.getElementById('user-display');
-      if (userDisp) userDisp.textContent = user.username;
+      if (userDisp) userDisp.textContent = safeStr(user.username, 'Administrator');
 
       const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
       const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
@@ -94,7 +108,7 @@ export function getAdminScripts(): string {
       }
     }
 
-    function switchTab(tabName, evt) {
+    async function switchTab(tabName, evt) {
       if (evt && typeof evt.preventDefault === 'function') {
         evt.preventDefault();
       }
@@ -125,23 +139,23 @@ export function getAdminScripts(): string {
 
       try {
         if (tabName === 'dashboard') {
-          loadDashboardData();
+          await loadDashboardData();
         } else if (tabName === 'pipeline') {
-          loadPipelineData();
+          await loadPipelineData();
         } else if (tabName === 'manual-publisher') {
-          loadManualPublisherData();
+          await loadManualPublisherData();
         } else if (tabName === 'research') {
-          loadResearchData();
+          await loadResearchData();
         } else if (tabName === 'content') {
-          loadContentData();
+          await loadContentData();
         } else if (tabName === 'schedules') {
-          loadSchedulesData();
+          await loadSchedulesData();
         } else if (tabName === 'publications') {
-          loadPublicationsData();
+          await loadPublicationsData();
         } else if (tabName === 'audit') {
-          loadAuditData();
+          await loadAuditData();
         } else if (tabName === 'security') {
-          loadSecurityData();
+          await loadSecurityData();
         }
       } catch (err) {
         console.error('Failed to load tab data for ' + tabName + ':', err);
@@ -164,8 +178,8 @@ export function getAdminScripts(): string {
 
       const usernameInput = document.getElementById('username');
       const passwordInput = document.getElementById('password');
-      const username = usernameInput ? usernameInput.value.trim() : '';
-      const password = passwordInput ? passwordInput.value : '';
+      const username = usernameInput ? safeStr(usernameInput.value).trim() : '';
+      const password = passwordInput ? safeStr(passwordInput.value) : '';
 
       try {
         const res = await fetch('/api/auth/login', {
@@ -176,10 +190,10 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         if (res.ok && data.success) {
-          csrfToken = data.csrfToken;
-          showDashboard(data.user);
+          csrfToken = safeStr(data.csrfToken);
+          showDashboard(data.user || {});
         } else if (alertEl) {
-          alertEl.textContent = data.message || 'Invalid credentials.';
+          alertEl.textContent = safeStr(data.message, 'Invalid credentials.');
           alertEl.style.display = 'block';
         }
       } catch (err) {
@@ -213,7 +227,7 @@ export function getAdminScripts(): string {
       if (alertEl) alertEl.style.display = 'none';
 
       const emailInput = document.getElementById('forgot-email');
-      const email = emailInput ? emailInput.value.trim() : '';
+      const email = emailInput ? safeStr(emailInput.value).trim() : '';
 
       try {
         const res = await fetch('/api/auth/forgot-password', {
@@ -226,11 +240,11 @@ export function getAdminScripts(): string {
         if (alertEl) {
           if (res.ok) {
             alertEl.className = 'alert-success';
-            alertEl.textContent = data.message || 'If an account matches this information, a password reset email has been sent.';
+            alertEl.textContent = safeStr(data.message, 'If an account matches this information, a password reset email has been sent.');
             if (emailInput) emailInput.value = '';
           } else {
             alertEl.className = 'alert-error';
-            alertEl.textContent = data.message || 'Failed to submit password recovery request.';
+            alertEl.textContent = safeStr(data.message, 'Failed to submit password recovery request.');
           }
           alertEl.style.display = 'block';
         }
@@ -251,8 +265,8 @@ export function getAdminScripts(): string {
 
       const newPassInput = document.getElementById('reset-new-password');
       const confirmPassInput = document.getElementById('reset-confirm-password');
-      const newPassword = newPassInput ? newPassInput.value : '';
-      const confirmPassword = confirmPassInput ? confirmPassInput.value : '';
+      const newPassword = newPassInput ? safeStr(newPassInput.value) : '';
+      const confirmPassword = confirmPassInput ? safeStr(confirmPassInput.value) : '';
 
       if (newPassword !== confirmPassword) {
         if (alertEl) {
@@ -282,7 +296,7 @@ export function getAdminScripts(): string {
             }, 2000);
           } else {
             alertEl.className = 'alert-error';
-            alertEl.textContent = data.message || 'Password reset link is invalid or expired.';
+            alertEl.textContent = safeStr(data.message, 'Password reset link is invalid or expired.');
             alertEl.style.display = 'block';
           }
         }
@@ -301,9 +315,9 @@ export function getAdminScripts(): string {
       const alertEl = document.getElementById('security-alert');
       if (alertEl) alertEl.style.display = 'none';
 
-      const currentPassword = (document.getElementById('change-current-password')?.value || '');
-      const newPassword = (document.getElementById('change-new-password')?.value || '');
-      const confirmPassword = (document.getElementById('change-confirm-password')?.value || '');
+      const currentPassword = safeStr(document.getElementById('change-current-password')?.value);
+      const newPassword = safeStr(document.getElementById('change-new-password')?.value);
+      const confirmPassword = safeStr(document.getElementById('change-confirm-password')?.value);
 
       try {
         const res = await fetch('/api/auth/change-password', {
@@ -318,16 +332,19 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (alertEl) {
           if (res.ok && data.success) {
-            if (data.csrfToken) csrfToken = data.csrfToken;
+            if (data.csrfToken) csrfToken = safeStr(data.csrfToken);
             alertEl.className = 'alert-success';
             alertEl.textContent = 'Password updated successfully! All other sessions were invalidated.';
             alertEl.style.display = 'block';
-            document.getElementById('change-current-password').value = '';
-            document.getElementById('change-new-password').value = '';
-            document.getElementById('change-confirm-password').value = '';
+            const p1 = document.getElementById('change-current-password');
+            const p2 = document.getElementById('change-new-password');
+            const p3 = document.getElementById('change-confirm-password');
+            if (p1) p1.value = '';
+            if (p2) p2.value = '';
+            if (p3) p3.value = '';
           } else {
             alertEl.className = 'alert-error';
-            alertEl.textContent = data.message || 'Failed to change password.';
+            alertEl.textContent = safeStr(data.message, 'Failed to change password.');
             alertEl.style.display = 'block';
           }
         }
@@ -343,6 +360,10 @@ export function getAdminScripts(): string {
     async function loadSecurityData() {
       try {
         const res = await fetch('/api/auth/recovery-email');
+        if (!res.ok) {
+          if (res.status === 401) await checkSession();
+          return;
+        }
         const data = await res.json();
         const badgeEl = document.getElementById('recovery-email-badge');
         const boxEl = document.getElementById('recovery-email-status-box');
@@ -350,15 +371,15 @@ export function getAdminScripts(): string {
 
         if (data.configured && data.email) {
           if (badgeEl) badgeEl.innerHTML = '<span class="status-badge status-healthy">Configured</span>';
-          if (boxEl) boxEl.innerHTML = 'Password recovery email: <strong>' + escapeHtml(data.email) + '</strong><br><span style="color:var(--accent-emerald); font-size:0.85rem;">Password recovery via email is currently <strong>enabled</strong>.</span>';
-          if (inputEl) inputEl.value = data.email;
+          if (boxEl) boxEl.innerHTML = 'Password recovery email: <strong>' + escapeHtml(safeStr(data.email)) + '</strong><br><span style="color:var(--accent-emerald); font-size:0.85rem;">Password recovery via email is currently <strong>enabled</strong>.</span>';
+          if (inputEl) inputEl.value = safeStr(data.email);
         } else {
           if (badgeEl) badgeEl.innerHTML = '<span class="status-badge status-disabled">Not configured</span>';
           if (boxEl) boxEl.innerHTML = 'Password recovery via email is currently <strong>unavailable</strong> because no recovery email address has been set.';
           if (inputEl) inputEl.value = '';
         }
       } catch (err) {
-        // Ignore
+        console.error('Failed to load security data:', err);
       }
     }
 
@@ -368,7 +389,7 @@ export function getAdminScripts(): string {
       const alertEl = document.getElementById('security-alert');
       if (alertEl) alertEl.style.display = 'none';
 
-      const email = (document.getElementById('recovery-email-input')?.value || '').trim();
+      const email = safeStr(document.getElementById('recovery-email-input')?.value).trim();
 
       try {
         const res = await fetch('/api/auth/recovery-email', {
@@ -389,7 +410,7 @@ export function getAdminScripts(): string {
             loadSecurityData();
           } else {
             alertEl.className = 'alert-error';
-            alertEl.textContent = data.message || 'Failed to update recovery email.';
+            alertEl.textContent = safeStr(data.message, 'Failed to update recovery email.');
             alertEl.style.display = 'block';
           }
         }
@@ -423,7 +444,11 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/dashboard');
         if (!res.ok) {
-          if (res.status === 401) showLoginForm();
+          if (res.status === 401) {
+            await checkSession();
+          } else {
+            console.error('Failed to fetch dashboard data:', res.status, res.statusText);
+          }
           return;
         }
 
@@ -434,20 +459,20 @@ export function getAdminScripts(): string {
         // Environment Tag
         const envBadge = document.getElementById('env-badge');
         if (envBadge) {
-          const env = (sys.environment || 'staging').toLowerCase();
+          const env = safeLower(sys.environment, 'staging');
           envBadge.textContent = env.toUpperCase();
           envBadge.className = 'env-tag env-' + env;
         }
 
         // Truthful System Status Cards
         const workerEl = document.getElementById('val-worker');
-        if (workerEl) workerEl.innerHTML = '<span class="status-badge status-healthy">' + escapeHtml(sys.worker || 'Healthy') + '</span>';
+        if (workerEl) workerEl.innerHTML = '<span class="status-badge status-healthy">' + escapeHtml(safeStr(sys.worker, 'Healthy')) + '</span>';
 
         const dbEl = document.getElementById('val-db');
-        if (dbEl) dbEl.innerHTML = '<span class="status-badge ' + (sys.database === 'Connected' ? 'status-healthy' : 'status-alert') + '">' + escapeHtml(sys.database || 'Connected') + '</span>';
+        if (dbEl) dbEl.innerHTML = '<span class="status-badge ' + (sys.database === 'Connected' ? 'status-healthy' : 'status-alert') + '">' + escapeHtml(safeStr(sys.database, 'Connected')) + '</span>';
 
         const aiEl = document.getElementById('val-ai');
-        if (aiEl) aiEl.innerHTML = '<span class="status-badge status-active">' + escapeHtml(sys.aiProvider || 'Workers AI') + '</span>';
+        if (aiEl) aiEl.innerHTML = '<span class="status-badge status-active">' + escapeHtml(safeStr(sys.aiProvider, 'Workers AI')) + '</span>';
 
         const isFbConfigured = Boolean(metaStatus.configured || (metaStatus.pageIdConfigured && metaStatus.tokenConfigured));
         const fbConfigEl = document.getElementById('val-fb-config');
@@ -464,26 +489,27 @@ export function getAdminScripts(): string {
         }
 
         // Pipeline Counts
+        const pipe = data.pipeline || {};
         const cntIdeas = document.getElementById('cnt-ideas');
-        if (cntIdeas) cntIdeas.textContent = data.pipeline.discoveredTopics || data.pipeline.ideas || 0;
+        if (cntIdeas) cntIdeas.textContent = Number(pipe.discoveredTopics || pipe.ideas || 0);
 
         const cntDrafts = document.getElementById('cnt-drafts');
-        if (cntDrafts) cntDrafts.textContent = data.pipeline.drafts || 0;
+        if (cntDrafts) cntDrafts.textContent = Number(pipe.drafts || 0);
 
         const cntQa = document.getElementById('cnt-qa');
-        if (cntQa) cntQa.textContent = data.pipeline.underReview || data.pipeline.awaitingQa || 0;
+        if (cntQa) cntQa.textContent = Number(pipe.underReview || pipe.awaitingQa || 0);
 
         const cntApproved = document.getElementById('cnt-approved');
-        if (cntApproved) cntApproved.textContent = data.pipeline.approved || 0;
+        if (cntApproved) cntApproved.textContent = Number(pipe.approved || 0);
 
         const cntScheduled = document.getElementById('cnt-scheduled');
-        if (cntScheduled) cntScheduled.textContent = data.pipeline.scheduled || 0;
+        if (cntScheduled) cntScheduled.textContent = Number(pipe.scheduled || 0);
 
         const cntPublished = document.getElementById('cnt-published');
-        if (cntPublished) cntPublished.textContent = data.pipeline.published || 0;
+        if (cntPublished) cntPublished.textContent = Number(pipe.published || 0);
 
         const cntBlocked = document.getElementById('cnt-blocked');
-        if (cntBlocked) cntBlocked.textContent = data.pipeline.rejected || data.pipeline.blocked || 0;
+        if (cntBlocked) cntBlocked.textContent = Number(pipe.rejected || pipe.blocked || 0);
 
         // Cloudflare Verified Telemetry & Application Execution Metrics
         if (data.aiUsage) {
@@ -502,32 +528,33 @@ export function getAdminScripts(): string {
 
           if (cf) {
             if (cfBadge) {
-              if (cf.status === 'VERIFIED') {
+              const cfSt = safeUpper(cf.status, 'UNAVAILABLE');
+              if (cfSt === 'VERIFIED') {
                 cfBadge.className = 'status-badge status-healthy';
                 cfBadge.textContent = 'VERIFIED TELEMETRY';
-              } else if (cf.status === 'NOT_CONFIGURED') {
+              } else if (cfSt === 'NOT_CONFIGURED') {
                 cfBadge.className = 'status-badge status-active';
                 cfBadge.textContent = 'NOT CONFIGURED';
               } else {
                 cfBadge.className = 'status-badge status-alert';
-                cfBadge.textContent = cf.status || 'UNAVAILABLE';
+                cfBadge.textContent = cfSt;
               }
             }
 
             if (cfNeurons) {
               cfNeurons.textContent = cf.actualNeurons !== null && cf.actualNeurons !== undefined
-                ? cf.actualNeurons.toLocaleString() + ' Neurons'
+                ? Number(cf.actualNeurons).toLocaleString() + ' Neurons'
                 : 'Not Available';
             }
 
             if (cfReqs) {
               cfReqs.textContent = cf.actualRequests !== null && cf.actualRequests !== undefined
-                ? cf.actualRequests.toLocaleString() + ' requests'
+                ? Number(cf.actualRequests).toLocaleString() + ' requests'
                 : 'Not Available';
             }
 
-            if (cfSource) cfSource.textContent = cf.source || 'Cloudflare Analytics API';
-            if (cfPeriod) cfPeriod.textContent = 'Period: ' + (cf.period || 'Today (UTC)');
+            if (cfSource) cfSource.textContent = safeStr(cf.source, 'Cloudflare Analytics API');
+            if (cfPeriod) cfPeriod.textContent = 'Period: ' + safeStr(cf.period, 'Today (UTC)');
             if (cfSynced) {
               cfSynced.textContent = cf.lastUpdated
                 ? 'Last Synced: ' + new Date(cf.lastUpdated).toLocaleTimeString()
@@ -537,7 +564,7 @@ export function getAdminScripts(): string {
             if (cfNotice) {
               if (cf.reason) {
                 cfNotice.style.display = 'block';
-                cfNotice.textContent = cf.reason;
+                cfNotice.textContent = safeStr(cf.reason);
               } else {
                 cfNotice.style.display = 'none';
               }
@@ -546,14 +573,14 @@ export function getAdminScripts(): string {
 
           // 2. Application Safety (Circuit Breaker) & Internal Diagnostics Panels
           const providerName = document.getElementById('ai-provider-name');
-          if (providerName) providerName.textContent = sys.aiProvider || 'Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct-fp8)';
+          if (providerName) providerName.textContent = safeStr(sys.aiProvider, 'Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct-fp8)');
 
           const appGuard = usage.applicationSafetyGuard || app;
           const diag = usage.internalDiagnostics || {};
 
-          const todayRequests = appGuard.todayRequests ?? usage.todayRequests ?? 0;
-          const dailyLimit = appGuard.dailyLimit ?? usage.dailyLimit ?? 300;
-          const estTokens = diag.estimatedTokensToday ?? usage.todayNeurons ?? 0;
+          const todayRequests = Number(appGuard.todayRequests ?? usage.todayRequests ?? 0);
+          const dailyLimit = Number(appGuard.dailyLimit ?? usage.dailyLimit ?? 300);
+          const estTokens = Number(diag.estimatedTokensToday ?? usage.todayNeurons ?? 0);
 
           const todayText = document.getElementById('ai-today-text');
           if (todayText) todayText.textContent = todayRequests + ' / ' + dailyLimit + ' requests';
@@ -561,13 +588,13 @@ export function getAdminScripts(): string {
           const neuronsText = document.getElementById('ai-neurons-text');
           if (neuronsText) neuronsText.textContent = estTokens.toLocaleString() + ' Est. Tokens';
 
-          const todayPct = Math.min(100, Math.round((todayRequests / dailyLimit) * 100));
+          const todayPct = Math.min(100, Math.round((todayRequests / (dailyLimit || 1)) * 100));
           const todayBar = document.getElementById('ai-today-bar');
           if (todayBar) todayBar.style.width = todayPct + '%';
 
           const badgeEl = document.getElementById('ai-quota-badge');
           if (badgeEl) {
-            const status = appGuard.status || usage.status;
+            const status = safeUpper(appGuard.status || usage.status, 'FREE_CAPACITY_AVAILABLE');
             if (status === 'FREE_CAPACITY_AVAILABLE') {
               badgeEl.className = 'status-badge status-healthy';
               badgeEl.textContent = 'CIRCUIT BREAKER OK';
@@ -585,21 +612,24 @@ export function getAdminScripts(): string {
           if (timeEl) timeEl.textContent = r.started_at ? new Date(r.started_at).toLocaleString() : 'Never';
 
           const trigEl = document.getElementById('orch-last-trigger');
-          if (trigEl) trigEl.textContent = 'Trigger: ' + String(r.trigger_type || 'cron').toUpperCase();
+          if (trigEl) trigEl.textContent = 'Trigger: ' + safeUpper(r.trigger_type, 'CRON');
 
           const statusVal = document.getElementById('orch-status-val');
-          if (statusVal) statusVal.innerHTML = '<span class="status-badge ' + (r.status === 'completed' ? 'status-healthy' : r.status === 'running' ? 'status-active' : 'status-alert') + '">' + String(r.status || 'UNKNOWN').toUpperCase() + '</span>';
+          if (statusVal) {
+            const st = safeUpper(r.status, 'UNKNOWN');
+            statusVal.innerHTML = '<span class="status-badge ' + (st === 'COMPLETED' ? 'status-healthy' : st === 'RUNNING' ? 'status-active' : 'status-alert') + '">' + st + '</span>';
+          }
 
           const resVal = document.getElementById('orch-result-val');
-          if (resVal) resVal.textContent = 'Result: ' + String(r.result_status || '—').toUpperCase();
+          if (resVal) resVal.textContent = 'Result: ' + safeUpper(r.result_status, '—');
 
           const neurVal = document.getElementById('orch-neurons-val');
-          if (neurVal) neurVal.textContent = (r.neurons_used || 0) + ' Est. Tokens';
+          if (neurVal) neurVal.textContent = Number(r.neurons_used || 0) + ' Est. Tokens';
         }
 
         // Audit Activity Table (Recent Activity Preview)
         const actBody = document.getElementById('recent-activity-body');
-        if (actBody && data.recentActivity) {
+        if (actBody && Array.isArray(data.recentActivity)) {
           actBody.innerHTML = renderAuditRows(data.recentActivity);
         }
       } catch (err) {
@@ -624,13 +654,21 @@ export function getAdminScripts(): string {
         const queryParams = new URLSearchParams({
           page: String(currentAuditPage),
           pageSize: '25',
-          category: currentAuditCategory,
-          search: currentAuditSearch,
+          category: safeStr(currentAuditCategory, 'all'),
+          search: safeStr(currentAuditSearch, ''),
         });
 
         const res = await fetch('/api/admin/audit?' + queryParams.toString());
         if (!res.ok) {
-          if (res.status === 401) showLoginForm();
+          if (res.status === 401) {
+            await checkSession();
+          } else {
+            console.error('Failed to fetch audit data:', res.status, res.statusText);
+            const fullBody = document.getElementById('full-audit-body');
+            if (fullBody) {
+              fullBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load audit events (HTTP ' + res.status + ').</td></tr>';
+            }
+          }
           return;
         }
 
@@ -639,20 +677,21 @@ export function getAdminScripts(): string {
         // Update Summary Stats
         if (data.stats) {
           const evEl = document.getElementById('audit-stat-events');
-          if (evEl) evEl.textContent = data.stats.totalEvents || 0;
+          if (evEl) evEl.textContent = Number(data.stats.totalEvents || 0);
           const errEl = document.getElementById('audit-stat-errors');
-          if (errEl) errEl.textContent = data.stats.errorCount || 0;
+          if (errEl) errEl.textContent = Number(data.stats.errorCount || 0);
           const warnEl = document.getElementById('audit-stat-warnings');
-          if (warnEl) warnEl.textContent = data.stats.warningCount || 0;
+          if (warnEl) warnEl.textContent = Number(data.stats.warningCount || 0);
           const aiEl = document.getElementById('audit-stat-ai');
-          if (aiEl) aiEl.textContent = data.stats.aiOperations || 0;
+          if (aiEl) aiEl.textContent = Number(data.stats.aiOperations || 0);
         }
 
         // Update Pagination Controls
         if (data.pagination) {
-          currentAuditTotalPages = data.pagination.totalPages || 1;
-          const start = (data.pagination.page - 1) * data.pagination.pageSize + (data.events.length > 0 ? 1 : 0);
-          const end = Math.min(data.pagination.totalCount, data.pagination.page * data.pagination.pageSize);
+          currentAuditTotalPages = Number(data.pagination.totalPages || 1);
+          const eventsArr = Array.isArray(data.events) ? data.events : [];
+          const start = (data.pagination.page - 1) * data.pagination.pageSize + (eventsArr.length > 0 ? 1 : 0);
+          const end = Math.min(Number(data.pagination.totalCount || 0), data.pagination.page * data.pagination.pageSize);
           const infoEl = document.getElementById('audit-pagination-info');
           if (infoEl) infoEl.textContent = 'Showing ' + start + ' - ' + end + ' of ' + data.pagination.totalCount + ' events';
 
@@ -667,7 +706,7 @@ export function getAdminScripts(): string {
         }
 
         const fullBody = document.getElementById('full-audit-body');
-        if (fullBody && data.events) {
+        if (fullBody && Array.isArray(data.events)) {
           fullBody.innerHTML = renderAuditRows(data.events);
         }
       } catch (err) {
@@ -676,12 +715,12 @@ export function getAdminScripts(): string {
     }
 
     function setAuditCategory(category) {
-      currentAuditCategory = category;
+      currentAuditCategory = safeStr(category, 'all');
       currentAuditPage = 1;
 
       const buttons = document.querySelectorAll('.audit-cat-btn');
       buttons.forEach(btn => {
-        if (btn.getAttribute('data-category') === category) {
+        if (btn.getAttribute('data-category') === currentAuditCategory) {
           btn.classList.add('active');
         } else {
           btn.classList.remove('active');
@@ -693,7 +732,7 @@ export function getAdminScripts(): string {
 
     function executeAuditSearch() {
       const input = document.getElementById('audit-search-input');
-      currentAuditSearch = input ? input.value.trim() : '';
+      currentAuditSearch = input ? safeStr(input.value).trim() : '';
       currentAuditPage = 1;
       loadAuditData();
     }
@@ -731,7 +770,15 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/research');
         if (!res.ok) {
-          if (res.status === 401) showLoginForm();
+          if (res.status === 401) {
+            await checkSession();
+          } else {
+            console.error('Failed to fetch research data:', res.status, res.statusText);
+            const topicsBody = document.getElementById('topics-table-body');
+            if (topicsBody) {
+              topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
+            }
+          }
           return;
         }
 
@@ -739,13 +786,13 @@ export function getAdminScripts(): string {
         const stats = data.stats || {};
 
         const srcCnt = document.getElementById('res-sources-cnt');
-        if (srcCnt) srcCnt.textContent = stats.totalSources || 0;
+        if (srcCnt) srcCnt.textContent = Number(stats.totalSources || 0);
 
         const srcSub = document.getElementById('res-enabled-sub');
-        if (srcSub) srcSub.textContent = (stats.enabledSources || 0) + ' Active Feeds';
+        if (srcSub) srcSub.textContent = Number(stats.enabledSources || 0) + ' Active Feeds';
 
         const topCnt = document.getElementById('res-topics-cnt');
-        if (topCnt) topCnt.textContent = stats.totalTopicsDiscovered || 0;
+        if (topCnt) topCnt.textContent = Number(stats.totalTopicsDiscovered || 0);
 
         const lastRun = document.getElementById('res-last-run');
         if (lastRun) lastRun.textContent = stats.lastRunAt ? formatTimeSafe(stats.lastRunAt) : 'Never';
@@ -755,21 +802,22 @@ export function getAdminScripts(): string {
         const diagContent = document.getElementById('res-diag-content');
         const diagStatus = document.getElementById('res-diag-status');
 
-        if (data.runs && data.runs.length > 0 && diagPanel && diagContent) {
+        if (Array.isArray(data.runs) && data.runs.length > 0 && diagPanel && diagContent) {
           const latestRun = data.runs[0];
           diagPanel.style.display = 'block';
           if (diagStatus) {
-            diagStatus.className = 'status-badge ' + (latestRun.status === 'completed' ? 'status-healthy' : 'status-alert');
-            diagStatus.textContent = String(latestRun.status || 'COMPLETED').toUpperCase();
+            const st = safeUpper(latestRun.status, 'COMPLETED');
+            diagStatus.className = 'status-badge ' + (st === 'COMPLETED' ? 'status-healthy' : 'status-alert');
+            diagStatus.textContent = st;
           }
 
           let pillarStr = 'None';
           if (latestRun.pillar_breakdown) {
             try {
               const pb = typeof latestRun.pillar_breakdown === 'string' ? JSON.parse(latestRun.pillar_breakdown) : latestRun.pillar_breakdown;
-              pillarStr = Object.entries(pb).map(([k, v]) => '<strong>' + escapeHtml(k) + ':</strong> ' + v).join(', ');
+              pillarStr = Object.entries(pb).map(([k, v]) => '<strong>' + escapeHtml(safeStr(k)) + ':</strong> ' + v).join(', ');
             } catch {
-              pillarStr = String(latestRun.pillar_breakdown);
+              pillarStr = safeStr(latestRun.pillar_breakdown);
             }
           }
 
@@ -787,19 +835,22 @@ export function getAdminScripts(): string {
         // Topics Table
         const topicsBody = document.getElementById('topics-table-body');
         if (topicsBody) {
-          if (data.topics && data.topics.length > 0) {
-            topicsBody.innerHTML = data.topics.map(t => \`
+          if (Array.isArray(data.topics) && data.topics.length > 0) {
+            topicsBody.innerHTML = data.topics.map(t => {
+              if (!t) return '';
+              return \`
               <tr>
                 <td>
-                  <strong>\${escapeHtml(t.title || 'Untitled Topic')}</strong>
-                  <div style="font-size:0.8rem; color:var(--text-muted);">\${escapeHtml(t.description || '')}</div>
+                  <strong>\${escapeHtml(safeStr(t.title, 'Untitled Topic'))}</strong>
+                  <div style="font-size:0.8rem; color:var(--text-muted);">\${escapeHtml(safeStr(t.description))}</div>
                 </td>
-                <td><span class="code-tag">\${escapeHtml(t.category || 'general')}</span></td>
-                <td><span class="status-badge status-healthy">\${t.priority || 0}/100</span></td>
-                <td><span class="status-badge status-active">\${escapeHtml(t.status || '').toUpperCase()}</span></td>
+                <td><span class="code-tag">\${escapeHtml(safeStr(t.category, 'general'))}</span></td>
+                <td><span class="status-badge status-healthy">\${Number(t.priority || 0)}/100</span></td>
+                <td><span class="status-badge status-active">\${escapeHtml(safeUpper(t.status, 'DISCOVERED'))}</span></td>
                 <td class="code-tag">\${formatDateOnlySafe(t.created_at)}</td>
               </tr>
-            \`).join('');
+            \`;
+            }).join('');
           } else {
             topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No candidate topics discovered yet.</td></tr>';
           }
@@ -807,31 +858,36 @@ export function getAdminScripts(): string {
 
         // Sources Table
         const sourcesBody = document.getElementById('sources-table-body');
-        if (sourcesBody && data.sources && data.sources.length > 0) {
-          sourcesBody.innerHTML = data.sources.map(s => \`
+        if (sourcesBody && Array.isArray(data.sources) && data.sources.length > 0) {
+          sourcesBody.innerHTML = data.sources.map(s => {
+            if (!s) return '';
+            return \`
             <tr>
-              <td><strong>\${escapeHtml(s.name || 'Unnamed Source')}</strong></td>
-              <td><span class="code-tag">\${escapeHtml(s.category || 'rss')}</span></td>
-              <td style="font-size:0.8rem; font-family:monospace;">\${escapeHtml(s.url || '')}</td>
+              <td><strong>\${escapeHtml(safeStr(s.name, 'Unnamed Source'))}</strong></td>
+              <td><span class="code-tag">\${escapeHtml(safeStr(s.category, 'rss'))}</span></td>
+              <td style="font-size:0.8rem; font-family:monospace;">\${escapeHtml(safeStr(s.url))}</td>
               <td><span class="status-badge \${s.enabled ? 'status-healthy' : 'status-disabled'}">\${s.enabled ? 'ACTIVE' : 'DISABLED'}</span></td>
               <td class="code-tag">\${s.last_checked_at ? formatDateSafe(s.last_checked_at) : 'Never'}</td>
             </tr>
-          \`).join('');
+          \`;
+          }).join('');
         }
 
         // Runs Table
         const runsBody = document.getElementById('runs-table-body');
-        if (runsBody && data.runs && data.runs.length > 0) {
+        if (runsBody && Array.isArray(data.runs) && data.runs.length > 0) {
           runsBody.innerHTML = data.runs.map(r => {
-            const irr = r.rejected_irrelevant || 0;
-            const lowQ = r.rejected_low_quality || 0;
-            const dup = r.duplicates_found || 0;
+            if (!r) return '';
+            const irr = Number(r.rejected_irrelevant || 0);
+            const lowQ = Number(r.rejected_low_quality || 0);
+            const dup = Number(r.duplicates_found || 0);
+            const st = safeUpper(r.status, 'UNKNOWN');
 
             return \`
               <tr>
                 <td class="code-tag">\${formatDateSafe(r.started_at)}</td>
-                <td><span class="code-tag">\${escapeHtml(r.trigger_type || 'cron')}</span></td>
-                <td><span class="status-badge \${r.status === 'completed' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(r.status || '').toUpperCase()}</span></td>
+                <td><span class="code-tag">\${escapeHtml(safeStr(r.trigger_type, 'cron'))}</span></td>
+                <td><span class="status-badge \${st === 'COMPLETED' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(st)}</span></td>
                 <td>\${r.items_discovered || r.items_found || 0}</td>
                 <td>\${r.items_normalized || 0}</td>
                 <td style="font-size:0.8rem; color:var(--text-muted);">\${irr} irr / \${lowQ} low / \${dup} dup</td>
@@ -872,7 +928,7 @@ export function getAdminScripts(): string {
             const created = s.topicsCreated || s.ideasQueued || 0;
             let breakdownText = 'None';
             if (s.pillarBreakdown) {
-              breakdownText = Object.entries(s.pillarBreakdown).map(([k, v]) => k + ': ' + v).join(', ');
+              breakdownText = Object.entries(s.pillarBreakdown).map(([k, v]) => safeStr(k) + ': ' + v).join(', ');
             }
 
             if (created > 0) {
@@ -901,7 +957,7 @@ export function getAdminScripts(): string {
             alertEl.style.display = 'block';
             loadResearchData();
           } else {
-            alertEl.textContent = 'Research run failed: ' + (data.summary?.errorMessage || 'Unknown error');
+            alertEl.textContent = 'Research run failed: ' + safeStr(data.summary?.errorMessage || data.error, 'Unknown error');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -923,14 +979,14 @@ export function getAdminScripts(): string {
     function formatDateSafe(isoStr) {
       if (!isoStr) return '—';
       const d = new Date(isoStr);
-      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      if (isNaN(d.getTime())) return escapeHtml(safeStr(isoStr));
       return d.toLocaleString();
     }
 
     function formatDateUtcSafe(isoStr) {
       if (!isoStr) return '—';
       const d = new Date(isoStr);
-      if (isNaN(d.getTime())) return escapeHtml(String(isoStr));
+      if (isNaN(d.getTime())) return escapeHtml(safeStr(isoStr));
       return d.toUTCString();
     }
 
@@ -939,7 +995,15 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/content/posts');
         if (!res.ok) {
-          if (res.status === 401) showLoginForm();
+          if (res.status === 401) {
+            await checkSession();
+          } else {
+            console.error('Failed to fetch content data:', res.status, res.statusText);
+            const postsBody = document.getElementById('posts-table-body');
+            if (postsBody) {
+              postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--accent-rose);">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
+            }
+          }
           return;
         }
 
@@ -947,20 +1011,28 @@ export function getAdminScripts(): string {
         const postsBody = document.getElementById('posts-table-body');
 
         if (postsBody) {
-          if (data.posts && data.posts.length > 0) {
-            postsBody.innerHTML = data.posts.map(p => \`
+          if (Array.isArray(data.posts) && data.posts.length > 0) {
+            postsBody.innerHTML = data.posts.map(p => {
+              if (!p) return '';
+              const statusStr = safeUpper(p.status, 'DRAFT');
+              const statusClass = statusStr === 'APPROVED' ? 'status-healthy' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-active';
+              const qDec = safeUpper(p.quality_decision, 'PASS');
+              const qClass = qDec === 'PASS' ? 'status-healthy' : 'status-alert';
+
+              return \`
               <tr>
                 <td>
-                  <strong>\${escapeHtml(p.title || 'Untitled Post')}</strong>
-                  <div style="font-size:0.8rem; color:var(--text-muted); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(p.latest_body || '')}</div>
+                  <strong>\${escapeHtml(safeStr(p.title, 'Untitled Post'))}</strong>
+                  <div style="font-size:0.8rem; color:var(--text-muted); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(safeStr(p.latest_body))}</div>
                 </td>
-                <td><span class="status-badge \${p.status === 'approved' ? 'status-healthy' : p.status === 'rejected' || p.status === 'blocked' ? 'status-alert' : 'status-active'}">\${escapeHtml(p.status || '').toUpperCase()}</span></td>
-                <td><span class="code-tag">v\${p.current_version || 1}</span></td>
-                <td><span class="status-badge status-healthy">\${p.quality_score || 0}/100</span></td>
-                <td><span class="status-badge \${p.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(p.quality_decision || 'PASS')}</span></td>
+                <td><span class="status-badge \${statusClass}">\${escapeHtml(statusStr)}</span></td>
+                <td><span class="code-tag">v\${Number(p.current_version || 1)}</span></td>
+                <td><span class="status-badge status-healthy">\${Number(p.quality_score || 0)}/100</span></td>
+                <td><span class="status-badge \${qClass}">\${escapeHtml(qDec)}</span></td>
                 <td class="code-tag">\${formatDateSafe(p.created_at)}</td>
               </tr>
-            \`).join('');
+            \`;
+            }).join('');
           } else {
             postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No post drafts generated yet. Trigger research or orchestration pipeline to generate content.</td></tr>';
           }
@@ -993,12 +1065,12 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (alertEl) {
           if (res.ok && data.success) {
-            alertEl.textContent = 'Autonomous pipeline completed! Result: ' + (data.result?.resultStatus || 'COMPLETED').toUpperCase();
+            alertEl.textContent = 'Autonomous pipeline completed! Result: ' + safeUpper(data.result?.resultStatus, 'COMPLETED');
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
             loadDashboardData();
           } else {
-            alertEl.textContent = data.result?.errorMessage || 'Pipeline run encountered an issue or was deferred by quota.';
+            alertEl.textContent = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an issue or was deferred by quota.');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -1022,7 +1094,15 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/schedules');
         if (!res.ok) {
-          if (res.status === 401) showLoginForm();
+          if (res.status === 401) {
+            await checkSession();
+          } else {
+            console.error('Failed to fetch schedules:', res.status, res.statusText);
+            const schedBody = document.getElementById('schedules-table-body');
+            if (schedBody) {
+              schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load scheduled queue (HTTP ' + res.status + ').</td></tr>';
+            }
+          }
           return;
         }
 
@@ -1030,18 +1110,23 @@ export function getAdminScripts(): string {
         const schedBody = document.getElementById('schedules-table-body');
 
         if (schedBody) {
-          if (data.schedules && data.schedules.length > 0) {
-            schedBody.innerHTML = data.schedules.map(sched => \`
+          if (Array.isArray(data.schedules) && data.schedules.length > 0) {
+            schedBody.innerHTML = data.schedules.map(sched => {
+              if (!sched) return '';
+              const qDec = safeUpper(sched.quality_decision, 'PASS');
+              const qClass = qDec === 'PASS' ? 'status-healthy' : 'status-alert';
+              return \`
               <tr>
-                <td><strong>\${escapeHtml(sched.post_title || 'Untitled Post')}</strong></td>
+                <td><strong>\${escapeHtml(safeStr(sched.post_title, 'Untitled Post'))}</strong></td>
                 <td class="code-tag">\${formatDateUtcSafe(sched.scheduled_at)}</td>
-                <td><span class="status-badge status-healthy">\${escapeHtml(sched.status || '').toUpperCase()}</span></td>
-                <td><span class="code-tag">v\${sched.current_version || 1}</span></td>
-                <td><span class="status-badge status-healthy">\${sched.quality_score || 0}/100</span></td>
-                <td><span class="status-badge \${sched.quality_decision === 'PASS' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(sched.quality_decision || 'PASS')}</span></td>
+                <td><span class="status-badge status-healthy">\${escapeHtml(safeUpper(sched.status, 'SCHEDULED'))}</span></td>
+                <td><span class="code-tag">v\${Number(sched.current_version || 1)}</span></td>
+                <td><span class="status-badge status-healthy">\${Number(sched.quality_score || 0)}/100</span></td>
+                <td><span class="status-badge \${qClass}">\${escapeHtml(qDec)}</span></td>
                 <td class="code-tag">\${formatDateSafe(sched.created_at)}</td>
               </tr>
-            \`).join('');
+            \`;
+            }).join('');
           } else {
             schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No scheduled publications queue entries found. Approved posts will automatically appear here when scheduled.</td></tr>';
           }
@@ -1056,7 +1141,15 @@ export function getAdminScripts(): string {
       try {
         const res = await fetch('/api/admin/publications');
         if (!res.ok) {
-          if (res.status === 401) showLoginForm();
+          if (res.status === 401) {
+            await checkSession();
+          } else {
+            console.error('Failed to fetch publications:', res.status, res.statusText);
+            const pubBody = document.getElementById('publications-table-body');
+            if (pubBody) {
+              pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load publication log (HTTP ' + res.status + ').</td></tr>';
+            }
+          }
           return;
         }
 
@@ -1064,14 +1157,14 @@ export function getAdminScripts(): string {
         const config = data.configStatus || {};
 
         const cfgBadge = document.getElementById('meta-config-badge');
-        const st = (config.state || (config.configured ? 'READY' : 'NOT_CONFIGURED')).toUpperCase();
+        const st = safeUpper(config.state || (config.configured ? 'READY' : 'NOT_CONFIGURED'));
         let badgeClass = 'status-disabled';
         if (st === 'READY') badgeClass = 'status-healthy';
         else if (st === 'DEGRADED') badgeClass = 'status-alert';
         else if (st === 'DISABLED') badgeClass = 'status-active';
 
         if (cfgBadge) {
-          cfgBadge.innerHTML = '<span class="status-badge ' + badgeClass + '">' + st.replace('_', ' ') + '</span>';
+          cfgBadge.innerHTML = '<span class="status-badge ' + badgeClass + '">' + escapeHtml(st.replace('_', ' ')) + '</span>';
         }
 
         const pageIdEl = document.getElementById('meta-pageid-val');
@@ -1081,7 +1174,7 @@ export function getAdminScripts(): string {
         if (tokenEl) tokenEl.textContent = config.tokenConfigured ? 'Configured (Set)' : 'Missing';
 
         const verEl = document.getElementById('meta-version-val');
-        if (verEl) verEl.textContent = config.apiVersion || 'v26.0';
+        if (verEl) verEl.textContent = safeStr(config.apiVersion, 'v26.0');
 
         const lockEl = document.getElementById('meta-lock-val');
         if (lockEl) lockEl.textContent = config.publishEnabled ? 'ENABLED' : 'DISABLED';
@@ -1089,32 +1182,37 @@ export function getAdminScripts(): string {
         // Publications Table
         const pubBody = document.getElementById('publications-table-body');
         if (pubBody) {
-          if (data.publications && data.publications.length > 0) {
+          if (Array.isArray(data.publications) && data.publications.length > 0) {
             pubBody.innerHTML = data.publications.map(pub => {
-              const isApproved = pub.qualityGateStatus === 'approved' || pub.qualityGateStatus === 'PASS';
-              const statusClass = pub.status === 'published' ? 'status-healthy' : pub.status === 'publishing' ? 'status-active' : pub.status === 'failed' ? 'status-alert' : 'status-disabled';
-              const errCategory = pub.errorCode ? pub.errorCode : '';
+              if (!pub) return '';
+              const qStatus = safeUpper(pub.qualityGateStatus, 'PASS');
+              const isApproved = qStatus === 'APPROVED' || qStatus === 'PASS';
+              const pubStatus = safeUpper(pub.status, 'UNKNOWN');
+              const statusClass = pubStatus === 'PUBLISHED' ? 'status-healthy' : pubStatus === 'PUBLISHING' ? 'status-active' : pubStatus === 'FAILED' ? 'status-alert' : 'status-disabled';
+              const errCategory = pub.errorCode ? safeStr(pub.errorCode) : '';
+              const pubIdStr = safeStr(pub.id);
+              const postIdStr = safeStr(pub.postId);
 
               return \`
                 <tr>
                   <td>
-                    <strong>\${escapeHtml(pub.postTitle || 'Untitled Post')}</strong>
-                    <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pub.postBody || '')}</div>
-                    \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-rose); margin-top:2px;">\${escapeHtml(pub.errorMessage)}</div>\` : ''}
+                    <strong>\${escapeHtml(safeStr(pub.postTitle, 'Untitled Post'))}</strong>
+                    <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(safeStr(pub.postBody))}</div>
+                    \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-rose); margin-top:2px;">\${escapeHtml(safeStr(pub.errorMessage))}</div>\` : ''}
                   </td>
-                  <td><span class="code-tag">\${escapeHtml(pub.provider || 'facebook')}</span></td>
+                  <td><span class="code-tag">\${escapeHtml(safeStr(pub.provider, 'facebook'))}</span></td>
                   <td><span class="status-badge \${isApproved ? 'status-healthy' : 'status-alert'}">\${isApproved ? 'PASS' : 'UNAPPROVED'}</span></td>
                   <td>
-                    <span class="status-badge \${statusClass}">\${escapeHtml(pub.status || '').toUpperCase()}</span>
+                    <span class="status-badge \${statusClass}">\${escapeHtml(pubStatus)}</span>
                     \${errCategory ? \`<div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">\${escapeHtml(errCategory)}</div>\` : ''}
                   </td>
-                  <td class="code-tag">\${escapeHtml(pub.facebookPostId || '—')}</td>
+                  <td class="code-tag">\${escapeHtml(safeStr(pub.facebookPostId, '—'))}</td>
                   <td class="code-tag">\${formatDateSafe(pub.publishedAt)}</td>
                   <td>
-                    \${isApproved && pub.status !== 'published' && pub.status !== 'publishing' ? \`
-                      <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${pub.postId}')">Publish Now</button>
-                      \${pub.status === 'failed' ? \`<button class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.8rem; margin-left:4px;" onclick="retryPub('\${pub.id}')">Retry</button>\` : ''}
-                    \` : pub.status === 'published' ? \`
+                    \${isApproved && pubStatus !== 'PUBLISHED' && pubStatus !== 'PUBLISHING' ? \`
+                      <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${postIdStr}')">Publish Now</button>
+                      \${pubStatus === 'FAILED' ? \`<button class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.8rem; margin-left:4px;" onclick="retryPub('\${pubIdStr}')">Retry</button>\` : ''}
+                    \` : pubStatus === 'PUBLISHED' ? \`
                       <span style="color:var(--accent-emerald); font-weight:600; font-size:0.85rem;">Published</span>
                     \` : \`
                       <span style="color:var(--text-muted); font-size:0.85rem;">—</span>
@@ -1137,7 +1235,7 @@ export function getAdminScripts(): string {
       if (alertEl) alertEl.style.display = 'none';
 
       try {
-        const res = await fetch('/api/admin/publications/' + postId + '/publish', {
+        const res = await fetch('/api/admin/publications/' + safeStr(postId) + '/publish', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1148,11 +1246,11 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (alertEl) {
           if (res.ok && data.success) {
-            alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + (data.result?.externalPostId || 'Success');
+            alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + safeStr(data.result?.externalPostId, 'Success');
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
           } else {
-            alertEl.textContent = 'Publication failed: ' + (data.error || data.result?.message || 'Error publishing post');
+            alertEl.textContent = 'Publication failed: ' + safeStr(data.error || data.result?.message, 'Error publishing post');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -1173,7 +1271,7 @@ export function getAdminScripts(): string {
       if (alertEl) alertEl.style.display = 'none';
 
       try {
-        const res = await fetch('/api/admin/publications/' + pubId + '/retry', {
+        const res = await fetch('/api/admin/publications/' + safeStr(pubId) + '/retry', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1184,11 +1282,11 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (alertEl) {
           if (res.ok && data.success) {
-            alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + (data.result?.externalPostId || 'Success');
+            alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + safeStr(data.result?.externalPostId, 'Success');
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
           } else {
-            alertEl.textContent = 'Publication retry failed: ' + (data.error || data.result?.message || 'Error retrying publication');
+            alertEl.textContent = 'Publication retry failed: ' + safeStr(data.error || data.result?.message, 'Error retrying publication');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -1244,9 +1342,11 @@ export function getAdminScripts(): string {
           : '/api/admin/facebook/page-posts?limit=5';
 
         const res = await fetch(fetchUrl);
-        if (!res.ok && res.status === 401) {
-          showLoginForm();
-          return;
+        if (!res.ok) {
+          if (res.status === 401) {
+            await checkSession();
+            return;
+          }
         }
 
         const data = await res.json();
@@ -1280,7 +1380,7 @@ export function getAdminScripts(): string {
           if (railBadge) railBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
           if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
 
-          const errorHtml = '<div style="text-align:center; padding:1.5rem 0.5rem;"><div style="font-weight:600; color:var(--accent-rose); font-size:0.85rem; margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">' + escapeHtml(data.error) + '</div><button class="btn-secondary" style="font-size:0.78rem; padding:0.3rem 0.75rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
+          const errorHtml = '<div style="text-align:center; padding:1.5rem 0.5rem;"><div style="font-weight:600; color:var(--accent-rose); font-size:0.85rem; margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">' + escapeHtml(safeStr(data.error)) + '</div><button class="btn-secondary" style="font-size:0.78rem; padding:0.3rem 0.75rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
           if (railContainer && !isAppend) railContainer.innerHTML = errorHtml;
           if (pageContainer && !isAppend) pageContainer.innerHTML = errorHtml;
           if (loadMoreWrap) loadMoreWrap.style.display = 'none';
@@ -1296,41 +1396,42 @@ export function getAdminScripts(): string {
         }
 
         fbHasMore = Boolean(data.paging && data.paging.hasMore);
-        fbNextCursor = (data.paging && data.paging.after) ? data.paging.after : null;
+        fbNextCursor = (data.paging && data.paging.after) ? safeStr(data.paging.after) : null;
 
         if (data.pageInfo) {
           const rName = document.getElementById('fb-rail-page-name');
           const rId = document.getElementById('fb-rail-page-id');
-          if (rName) rName.textContent = data.pageInfo.name || 'NorthSoft';
-          if (rId && data.pageInfo.id) rId.textContent = 'Page ID: ' + data.pageInfo.id;
+          if (rName) rName.textContent = safeStr(data.pageInfo.name, 'NorthSoft');
+          if (rId && data.pageInfo.id) rId.textContent = 'Page ID: ' + safeStr(data.pageInfo.id);
         }
 
-        const rawPosts = data.posts || [];
-        const newPosts = rawPosts.filter(function(p) { return !loadedFbPostIds.has(p.id); });
-        newPosts.forEach(function(p) { loadedFbPostIds.add(p.id); });
+        const rawPosts = Array.isArray(data.posts) ? data.posts : [];
+        const newPosts = rawPosts.filter(function(p) { return p && !loadedFbPostIds.has(safeStr(p.id)); });
+        newPosts.forEach(function(p) { loadedFbPostIds.add(safeStr(p.id)); });
 
         if (loadedFbPostIds.size > 0) {
           if (railBadge) railBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
           if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
 
           const railCardsHtml = newPosts.map(function(post) {
+            const postIdStr = safeStr(post.id);
             const timeAgo = formatFbTimeAgo(post.createdTime);
-            const fullDate = post.createdTime ? new Date(post.createdTime).toLocaleString() : '';
-            const msgContent = post.message ? escapeHtml(post.message) : (post.story ? escapeHtml(post.story) : '<em style="color:var(--text-subtle);">No text content available.</em>');
+            const fullDate = post.createdTime ? safeStr(new Date(post.createdTime).toLocaleString()) : '';
+            const msgContent = post.message ? escapeHtml(safeStr(post.message)) : (post.story ? escapeHtml(safeStr(post.story)) : '<em style="color:var(--text-subtle);">No text content available.</em>');
 
             return '<div class="fb-rail-post-card">' +
               '<div class="fb-rail-post-header">' +
                 '<div class="fb-rail-post-avatar">NS</div>' +
                 '<div style="flex:1; min-width:0;">' +
-                  '<div class="fb-rail-post-name">' + escapeHtml(data.pageInfo?.name || 'NorthSoft') + '</div>' +
+                  '<div class="fb-rail-post-name">' + escapeHtml(safeStr(data.pageInfo?.name, 'NorthSoft')) + '</div>' +
                   '<div class="fb-rail-post-time" title="' + escapeHtml(fullDate) + '">' + escapeHtml(timeAgo) + '</div>' +
                 '</div>' +
               '</div>' +
               '<div class="fb-rail-post-text">' + msgContent + '</div>' +
-              (post.fullPicture ? '<div class="fb-rail-post-img-wrap"><img src="' + escapeHtml(post.fullPicture) + '" alt="Post image" loading="lazy"></div>' : '') +
+              (post.fullPicture ? '<div class="fb-rail-post-img-wrap"><img src="' + escapeHtml(safeStr(post.fullPicture)) + '" alt="Post image" loading="lazy"></div>' : '') +
               '<div class="fb-rail-post-footer">' +
-                '<span style="font-size:0.7rem; color:var(--text-subtle);" title="' + escapeHtml(post.id) + '">ID: ' + escapeHtml(post.id.length > 15 ? post.id.substring(0, 12) + '...' : post.id) + '</span>' +
-                (post.permalinkUrl ? '<a href="' + escapeHtml(post.permalinkUrl) + '" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook &rarr;</a>' : '') +
+                '<span style="font-size:0.7rem; color:var(--text-subtle);" title="' + escapeHtml(postIdStr) + '">ID: ' + escapeHtml(postIdStr.length > 15 ? postIdStr.substring(0, 12) + '...' : postIdStr) + '</span>' +
+                (post.permalinkUrl ? '<a href="' + escapeHtml(safeStr(post.permalinkUrl)) + '" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook &rarr;</a>' : '') +
               '</div>' +
             '</div>';
           }).join('');
@@ -1377,8 +1478,9 @@ export function getAdminScripts(): string {
 
     function formatFbTimeAgo(isoString) {
       if (!isoString) return '';
-      const d = new Date(isoString);
-      if (isNaN(d.getTime())) return isoString;
+      const s = safeStr(isoString);
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return s;
       const now = Date.now();
       const diffSec = Math.floor((now - d.getTime()) / 1000);
 
@@ -1392,44 +1494,46 @@ export function getAdminScripts(): string {
     }
 
     function renderAuditRows(events) {
-      if (!events || events.length === 0) {
+      if (!Array.isArray(events) || events.length === 0) {
         return '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events found</div><div style="font-size:0.8rem; color:var(--text-subtle);">Try adjusting category filters or search queries</div></td></tr>';
       }
 
       return events.map((act, idx) => {
+        if (!act) return '';
         const evt = formatAuditEvent(act.eventType);
         const tsInfo = formatAuditTimestamp(act.timestamp);
-        const level = act.level || (act.status === 'FAILED' ? 'ERROR' : act.status === 'DEFERRED' ? 'WARNING' : 'INFO');
+        const statusStr = safeUpper(act.status, 'INFO');
+        const level = safeUpper(act.level, statusStr === 'FAILED' ? 'ERROR' : statusStr === 'DEFERRED' ? 'WARNING' : 'INFO');
 
         let statusBadgeClass = 'status-disabled';
         let statusIcon = '🔵';
         let statusText = 'Info';
 
-        if (level === 'ERROR' || act.status === 'FAILED') {
+        if (level === 'ERROR' || statusStr === 'FAILED') {
           statusBadgeClass = 'status-alert';
           statusIcon = '🔴';
           statusText = 'Failed';
-        } else if (level === 'WARNING' || act.status === 'DEFERRED') {
+        } else if (level === 'WARNING' || statusStr === 'DEFERRED') {
           statusBadgeClass = 'status-disabled';
           statusIcon = '🟡';
           statusText = 'Warning';
-        } else if (level === 'SUCCESS' || act.status === 'COMPLETED') {
+        } else if (level === 'SUCCESS' || statusStr === 'COMPLETED') {
           statusBadgeClass = 'status-healthy';
           statusIcon = '🟢';
           statusText = 'Completed';
         }
 
-        const operationTitle = act.operation || (act.details && (act.details.title || act.details.sourceName)) || act.entityType + ':' + (act.entityId ? act.entityId.substring(0, 8) : '—');
+        const operationTitle = safeStr(act.operation || (act.details && (act.details.title || act.details.sourceName)) || (act.entityType ? safeStr(act.entityType) + ':' + safeStr(act.entityId).substring(0, 8) : 'Event'));
 
         let summaryText = '—';
         if (act.error && act.error.message) {
-          summaryText = (act.error.stage ? act.error.stage + ': ' : '') + act.error.message;
+          summaryText = (act.error.stage ? safeStr(act.error.stage) + ': ' : '') + safeStr(act.error.message);
         } else if (act.details && act.details.error) {
-          summaryText = String(act.details.error);
+          summaryText = safeStr(act.details.error);
         } else if (act.durationMs) {
-          summaryText = evt.title + ' · ' + (act.durationMs / 1000).toFixed(2) + 's';
+          summaryText = evt.title + ' · ' + (Number(act.durationMs) / 1000).toFixed(2) + 's';
         } else if (act.details && act.details.reason) {
-          summaryText = String(act.details.reason);
+          summaryText = safeStr(act.details.reason);
         } else {
           summaryText = evt.title;
         }
@@ -1438,11 +1542,11 @@ export function getAdminScripts(): string {
           summaryText = summaryText.substring(0, 52) + '…';
         }
 
-        const rowKey = act.id || ('idx-' + idx + '-' + Math.random().toString(36).substring(2, 7));
+        const rowKey = safeStr(act.id) || ('idx-' + idx + '-' + Math.random().toString(36).substring(2, 7));
         const detailId = 'detail-' + rowKey;
 
         const safeDetailsJson = escapeHtml(JSON.stringify(act.details || {}, null, 2));
-        const fullErrorMessage = act.error && act.error.message ? escapeHtml(act.error.message) : (act.details && act.details.error ? escapeHtml(String(act.details.error)) : null);
+        const fullErrorMessage = act.error && act.error.message ? escapeHtml(safeStr(act.error.message)) : (act.details && act.details.error ? escapeHtml(safeStr(act.details.error)) : null);
 
         return \`
           <tr class="audit-row-clickable" onclick="toggleAuditDetail('\${detailId}')" title="Click to view full technical diagnostic details">
@@ -1453,13 +1557,13 @@ export function getAdminScripts(): string {
             </td>
             <td>
               <strong style="font-size:0.85rem; color:var(--text-main); display:block; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">\${evt.title}</strong>
-              <span style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;">\${act.eventType}</span>
+              <span style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;">\${escapeHtml(safeStr(act.eventType))}</span>
             </td>
             <td>
               <div style="font-weight:600; font-size:0.85rem; color:var(--text-main); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="\${escapeHtml(operationTitle)}">
                 \${escapeHtml(operationTitle)}
               </div>
-              <div style="font-size:0.725rem; color:var(--text-subtle);">Actor: \${act.actor || 'system'}</div>
+              <div style="font-size:0.725rem; color:var(--text-subtle);">Actor: \${escapeHtml(safeStr(act.actor, 'system'))}</div>
             </td>
             <td style="word-break:break-word;">
               <span style="font-size:0.825rem; color:\${level === 'ERROR' ? '#fda4af' : 'var(--text-muted)'};">
@@ -1476,7 +1580,7 @@ export function getAdminScripts(): string {
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid var(--border-color);">
                   <div>
                     <h4 style="font-size:1rem; color:var(--text-main); margin-bottom:0.2rem;">\${escapeHtml(operationTitle)}</h4>
-                    <span class="status-badge \${statusBadgeClass}">\${act.eventType} — \${statusText.toUpperCase()}</span>
+                    <span class="status-badge \${statusBadgeClass}">\${escapeHtml(safeStr(act.eventType))} — \${statusText.toUpperCase()}</span>
                   </div>
                   <div style="font-size:0.8rem; color:var(--text-muted); text-align:right;">
                     <strong>Timestamp:</strong> \${tsInfo.full}
@@ -1486,27 +1590,27 @@ export function getAdminScripts(): string {
                 <div class="audit-detail-grid">
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">Stage / Component</span>
-                    <span class="audit-detail-value">\${escapeHtml((act.error && act.error.stage) || (act.details && act.details.stage) || '—')}</span>
+                    <span class="audit-detail-value">\${escapeHtml(safeStr((act.error && act.error.stage) || (act.details && act.details.stage), '—'))}</span>
                   </div>
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">Model / Provider</span>
-                    <span class="audit-detail-value">\${escapeHtml((act.details && (act.details.model || act.details.provider)) || '—')}</span>
+                    <span class="audit-detail-value">\${escapeHtml(safeStr((act.details && (act.details.model || act.details.provider)), '—'))}</span>
                   </div>
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">Duration</span>
-                    <span class="audit-detail-value">\${act.durationMs ? (act.durationMs / 1000).toFixed(2) + 's (' + act.durationMs + ' ms)' : '—'}</span>
+                    <span class="audit-detail-value">\${act.durationMs ? (Number(act.durationMs) / 1000).toFixed(2) + 's (' + act.durationMs + ' ms)' : '—'}</span>
                   </div>
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">HTTP Status</span>
-                    <span class="audit-detail-value">\${(act.error && act.error.httpStatus) || (act.details && act.details.httpStatus) || '—'}</span>
+                    <span class="audit-detail-value">\${safeStr((act.error && act.error.httpStatus) || (act.details && act.details.httpStatus), '—')}</span>
                   </div>
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">Correlation ID</span>
-                    <span class="audit-detail-value" style="font-family:monospace; font-size:0.8rem;">\${escapeHtml(act.correlationId || '—')}</span>
+                    <span class="audit-detail-value" style="font-family:monospace; font-size:0.8rem;">\${escapeHtml(safeStr(act.correlationId, '—'))}</span>
                   </div>
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">Entity</span>
-                    <span class="audit-detail-value" style="font-family:monospace; font-size:0.8rem;">\${act.entityType}:\${act.entityId}</span>
+                    <span class="audit-detail-value" style="font-family:monospace; font-size:0.8rem;">\${escapeHtml(safeStr(act.entityType))}:\${escapeHtml(safeStr(act.entityId))}</span>
                   </div>
                 </div>
 
@@ -1529,7 +1633,7 @@ export function getAdminScripts(): string {
     }
 
     function formatAuditEvent(eventType) {
-      const norm = (eventType || '').toUpperCase().trim();
+      const norm = safeUpper(eventType, 'SYSTEM_EVENT').trim();
       switch (norm) {
         case 'AUTH_LOGIN_SUCCESS': return { title: 'Login successful', category: 'SUCCESS', badgeClass: 'status-healthy' };
         case 'AUTH_LOGIN_FAILURE': return { title: 'Login failed', category: 'FAILED', badgeClass: 'status-alert' };
@@ -1563,20 +1667,21 @@ export function getAdminScripts(): string {
     }
 
     function formatAuditActor(actor, details) {
-      const act = (actor || 'system').toLowerCase().trim();
+      const act = safeLower(actor, 'system').trim();
       let label = 'SYSTEM';
       let badgeClass = 'status-disabled';
       if (act === 'admin') { label = 'ADMIN'; badgeClass = 'status-active'; }
       else if (act === 'ai') { label = 'AI ENGINE'; badgeClass = 'status-healthy'; }
       const username = details && (details.username || details.actorName);
-      return { label, subtext: typeof username === 'string' && username.trim() ? username.trim() : null, badgeClass };
+      const subtext = username !== null && username !== undefined && safeStr(username).trim() ? safeStr(username).trim() : null;
+      return { label, subtext, badgeClass };
     }
 
     function formatAuditEntity(entityType, entityId) {
       const typeMap = { admin_user: 'Admin user', admin_session: 'Admin session', publication: 'Publication', post: 'Post draft', post_version: 'Post version', topic: 'Research topic', research_run: 'Research run', orchestrator: 'Orchestrator' };
-      const rawType = (entityType || '').toLowerCase().trim();
+      const rawType = safeLower(entityType, '').trim();
       const typeLabel = typeMap[rawType] || rawType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'System';
-      const fullId = String(entityId || '—');
+      const fullId = safeStr(entityId, '—');
       const truncatedId = fullId.length > 14 ? fullId.substring(0, 8) + '…' : fullId;
       return { typeLabel, truncatedId, fullId };
     }
@@ -1595,11 +1700,10 @@ export function getAdminScripts(): string {
         const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
         let value = '';
         if (typeof rawVal === 'boolean') { value = rawVal ? 'Configured' : 'Not configured'; }
-        else if (typeof rawVal === 'object') { value = JSON.stringify(rawVal); }
-        else if (key.toLowerCase().includes('time') || key.toLowerCase().includes('expires')) {
-          const parsedDate = new Date(String(rawVal));
-          value = isNaN(parsedDate.getTime()) ? String(rawVal) : parsedDate.toLocaleString();
-        } else { value = String(rawVal); }
+        else if (typeof rawVal === 'string' && (rawVal.startsWith('20') || rawVal.startsWith('19')) && !isNaN(new Date(rawVal).getTime())) {
+          const parsedDate = new Date(rawVal);
+          value = isNaN(parsedDate.getTime()) ? rawVal : parsedDate.toLocaleString();
+        } else { value = safeStr(rawVal); }
         if (value.length > 36) value = value.substring(0, 33) + '…';
         items.push({ key, label, value: escapeHtml(value) });
       }
@@ -1607,8 +1711,9 @@ export function getAdminScripts(): string {
     }
 
     function formatAuditTimestamp(isoDate) {
+      if (!isoDate) return { compact: '—', full: '—' };
       const d = new Date(isoDate);
-      if (isNaN(d.getTime())) return { compact: isoDate || '—', full: isoDate || '—' };
+      if (isNaN(d.getTime())) return { compact: escapeHtml(safeStr(isoDate)), full: escapeHtml(safeStr(isoDate)) };
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const day = d.getUTCDate();
       const month = monthNames[d.getUTCMonth()];
@@ -1622,7 +1727,7 @@ export function getAdminScripts(): string {
     }
 
     function escapeHtml(str) {
-      if (typeof str !== 'string') return '';
+      if (typeof str !== 'string') str = safeStr(str);
       return str
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -1647,8 +1752,8 @@ export function getAdminScripts(): string {
     }
 
     function updateManualPreview() {
-      const content = (document.getElementById('manual-post-content')?.value || '').trim();
-      const link = (document.getElementById('manual-post-link')?.value || '').trim();
+      const content = safeStr(document.getElementById('manual-post-content')?.value).trim();
+      const link = safeStr(document.getElementById('manual-post-link')?.value).trim();
 
       const counterEl = document.getElementById('manual-char-counter');
       if (counterEl) {
@@ -1681,8 +1786,8 @@ export function getAdminScripts(): string {
     }
 
     function validateManualForm() {
-      const content = (document.getElementById('manual-post-content')?.value || '').trim();
-      const link = (document.getElementById('manual-post-link')?.value || '').trim();
+      const content = safeStr(document.getElementById('manual-post-content')?.value).trim();
+      const link = safeStr(document.getElementById('manual-post-link')?.value).trim();
       const alertEl = document.getElementById('manual-pub-alert');
 
       if (!content) {
@@ -1744,8 +1849,8 @@ export function getAdminScripts(): string {
     }
 
     async function submitManualPublication() {
-      const content = (document.getElementById('manual-post-content')?.value || '').trim();
-      const link = (document.getElementById('manual-post-link')?.value || '').trim();
+      const content = safeStr(document.getElementById('manual-post-content')?.value).trim();
+      const link = safeStr(document.getElementById('manual-post-link')?.value).trim();
       const alertEl = document.getElementById('manual-pub-alert');
       const confirmBtn = document.getElementById('confirm-publish-btn');
       const publishBtn = document.getElementById('manual-publish-btn');
@@ -1775,7 +1880,7 @@ export function getAdminScripts(): string {
           if (alertEl) {
             const pubDate = data.publishedAt ? new Date(data.publishedAt).toUTCString() : new Date().toUTCString();
             alertEl.innerHTML = '<strong>Publication successful!</strong><br>' +
-              'Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + (data.externalPostId || 'Confirmed') + '</code><br>' +
+              'Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + escapeHtml(safeStr(data.externalPostId, 'Confirmed')) + '</code><br>' +
               'Published: ' + pubDate + '<br><br>' +
               '<button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="switchTab(\\'publications\\')">View in Publication History &rarr;</button>';
             alertEl.className = 'alert-success';
@@ -1785,7 +1890,7 @@ export function getAdminScripts(): string {
         } else {
           if (alertEl) {
             alertEl.innerHTML = '<strong>Facebook rejected the publication.</strong><br>' +
-              'Reason: ' + (data.error || data.result?.message || 'Meta API returned an error.') + '<br>' +
+              'Reason: ' + escapeHtml(safeStr(data.error || data.result?.message, 'Meta API returned an error.')) + '<br>' +
               'No post was confirmed as published.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
@@ -1824,9 +1929,9 @@ export function getAdminScripts(): string {
           const statusBadge = document.getElementById('scheduler-status-badge');
 
           if (masterSwitch) masterSwitch.value = cfg.enabled ? '1' : '0';
-          if (freqSelect) freqSelect.value = cfg.frequency || 'daily';
-          if (timeInput) timeInput.value = cfg.publicationTime || '09:00';
-          if (tzInput) tzInput.value = cfg.timezone || 'UTC';
+          if (freqSelect) freqSelect.value = safeStr(cfg.frequency, 'daily');
+          if (timeInput) timeInput.value = safeStr(cfg.publicationTime, '09:00');
+          if (tzInput) tzInput.value = safeStr(cfg.timezone, 'UTC');
           if (stgDisc) stgDisc.checked = cfg.discoveryEnabled !== false;
           if (stgGen) stgGen.checked = cfg.generationEnabled !== false;
           if (stgEval) stgEval.checked = cfg.evaluationEnabled !== false;
@@ -1839,6 +1944,9 @@ export function getAdminScripts(): string {
               statusBadge.innerHTML = '<span class="status-badge status-disabled">SCHEDULER OFF</span>';
             }
           }
+        } else if (res.status === 401) {
+          await checkSession();
+          return;
         }
       } catch (err) {
         console.error('Failed to load scheduler config:', err);
@@ -1849,29 +1957,31 @@ export function getAdminScripts(): string {
         const historyBody = document.getElementById('pipeline-history-body');
         if (res.ok && historyBody) {
           const data = await res.json();
-          const runs = data.history || data.runs || [];
-          if (runs.length === 0) {
+          const runs = (data && (data.history || data.runs)) || [];
+          if (!Array.isArray(runs) || runs.length === 0) {
             historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No pipeline execution runs logged yet. Click <strong>Run Full Pipeline Now</strong> above to start.</td></tr>';
           } else {
             historyBody.innerHTML = runs.map(r => {
-              const statusClass = r.status === 'completed' || r.status === 'SUCCESS' ? 'status-healthy' : r.status === 'running' || r.status === 'RUNNING' ? 'status-active' : 'status-alert';
+              if (!r) return '';
+              const statusStr = safeUpper(r.status, 'UNKNOWN');
+              const statusClass = statusStr === 'COMPLETED' || statusStr === 'SUCCESS' ? 'status-healthy' : statusStr === 'RUNNING' ? 'status-active' : 'status-alert';
               const neurons = r.neurons_used !== null && r.neurons_used !== undefined ? Number(r.neurons_used).toLocaleString() + ' Neurons' : '—';
               const duration = r.started_at && r.finished_at ? Math.max(0, Math.round((new Date(r.finished_at).getTime() - new Date(r.started_at).getTime()) / 1000)) + 's' : 'In Progress';
-              const trigger = String(r.trigger_type || 'manual').toUpperCase();
-              const resultStr = escapeHtml(String(r.result_status || r.error_message || r.status || '—'));
+              const trigger = safeUpper(r.trigger_type, 'MANUAL');
+              const resultStr = escapeHtml(safeStr(r.result_status || r.error_message || r.status, '—'));
               
               let details = 'Stage Execution Log';
               if (r.topics_discovered !== undefined) {
                 details = 'Discovered: ' + (r.topics_discovered || 0) + ' | Selected: ' + (r.topics_selected || 0);
               }
               if (r.post_id) {
-                details += ' | Post: ' + escapeHtml(r.post_id.substring(0, 8));
+                details += ' | Post: ' + escapeHtml(safeStr(r.post_id).substring(0, 8));
               }
 
               return '<tr>' +
                 '<td>' + formatDateSafe(r.started_at) + ' ' + formatTimeSafe(r.started_at) + '</td>' +
                 '<td><span class="status-badge status-neutral">' + trigger + '</span></td>' +
-                '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(String(r.status).toUpperCase()) + '</span></td>' +
+                '<td><span class="status-badge ' + statusClass + '">' + statusStr + '</span></td>' +
                 '<td>' + resultStr + '</td>' +
                 '<td>' + details + '</td>' +
                 '<td style="color:var(--accent-cyan); font-weight:600;">' + neurons + '</td>' +
@@ -1879,6 +1989,10 @@ export function getAdminScripts(): string {
               '</tr>';
             }).join('');
           }
+        } else if (res.status === 401) {
+          await checkSession();
+        } else if (historyBody) {
+          historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load pipeline execution history (HTTP ' + res.status + ').</td></tr>';
         }
       } catch (err) {
         console.error('Failed to load pipeline execution history:', err);
@@ -1912,10 +2026,10 @@ export function getAdminScripts(): string {
             '• Cloudflare Verified Neurons: <strong style="color:var(--accent-cyan);">' + (r.cloudflareVerifiedNeurons !== null ? r.cloudflareVerifiedNeurons.toLocaleString() + ' Neurons' : 'Not Configured') + '</strong><br>' +
             '• Duration: <strong>' + ((r.durationMs || 0) / 1000).toFixed(1) + 's</strong>';
 
-          if (r.proposals && r.proposals.length > 0) {
+          if (Array.isArray(r.proposals) && r.proposals.length > 0) {
             html += '<br><br><strong>Generated Topic Proposals:</strong><ul style="margin-top:0.4rem; padding-left:1.2rem;">';
             r.proposals.forEach(p => {
-              html += '<li><strong>' + escapeHtml(p.title) + '</strong> (' + escapeHtml(p.contentPillar) + '): <em>' + escapeHtml(p.contentAngle) + '</em></li>';
+              if (p) html += '<li><strong>' + escapeHtml(safeStr(p.title)) + '</strong> (' + escapeHtml(safeStr(p.contentPillar)) + '): <em>' + escapeHtml(safeStr(p.contentAngle)) + '</em></li>';
             });
             html += '</ul>';
           }
@@ -1927,7 +2041,7 @@ export function getAdminScripts(): string {
           }
         } else {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>Stage 1 Content Discovery Failed:</strong> ' + escapeHtml(data.error || 'Unknown error');
+            alertEl.innerHTML = '<strong>Stage 1 Content Discovery Failed:</strong> ' + escapeHtml(safeStr(data.error, 'Unknown error'));
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -1961,13 +2075,13 @@ export function getAdminScripts(): string {
         if (res.ok && data.success && r.finalDecision === 'PASS') {
           const c = r.classification || {};
           let html = '<strong>Stage 2 — Post Generation & Quality Evaluation Passed!</strong><br><br>' +
-            '• Post Title: <strong>' + escapeHtml(r.title) + '</strong><br>' +
+            '• Post Title: <strong>' + escapeHtml(safeStr(r.title)) + '</strong><br>' +
             '• Quality Score: <strong>' + (r.qualityScore || 0) + ' / 100</strong><br>' +
             '• Final Decision: <span class="status-badge status-healthy">PASS</span><br>' +
-            '• Pillar: <strong>' + escapeHtml(c.pillar || 'GENERAL') + '</strong> | Type: <strong>' + escapeHtml(c.postType || 'SHORT_POST') + '</strong><br>' +
+            '• Pillar: <strong>' + escapeHtml(safeStr(c.pillar, 'GENERAL')) + '</strong> | Type: <strong>' + escapeHtml(safeStr(c.postType, 'SHORT_POST')) + '</strong><br>' +
             '• Sub-scores — Engagement: ' + (c.engagementPotential || 0) + ' | Clarity: ' + (c.clarity || 0) + ' | Value: ' + (c.practicalValue || 0) + ' | Brand: ' + (c.brandRelevance || 0) + ' | Originality: ' + (c.originality || 0) + '<br>' +
             '• Suggested Publication Time: <strong>' + (r.suggestedPublishTime ? new Date(r.suggestedPublishTime).toUTCString() : 'Immediate') + '</strong><br><br>' +
-            '<div style="background:rgba(0,0,0,0.3); padding:0.8rem; border-radius:6px; font-family:monospace; white-space:pre-wrap; max-height:150px; overflow-y:auto; font-size:0.85rem;">' + escapeHtml(r.body || '') + '</div>';
+            '<div style="background:rgba(0,0,0,0.3); padding:0.8rem; border-radius:6px; font-family:monospace; white-space:pre-wrap; max-height:150px; overflow-y:auto; font-size:0.85rem;">' + escapeHtml(safeStr(r.body)) + '</div>';
 
           if (alertEl) {
             alertEl.innerHTML = html;
@@ -1977,10 +2091,10 @@ export function getAdminScripts(): string {
         } else {
           let html = '<strong>Stage 2 — Post Generation Rejected / Failed:</strong><br>';
           if (r.finalDecision === 'REJECTED' || r.finalDecision === 'BLOCKED') {
-            html += 'Decision: <span class="status-badge status-alert">' + r.finalDecision + '</span><br>' +
-              'Reason: ' + escapeHtml(r.rejectionReason || data.error || 'Post draft failed quality gate controls.');
+            html += 'Decision: <span class="status-badge status-alert">' + escapeHtml(safeStr(r.finalDecision)) + '</span><br>' +
+              'Reason: ' + escapeHtml(safeStr(r.rejectionReason || data.error, 'Post draft failed quality gate controls.'));
           } else {
-            html += escapeHtml(data.error || 'Failed to generate post.');
+            html += escapeHtml(safeStr(data.error, 'Failed to generate post.'));
           }
           if (alertEl) {
             alertEl.innerHTML = html;
@@ -2009,7 +2123,7 @@ export function getAdminScripts(): string {
       try {
         const postsRes = await fetch('/api/admin/content');
         const postsData = await postsRes.json();
-        const readyPost = (postsData.posts || []).find(p => p.quality_decision === 'PASS' || p.status === 'approved' || p.status === 'draft');
+        const readyPost = (Array.isArray(postsData.posts) ? postsData.posts : []).find(p => p && (p.quality_decision === 'PASS' || p.status === 'approved' || p.status === 'draft'));
 
         if (!readyPost) {
           if (alertEl) {
@@ -2031,7 +2145,7 @@ export function getAdminScripts(): string {
         if (res.ok && data.success && r.success) {
           if (alertEl) {
             alertEl.innerHTML = '<strong>Stage 3 — Published to Facebook Successfully!</strong><br><br>' +
-              '• Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + escapeHtml(r.facebookPostId || 'Confirmed') + '</code><br>' +
+              '• Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + escapeHtml(safeStr(r.facebookPostId, 'Confirmed')) + '</code><br>' +
               '• Published At: <strong>' + (r.publishedAt ? new Date(r.publishedAt).toUTCString() : new Date().toUTCString()) + '</strong><br>' +
               '• Target: <strong>NorthSoft Facebook Page</strong>';
             alertEl.className = 'alert-success';
@@ -2040,7 +2154,7 @@ export function getAdminScripts(): string {
         } else {
           if (alertEl) {
             alertEl.innerHTML = '<strong>PUBLISH FAILED:</strong><br>' +
-              'Reason: ' + escapeHtml(r.error || data.error || 'Meta Facebook API rejected publication.') + '<br>' +
+              'Reason: ' + escapeHtml(safeStr(r.error || data.error, 'Meta Facebook API rejected publication.')) + '<br>' +
               'No post status was changed to published.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
@@ -2088,9 +2202,9 @@ export function getAdminScripts(): string {
 
           let html = '<strong>🚀 1-Click Full Pipeline Executed Successfully!</strong><br><br>' +
             '• Stage 1 Content Discovery: <span class="status-badge status-healthy">SUCCESS</span> (' + (s1.newProposalsCount || 0) + ' new topics)<br>' +
-            '• Stage 2 Post Generation: <span class="status-badge status-healthy">SUCCESS</span> ("' + escapeHtml(s2.title || '') + '", QA Score: ' + (s2.qualityScore || 0) + ')<br>' +
+            '• Stage 2 Post Generation: <span class="status-badge status-healthy">SUCCESS</span> ("' + escapeHtml(safeStr(s2.title)) + '", QA Score: ' + (s2.qualityScore || 0) + ')<br>' +
             '• Stage 3 Quality Evaluation: <span class="status-badge status-healthy">PASS</span><br>' +
-            '• Stage 4 Facebook Publishing: <span class="status-badge status-healthy">SUCCESS</span> (Post ID: <code>' + escapeHtml(s3.facebookPostId || r.facebookPostId || '') + '</code>)<br>' +
+            '• Stage 4 Facebook Publishing: <span class="status-badge status-healthy">SUCCESS</span> (Post ID: <code>' + escapeHtml(safeStr(s3.facebookPostId || r.facebookPostId)) + '</code>)<br>' +
             '• Published Posts Count: <strong>EXACTLY 1 POST</strong><br>' +
             '• Total Duration: <strong>' + ((r.durationMs || 0) / 1000).toFixed(1) + 's</strong>';
 
@@ -2102,7 +2216,7 @@ export function getAdminScripts(): string {
         } else {
           if (alertEl) {
             alertEl.innerHTML = '<strong>Full Pipeline Execution Failed:</strong><br>' +
-              'Reason: ' + escapeHtml(data.error || r.errorMessage || 'One of the pipeline stages failed execution.') + '<br>' +
+              'Reason: ' + escapeHtml(safeStr(data.error || r.errorMessage, 'One of the pipeline stages failed execution.')) + '<br>' +
               'No unverified posts were published.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
@@ -2137,9 +2251,9 @@ export function getAdminScripts(): string {
 
       const body = {
         enabled: masterSwitch ? masterSwitch.value === '1' : false,
-        frequency: freqSelect ? freqSelect.value : 'daily',
-        publicationTime: timeInput ? timeInput.value : '09:00',
-        timezone: tzInput ? tzInput.value : 'UTC',
+        frequency: freqSelect ? safeStr(freqSelect.value, 'daily') : 'daily',
+        publicationTime: timeInput ? safeStr(timeInput.value, '09:00') : '09:00',
+        timezone: tzInput ? safeStr(tzInput.value, 'UTC') : 'UTC',
         discoveryEnabled: stgDisc ? stgDisc.checked : true,
         generationEnabled: stgGen ? stgGen.checked : true,
         evaluationEnabled: stgEval ? stgEval.checked : true,
@@ -2162,7 +2276,7 @@ export function getAdminScripts(): string {
           }
         } else {
           if (alertEl) {
-            alertEl.textContent = 'Failed to save scheduler configuration: ' + (data.error || 'Unknown error');
+            alertEl.textContent = 'Failed to save scheduler configuration: ' + safeStr(data.error, 'Unknown error');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
