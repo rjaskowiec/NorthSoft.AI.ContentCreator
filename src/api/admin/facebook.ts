@@ -85,6 +85,7 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
   }
 
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '10', 10), 1), 25);
+  const after = (c.req.query('after') || '').trim();
 
   try {
     // 2. Fetch Page Info (name, category, picture) — GET only
@@ -114,7 +115,10 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
     }
 
     // 3. Fetch Latest Posts from Page Feed — GET only
-    const postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,created_time,permalink_url,full_picture,is_published,type,status_type&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
+    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,created_time,permalink_url,full_picture,is_published,type,status_type&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
+    if (after) {
+      postsUrl += `&after=${encodeURIComponent(after)}`;
+    }
 
     const postsRes = await fetch(postsUrl, { method: 'GET' });
     const postsData = (await postsRes.json()) as MetaPagePostsResponse;
@@ -145,6 +149,9 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       statusType: post.status_type || null,
     }));
 
+    const hasMore = Boolean(postsData.paging?.next || postsData.paging?.cursors?.after);
+    const afterCursor = postsData.paging?.cursors?.after || null;
+
     return c.json({
       configured: true,
       environment: envName,
@@ -152,6 +159,10 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       tokenConfigured: true,
       posts,
       postCount: posts.length,
+      paging: {
+        hasMore,
+        after: afterCursor,
+      },
       pageInfo,
       fetchedAt: new Date().toISOString(),
     });
