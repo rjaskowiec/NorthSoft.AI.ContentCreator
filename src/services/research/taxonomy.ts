@@ -103,7 +103,7 @@ export function determineContentPillar(title: string, summary: string, categorie
   }
 
   // Check AI & Automation
-  if (text.includes('ai') || text.includes('artificial intelligence') || text.includes('chatbot') || text.includes('gpt')) {
+  if (/\b(ai|artificial intelligence|chatbot|chatbots|gpt|llm|llms|genai|copilot)\b/i.test(text)) {
     return 'AI_AUTOMATION';
   }
 
@@ -163,7 +163,12 @@ export function evaluateRelevance(title: string, summary: string, categories: st
     'local', 'service', 'automation', 'productivity', 'seo', 'google', 'marketing',
     'lead', 'conversion', 'ai', 'ux', 'ui', 'tool', 'search', 'traffic', 'design',
   ];
-  const matchedSignals = businessSignals.filter(sig => text.includes(sig));
+  const matchedSignals = businessSignals.filter(sig => {
+    if (sig === 'ai') return /\bai\b/i.test(text);
+    if (sig === 'ui') return /\bui\b/i.test(text);
+    if (sig === 'ux') return /\bux\b/i.test(text);
+    return text.includes(sig);
+  });
   score += Math.min(30, matchedSignals.length * 6);
 
   // Pillar specific bonuses
