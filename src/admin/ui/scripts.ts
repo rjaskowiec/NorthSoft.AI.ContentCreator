@@ -919,28 +919,44 @@ export function getAdminScripts(): string {
     // ======================================================================
 
     let fbPostsLoaded = false;
+    let fbNextCursor = null;
+    let fbHasMore = false;
+    let loadedFbPostIds = new Set();
 
-    async function loadFacebookPagePosts() {
+    async function loadFacebookPagePosts(append) {
       const container = document.getElementById('fb-posts-container');
       const statusBadge = document.getElementById('fb-posts-status-badge');
       const refreshBtn = document.getElementById('fb-posts-refresh-btn');
       const pageInfoEl = document.getElementById('fb-page-info');
       const metaEl = document.getElementById('fb-posts-meta');
+      const loadMoreContainer = document.getElementById('fb-posts-load-more-container');
+      const loadMoreBtn = document.getElementById('fb-posts-load-more-btn');
 
-      // Show loading state
-      if (refreshBtn) {
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = 'Loading...';
-      }
-      if (statusBadge) {
-        statusBadge.innerHTML = '<span class="status-badge status-active">FETCHING</span>';
-      }
-      if (container) {
-        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts from Meta Graph API...</div></div>';
+      const isAppend = Boolean(append);
+
+      if (!isAppend) {
+        fbNextCursor = null;
+        fbHasMore = false;
+        loadedFbPostIds = new Set();
+        if (refreshBtn) {
+          refreshBtn.disabled = true;
+          refreshBtn.textContent = 'Loading...';
+        }
+        if (statusBadge) {
+          statusBadge.innerHTML = '<span class="status-badge status-active">FETCHING</span>';
+        }
+        if (container) {
+          container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts from Meta Graph API...</div></div>';
+        }
+        if (loadMoreContainer) loadMoreContainer.style.display = 'none';
       }
 
       try {
-        const res = await fetch('/api/admin/facebook/page-posts?limit=10');
+        const fetchUrl = (isAppend && fbNextCursor)
+          ? '/api/admin/facebook/page-posts?limit=5&after=' + encodeURIComponent(fbNextCursor)
+          : '/api/admin/facebook/page-posts?limit=5';
+
+        const res = await fetch(fetchUrl);
         if (!res.ok && res.status === 401) {
           showLoginForm();
           return;
@@ -953,9 +969,10 @@ export function getAdminScripts(): string {
           if (statusBadge) {
             statusBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
           }
-          if (container) {
+          if (container && !isAppend) {
             container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--text-subtle); stroke-width:1.5; margin-bottom:0.5rem;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div style="font-weight:600; margin-bottom:0.25rem;">Meta API Not Configured</div><div style="font-size:0.85rem;">Set <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">META_PAGE_ID</code> and <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">META_PAGE_ACCESS_TOKEN</code> to enable this feature.</div></div>';
           }
+          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
           return;
         }
 
@@ -964,11 +981,16 @@ export function getAdminScripts(): string {
           if (statusBadge) {
             statusBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
           }
-          if (container) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem;"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--accent-rose); stroke-width:1.5; margin-bottom:0.5rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Meta API Error</div><div style="font-size:0.85rem; color:var(--text-muted);">' + escapeHtml(data.error) + '</div></div>';
+          if (container && !isAppend) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem;"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--accent-rose); stroke-width:1.5; margin-bottom:0.5rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">' + escapeHtml(data.error) + '</div><button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
           }
+          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
           return;
         }
+
+        // Update pagination cursors
+        fbHasMore = Boolean(data.paging && data.paging.hasMore);
+        fbNextCursor = (data.paging && data.paging.after) ? data.paging.after : null;
 
         // Render Page Info
         if (data.pageInfo && pageInfoEl) {
@@ -993,16 +1015,20 @@ export function getAdminScripts(): string {
           }
         }
 
-        // Render Posts
-        if (data.posts && data.posts.length > 0) {
+        // Filter and render posts
+        const rawPosts = data.posts || [];
+        const newPosts = rawPosts.filter(function(p) { return !loadedFbPostIds.has(p.id); });
+        newPosts.forEach(function(p) { loadedFbPostIds.add(p.id); });
+
+        if (loadedFbPostIds.size > 0) {
           if (statusBadge) {
-            statusBadge.innerHTML = '<span class="status-badge status-healthy">LIVE · ' + data.posts.length + ' POSTS</span>';
+            statusBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
           }
 
-          container.innerHTML = data.posts.map(function(post) {
+          const cardsHtml = newPosts.map(function(post) {
             const timeAgo = formatFbTimeAgo(post.createdTime);
             const fullDate = post.createdTime ? new Date(post.createdTime).toLocaleString() : '';
-            const truncatedMsg = post.message ? (post.message.length > 280 ? post.message.substring(0, 277) + '...' : post.message) : '';
+            const msgContent = post.message ? escapeHtml(post.message) : '<em style="color:var(--text-subtle);">No text content available.</em>';
             const postTypeBadge = post.statusType ? '<span class="fb-post-type-badge">' + escapeHtml(post.statusType.replace(/_/g, ' ')) + '</span>' : '';
 
             return '<div class="fb-post-card">' +
@@ -1016,14 +1042,31 @@ export function getAdminScripts(): string {
                 '</div>' +
                 postTypeBadge +
               '</div>' +
-              (truncatedMsg ? '<div class="fb-post-body">' + escapeHtml(truncatedMsg) + '</div>' : '<div class="fb-post-body fb-post-no-text"><em>No text content</em></div>') +
+              '<div class="fb-post-body">' + msgContent + '</div>' +
               (post.fullPicture ? '<div class="fb-post-image-wrap"><img src="' + escapeHtml(post.fullPicture) + '" alt="Post image" class="fb-post-image" loading="lazy"></div>' : '') +
               '<div class="fb-post-footer">' +
                 '<span class="fb-post-id" title="' + escapeHtml(post.id) + '">ID: ' + escapeHtml(post.id.length > 20 ? post.id.substring(0, 17) + '...' : post.id) + '</span>' +
-                (post.permalinkUrl ? '<a href="' + escapeHtml(post.permalinkUrl) + '" target="_blank" rel="noopener noreferrer" class="fb-post-permalink">View on Facebook ↗</a>' : '') +
+                (post.permalinkUrl ? '<a href="' + escapeHtml(post.permalinkUrl) + '" target="_blank" rel="noopener noreferrer" class="fb-post-permalink">View on Facebook &rarr;</a>' : '') +
               '</div>' +
             '</div>';
           }).join('');
+
+          if (isAppend && container) {
+            container.innerHTML += cardsHtml;
+          } else if (container) {
+            container.innerHTML = cardsHtml;
+          }
+
+          // Handle Load More button visibility
+          if (loadMoreContainer && loadMoreBtn) {
+            if (fbHasMore && fbNextCursor) {
+              loadMoreContainer.style.display = 'block';
+              loadMoreBtn.disabled = false;
+              loadMoreBtn.textContent = 'Load more';
+            } else {
+              loadMoreContainer.style.display = 'none';
+            }
+          }
 
           // Show metadata
           if (metaEl) {
@@ -1031,13 +1074,16 @@ export function getAdminScripts(): string {
             const fetchedAtEl = document.getElementById('fb-posts-fetched-at');
             const countEl = document.getElementById('fb-posts-count');
             if (fetchedAtEl) fetchedAtEl.textContent = 'Fetched: ' + new Date(data.fetchedAt || Date.now()).toLocaleTimeString();
-            if (countEl) countEl.textContent = data.postCount + ' posts from Meta Graph API';
+            if (countEl) countEl.textContent = loadedFbPostIds.size + ' posts loaded via Meta Graph API v26.0';
           }
-        } else {
+        } else if (!isAppend) {
           if (statusBadge) {
             statusBadge.innerHTML = '<span class="status-badge status-active">CONNECTED</span>';
           }
-          container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; margin-bottom:0.25rem;">No posts found</div><div style="font-size:0.85rem;">The Facebook Page feed is empty or returned no results.</div></div>';
+          if (container) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; margin-bottom:0.25rem;">No posts found</div><div style="font-size:0.85rem;">The Facebook Page feed is empty or returned no results.</div></div>';
+          }
+          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
         }
 
         fbPostsLoaded = true;
@@ -1046,15 +1092,30 @@ export function getAdminScripts(): string {
         if (statusBadge) {
           statusBadge.innerHTML = '<span class="status-badge status-alert">ERROR</span>';
         }
-        if (container) {
-          container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Connection Error</div><div style="font-size:0.85rem;">Could not connect to the server. Check your network and try again.</div></div>';
+        if (container && !isAppend) {
+          container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.85rem; margin-bottom:1rem;">Could not connect to the server. Check your network and try again.</div><button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
         }
+        if (loadMoreContainer) loadMoreContainer.style.display = 'none';
       } finally {
         if (refreshBtn) {
           refreshBtn.disabled = false;
           refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; vertical-align:middle; margin-right:0.25rem;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh';
         }
+        if (loadMoreBtn && fbHasMore && fbNextCursor) {
+          loadMoreBtn.disabled = false;
+          loadMoreBtn.textContent = 'Load more';
+        }
       }
+    }
+
+    async function loadMoreFacebookPagePosts() {
+      const loadMoreBtn = document.getElementById('fb-posts-load-more-btn');
+      if (!fbNextCursor || !fbHasMore) return;
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.textContent = 'Loading...';
+      }
+      await loadFacebookPagePosts(true);
     }
 
     function formatFbTimeAgo(isoDate) {

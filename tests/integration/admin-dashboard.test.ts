@@ -65,6 +65,10 @@ describe('Admin Dashboard Integration & Security', () => {
     expect(html).toContain('NorthSoft AI');
     expect(html).toContain('Content Creator Admin Interface');
     expect(html).toContain('Authenticate');
+    expect(html).toContain('Facebook Page — Live Posts');
+    expect(html).toContain('fb-posts-container');
+    expect(html).toContain('fb-posts-load-more-btn');
+    expect(html).toContain('loadFacebookPagePosts');
   });
 
   it('allows authenticated access to /api/admin/dashboard and returns safe metrics', async () => {
