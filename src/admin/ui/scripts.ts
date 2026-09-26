@@ -529,6 +529,11 @@ export function getAdminScripts(): string {
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       }
+
+      // Auto-load Facebook Page Posts (non-blocking)
+      if (!fbPostsLoaded) {
+        loadFacebookPagePosts();
+      }
     }
 
     // Load Research Tab Data
@@ -907,6 +912,235 @@ export function getAdminScripts(): string {
       } finally {
         loadPublicationsData();
       }
+    }
+
+    // ======================================================================
+    // Facebook Page Posts — READ-ONLY Live Feed
+    // ======================================================================
+
+    let fbPostsLoaded = false;
+    let fbNextCursor = null;
+    let fbHasMore = false;
+    let loadedFbPostIds = new Set();
+
+    async function loadFacebookPagePosts(append) {
+      const container = document.getElementById('fb-posts-container');
+      const statusBadge = document.getElementById('fb-posts-status-badge');
+      const refreshBtn = document.getElementById('fb-posts-refresh-btn');
+      const pageInfoEl = document.getElementById('fb-page-info');
+      const metaEl = document.getElementById('fb-posts-meta');
+      const loadMoreContainer = document.getElementById('fb-posts-load-more-container');
+      const loadMoreBtn = document.getElementById('fb-posts-load-more-btn');
+
+      const isAppend = Boolean(append);
+
+      if (!isAppend) {
+        fbNextCursor = null;
+        fbHasMore = false;
+        loadedFbPostIds = new Set();
+        if (refreshBtn) {
+          refreshBtn.disabled = true;
+          refreshBtn.textContent = 'Loading...';
+        }
+        if (statusBadge) {
+          statusBadge.innerHTML = '<span class="status-badge status-active">FETCHING</span>';
+        }
+        if (container) {
+          container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts from Meta Graph API...</div></div>';
+        }
+        if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+      }
+
+      try {
+        const fetchUrl = (isAppend && fbNextCursor)
+          ? '/api/admin/facebook/page-posts?limit=5&after=' + encodeURIComponent(fbNextCursor)
+          : '/api/admin/facebook/page-posts?limit=5';
+
+        const res = await fetch(fetchUrl);
+        if (!res.ok && res.status === 401) {
+          showLoginForm();
+          return;
+        }
+
+        const data = await res.json();
+
+        // Handle not configured
+        if (!data.configured) {
+          if (statusBadge) {
+            statusBadge.innerHTML = '<span class="status-badge status-disabled">NOT CONFIGURED</span>';
+          }
+          if (container && !isAppend) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--text-subtle); stroke-width:1.5; margin-bottom:0.5rem;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div style="font-weight:600; margin-bottom:0.25rem;">Meta API Not Configured</div><div style="font-size:0.85rem;">Set <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">META_PAGE_ID</code> and <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">META_PAGE_ACCESS_TOKEN</code> to enable this feature.</div></div>';
+          }
+          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+          return;
+        }
+
+        // Handle API error with configured credentials
+        if (data.error && (!data.posts || data.posts.length === 0)) {
+          if (statusBadge) {
+            statusBadge.innerHTML = '<span class="status-badge status-alert">API ERROR</span>';
+          }
+          if (container && !isAppend) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem;"><svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:none; stroke:var(--accent-rose); stroke-width:1.5; margin-bottom:0.5rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">' + escapeHtml(data.error) + '</div><button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
+          }
+          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+          return;
+        }
+
+        // Update pagination cursors
+        fbHasMore = Boolean(data.paging && data.paging.hasMore);
+        fbNextCursor = (data.paging && data.paging.after) ? data.paging.after : null;
+
+        // Render Page Info
+        if (data.pageInfo && pageInfoEl) {
+          pageInfoEl.style.display = 'block';
+          const nameEl = document.getElementById('fb-page-name');
+          const catEl = document.getElementById('fb-page-category');
+          const fansEl = document.getElementById('fb-page-fans');
+          const linkEl = document.getElementById('fb-page-link');
+          const avatarEl = document.getElementById('fb-page-avatar');
+
+          if (nameEl) nameEl.textContent = data.pageInfo.name || 'Facebook Page';
+          if (catEl) catEl.textContent = data.pageInfo.category || '';
+          if (fansEl && data.pageInfo.fanCount) {
+            fansEl.textContent = data.pageInfo.fanCount.toLocaleString() + ' followers';
+          }
+          if (linkEl && data.pageInfo.link) {
+            linkEl.href = data.pageInfo.link;
+            linkEl.style.display = 'inline-block';
+          }
+          if (avatarEl && data.pageInfo.pictureUrl) {
+            avatarEl.innerHTML = '<img src="' + escapeHtml(data.pageInfo.pictureUrl) + '" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" alt="Page avatar">';
+          }
+        }
+
+        // Filter and render posts
+        const rawPosts = data.posts || [];
+        const newPosts = rawPosts.filter(function(p) { return !loadedFbPostIds.has(p.id); });
+        newPosts.forEach(function(p) { loadedFbPostIds.add(p.id); });
+
+        if (loadedFbPostIds.size > 0) {
+          if (statusBadge) {
+            statusBadge.innerHTML = '<span class="status-badge status-healthy">LIVE &middot; ' + loadedFbPostIds.size + ' POSTS</span>';
+          }
+
+          const cardsHtml = newPosts.map(function(post) {
+            const timeAgo = formatFbTimeAgo(post.createdTime);
+            const fullDate = post.createdTime ? new Date(post.createdTime).toLocaleString() : '';
+            const msgContent = post.message ? escapeHtml(post.message) : '<em style="color:var(--text-subtle);">No text content available.</em>';
+            const postTypeBadge = post.statusType ? '<span class="fb-post-type-badge">' + escapeHtml(post.statusType.replace(/_/g, ' ')) + '</span>' : '';
+
+            return '<div class="fb-post-card">' +
+              '<div class="fb-post-header">' +
+                '<div style="display:flex; align-items:center; gap:0.5rem; flex:1;">' +
+                  '<div class="fb-post-avatar">NS</div>' +
+                  '<div>' +
+                    '<div class="fb-post-page-name">' + escapeHtml(data.pageInfo?.name || 'NorthSoft') + '</div>' +
+                    '<div class="fb-post-time" title="' + escapeHtml(fullDate) + '">' + escapeHtml(timeAgo) + '</div>' +
+                  '</div>' +
+                '</div>' +
+                postTypeBadge +
+              '</div>' +
+              '<div class="fb-post-body">' + msgContent + '</div>' +
+              (post.fullPicture ? '<div class="fb-post-image-wrap"><img src="' + escapeHtml(post.fullPicture) + '" alt="Post image" class="fb-post-image" loading="lazy"></div>' : '') +
+              '<div class="fb-post-footer">' +
+                '<span class="fb-post-id" title="' + escapeHtml(post.id) + '">ID: ' + escapeHtml(post.id.length > 20 ? post.id.substring(0, 17) + '...' : post.id) + '</span>' +
+                (post.permalinkUrl ? '<a href="' + escapeHtml(post.permalinkUrl) + '" target="_blank" rel="noopener noreferrer" class="fb-post-permalink">View on Facebook &rarr;</a>' : '') +
+              '</div>' +
+            '</div>';
+          }).join('');
+
+          if (isAppend && container) {
+            container.innerHTML += cardsHtml;
+          } else if (container) {
+            container.innerHTML = cardsHtml;
+          }
+
+          // Handle Load More button visibility
+          if (loadMoreContainer && loadMoreBtn) {
+            if (fbHasMore && fbNextCursor) {
+              loadMoreContainer.style.display = 'block';
+              loadMoreBtn.disabled = false;
+              loadMoreBtn.textContent = 'Load more';
+            } else {
+              loadMoreContainer.style.display = 'none';
+            }
+          }
+
+          // Show metadata
+          if (metaEl) {
+            metaEl.style.display = 'flex';
+            const fetchedAtEl = document.getElementById('fb-posts-fetched-at');
+            const countEl = document.getElementById('fb-posts-count');
+            if (fetchedAtEl) fetchedAtEl.textContent = 'Fetched: ' + new Date(data.fetchedAt || Date.now()).toLocaleTimeString();
+            if (countEl) countEl.textContent = loadedFbPostIds.size + ' posts loaded via Meta Graph API v26.0';
+          }
+        } else if (!isAppend) {
+          if (statusBadge) {
+            statusBadge.innerHTML = '<span class="status-badge status-active">CONNECTED</span>';
+          }
+          if (container) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; margin-bottom:0.25rem;">No posts found</div><div style="font-size:0.85rem;">The Facebook Page feed is empty or returned no results.</div></div>';
+          }
+          if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+        }
+
+        fbPostsLoaded = true;
+      } catch (err) {
+        console.error('Failed to load Facebook Page posts:', err);
+        if (statusBadge) {
+          statusBadge.innerHTML = '<span class="status-badge status-alert">ERROR</span>';
+        }
+        if (container && !isAppend) {
+          container.innerHTML = '<div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);"><div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.85rem; margin-bottom:1rem;">Could not connect to the server. Check your network and try again.</div><button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
+        }
+        if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; vertical-align:middle; margin-right:0.25rem;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh';
+        }
+        if (loadMoreBtn && fbHasMore && fbNextCursor) {
+          loadMoreBtn.disabled = false;
+          loadMoreBtn.textContent = 'Load more';
+        }
+      }
+    }
+
+    async function loadMoreFacebookPagePosts() {
+      const loadMoreBtn = document.getElementById('fb-posts-load-more-btn');
+      if (!fbNextCursor || !fbHasMore) return;
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.textContent = 'Loading...';
+      }
+      await loadFacebookPagePosts(true);
+    }
+
+    function formatFbTimeAgo(isoDate) {
+      if (!isoDate) return 'Unknown';
+      const d = new Date(isoDate);
+      if (isNaN(d.getTime())) return isoDate;
+      const now = new Date();
+      const diffMs = now.getTime() - d.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return diffMins + 'm ago';
+      if (diffHours < 24) return diffHours + 'h ago';
+      if (diffDays < 7) return diffDays + 'd ago';
+      if (diffDays < 30) return Math.floor(diffDays / 7) + 'w ago';
+
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return monthNames[d.getMonth()] + ' ' + d.getDate() + (d.getFullYear() !== now.getFullYear() ? ', ' + d.getFullYear() : '');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     // Manual Publisher Handlers & Live Preview

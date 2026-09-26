@@ -261,6 +261,55 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
+            <!-- Facebook Page — Live Posts (READ-ONLY) -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:var(--accent-blue); stroke-width:2; margin-right:0.4rem; vertical-align:middle;"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+                  Facebook Page — Live Posts
+                </div>
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                  <button id="fb-posts-refresh-btn" class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem; background:var(--bg-hover); color:var(--text-primary); border:1px solid var(--border-color);" onclick="loadFacebookPagePosts()">
+                    <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; vertical-align:middle; margin-right:0.25rem;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Refresh
+                  </button>
+                  <div id="fb-posts-status-badge"><span class="status-badge status-disabled">NOT LOADED</span></div>
+                </div>
+              </div>
+
+              <!-- Page Info Header -->
+              <div id="fb-page-info" style="display:none; padding:1rem; background:rgba(24,119,242,0.06); border:1px solid rgba(24,119,242,0.15); border-radius:8px; margin-bottom:1.25rem;">
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                  <div id="fb-page-avatar" style="width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg, #1877f2, #0056b3); display:flex; align-items:center; justify-content:center; font-weight:700; color:white; font-size:0.9rem; flex-shrink:0;">NS</div>
+                  <div style="flex:1;">
+                    <div style="font-weight:600; font-size:0.95rem;" id="fb-page-name">NorthSoft</div>
+                    <div style="font-size:0.8rem; color:var(--text-muted); display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.15rem;">
+                      <span id="fb-page-category"></span>
+                      <span id="fb-page-fans"></span>
+                    </div>
+                  </div>
+                  <a id="fb-page-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none; color:var(--accent-blue); font-size:0.82rem; text-decoration:none; border:1px solid rgba(24,119,242,0.3); padding:0.3rem 0.65rem; border-radius:6px; white-space:nowrap;">
+                    View Page ↗
+                  </a>
+                </div>
+              </div>
+
+              <!-- Posts Grid -->
+              <div id="fb-posts-container" style="display:grid; grid-template-columns:1fr; gap:1rem;">
+                <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-muted);">
+                  <svg viewBox="0 0 24 24" style="width:40px; height:40px; fill:none; stroke:var(--text-subtle); stroke-width:1.5; margin-bottom:0.75rem;"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+                  <div style="font-weight:600; margin-bottom:0.25rem;">Facebook Page Posts</div>
+                  <div style="font-size:0.85rem;">Click <strong>Refresh</strong> to fetch the latest posts from the NorthSoft Facebook Page.</div>
+                </div>
+              </div>
+
+              <!-- Fetch Metadata -->
+              <div id="fb-posts-meta" style="display:none; margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border-color); font-size:0.78rem; color:var(--text-subtle); display:flex; justify-content:space-between;">
+                <span id="fb-posts-fetched-at"></span>
+                <span id="fb-posts-count"></span>
+              </div>
+            </div>
+
             <!-- Recent Audit Activity Log -->
             <div class="panel">
               <div class="panel-header">
