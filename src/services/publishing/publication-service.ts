@@ -320,6 +320,10 @@ export class PublicationService {
       entityType: 'publication',
       entityId: publicationId,
       actor,
+      level: 'INFO',
+      status: 'STARTED',
+      operation: postRow.title,
+      correlationId: publicationId,
       details: {
         postId,
         postVersionId: postRow.version_id,
@@ -369,6 +373,10 @@ export class PublicationService {
         entityType: 'publication',
         entityId: publicationId,
         actor,
+        level: 'SUCCESS',
+        status: 'COMPLETED',
+        operation: postRow.title,
+        correlationId: publicationId,
         details: {
           postId,
           postVersionId: postRow.version_id,
@@ -409,6 +417,16 @@ export class PublicationService {
       entityType: 'publication',
       entityId: publicationId,
       actor,
+      level: isRetryable ? 'WARNING' : 'ERROR',
+      status: isRetryable ? 'DEFERRED' : 'FAILED',
+      operation: postRow.title,
+      correlationId: publicationId,
+      error: {
+        code: pubResult.errorCode || pubResult.errorCategory || 'PUBLISH_FAILED',
+        message: pubResult.errorMessage || 'Facebook publication failed',
+        stage: 'Meta Graph API',
+        httpStatus: pubResult.httpStatus || undefined,
+      },
       details: {
         postId,
         postVersionId: postRow.version_id,

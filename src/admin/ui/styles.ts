@@ -927,5 +927,73 @@ export function getAdminCss(): string {
         font-size: 1.35rem;
       }
     }
+
+    /* AUDIT LOG REDESIGN STYLES */
+    .audit-cat-btn.active {
+      background: var(--accent-blue) !important;
+      color: #ffffff !important;
+      border-color: var(--accent-blue) !important;
+    }
+
+    .audit-row-clickable {
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+
+    .audit-row-clickable:hover {
+      background-color: var(--bg-card-hover) !important;
+    }
+
+    .audit-detail-panel {
+      background: #090d16;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin: 0.5rem 0;
+      font-size: 0.85rem;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .audit-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .audit-detail-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .audit-detail-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .audit-detail-value {
+      color: var(--text-main);
+      font-size: 0.875rem;
+      word-break: break-word;
+    }
+
+    .audit-error-box {
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      color: #fda4af;
+      font-family: monospace;
+      font-size: 0.825rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-top: 0.75rem;
+      max-height: 250px;
+      overflow-y: auto;
+    }
   `;
 }

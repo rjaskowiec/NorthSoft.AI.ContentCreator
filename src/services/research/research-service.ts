@@ -222,26 +222,16 @@ export class ResearchService {
           'default',
         );
 
-        await this.auditLogger.log({
-          eventType: 'AI_QUOTA_CHECK',
-          entityType: 'system',
-          entityId: 'quota_manager',
-          actor: 'system',
-          details: {
-            allowed: capacity.allowed,
-            status: capacity.status,
-            todayRequests: capacity.todayRequests,
-            dailyLimit: capacity.dailyLimit,
-            reason: capacity.reason,
-          },
-        });
-
         if (!capacity.allowed) {
           await this.auditLogger.log({
             eventType: 'AI_QUOTA_EXCEEDED',
             entityType: 'research_item',
             entityId: item.id,
             actor: 'system',
+            level: 'WARNING',
+            status: 'DEFERRED',
+            operation: item.title,
+            correlationId: runId,
             details: { reason: capacity.reason },
           });
 
@@ -250,6 +240,10 @@ export class ResearchService {
             entityType: 'research_item',
             entityId: item.id,
             actor: 'system',
+            level: 'WARNING',
+            status: 'DEFERRED',
+            operation: item.title,
+            correlationId: runId,
             details: { status: 'DEFERRED_NO_FREE_AI_CAPACITY' },
           });
 
@@ -292,7 +286,11 @@ Return a valid JSON object containing:
           entityType: 'research_item',
           entityId: item.id,
           actor: 'ai',
-          details: { title: item.title },
+          level: 'INFO',
+          status: 'STARTED',
+          operation: item.title,
+          correlationId: runId,
+          details: { title: item.title, url: item.url },
         });
 
         try {
@@ -322,6 +320,11 @@ Return a valid JSON object containing:
             entityType: 'research_item',
             entityId: item.id,
             actor: 'ai',
+            level: 'SUCCESS',
+            status: 'COMPLETED',
+            operation: item.title,
+            correlationId: runId,
+            durationMs: Date.now() - aiStartTime,
             details: {
               model: completion.model,
               provider: completion.provider,
@@ -341,6 +344,16 @@ Return a valid JSON object containing:
               entityType: 'research_item',
               entityId: item.id,
               actor: 'ai',
+              level: 'ERROR',
+              status: 'FAILED',
+              operation: item.title,
+              correlationId: runId,
+              durationMs: Date.now() - aiStartTime,
+              error: {
+                message: valRes.errors ? valRes.errors.join('; ') : 'AI candidate topic output validation failed',
+                stage: 'JSON Validation',
+                code: 'VALIDATION_FAILED',
+              },
               details: { errors: valRes.errors },
             });
             continue;
@@ -395,6 +408,10 @@ Return a valid JSON object containing:
             entityType: 'content_idea',
             entityId: ideaId,
             actor: 'ai',
+            level: 'SUCCESS',
+            status: 'COMPLETED',
+            operation: topicData.title,
+            correlationId: runId,
             details: {
               title: topicData.title,
               category: mainCategory,
@@ -423,7 +440,18 @@ Return a valid JSON object containing:
             entityType: 'research_item',
             entityId: item.id,
             actor: 'ai',
-            details: { error: aiErrMsg },
+            level: 'ERROR',
+            status: 'FAILED',
+            operation: item.title,
+            correlationId: runId,
+            durationMs: Date.now() - aiStartTime,
+            error: {
+              message: aiErrMsg,
+              stage: 'Workers AI completion',
+              code: 'AI_COMPLETION_ERROR',
+              httpStatus: 500,
+            },
+            details: { title: item.title, error: aiErrMsg },
           });
         }
       }

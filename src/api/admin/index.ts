@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../../index';
 import { requireAdmin } from '../../core/middleware/auth';
+import { auditRouter } from './audit';
 import { contentRouter } from './content';
 import { dashboardRouter } from './dashboard';
 import { facebookRouter } from './facebook';
@@ -22,6 +23,7 @@ export const adminRoutes = new Hono<AppEnv>();
 adminRoutes.use('*', requireAdmin);
 
 // Mount modular domain sub-routers
+adminRoutes.route('/', auditRouter);
 adminRoutes.route('/', dashboardRouter);
 adminRoutes.route('/', researchRouter);
 adminRoutes.route('/', contentRouter);

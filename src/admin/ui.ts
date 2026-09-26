@@ -672,35 +672,93 @@ export function renderAdminHtml(): string {
 
           <!-- TAB: AUDIT LOG -->
           <div id="tab-audit" class="tab-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
               <div>
                 <h1 class="page-title">System Audit Log</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Complete immutable system event ledger and administrative activity trail.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Operational ledger, security events, AI research &amp; execution metrics.</p>
+              </div>
+              <button class="btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.85rem;" onclick="loadAuditData()">
+                🔄 Refresh
+              </button>
+            </div>
+
+            <!-- Operational Summary Statistics Cards -->
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+              <div class="panel" style="padding:1rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Total Events</div>
+                <div id="audit-stat-events" style="font-size:1.5rem; font-weight:700; color:var(--text-main); margin-top:0.25rem;">—</div>
+              </div>
+              <div class="panel" style="padding:1rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Errors</div>
+                <div id="audit-stat-errors" style="font-size:1.5rem; font-weight:700; color:var(--accent-rose); margin-top:0.25rem;">—</div>
+              </div>
+              <div class="panel" style="padding:1rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Warnings</div>
+                <div id="audit-stat-warnings" style="font-size:1.5rem; font-weight:700; color:var(--accent-amber); margin-top:0.25rem;">—</div>
+              </div>
+              <div class="panel" style="padding:1rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">AI Operations</div>
+                <div id="audit-stat-ai" style="font-size:1.5rem; font-weight:700; color:var(--accent-cyan); margin-top:0.25rem;">—</div>
+              </div>
+              <div class="panel" style="padding:1rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">System</div>
+                <div style="font-size:1.1rem; font-weight:700; color:var(--accent-emerald); margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem;">
+                  <span class="status-badge status-healthy">Healthy</span>
+                </div>
               </div>
             </div>
 
             <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">System Audit Log Records</div>
-                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="loadAuditData()">
-                  🔄 Refresh
-                </button>
+              <div class="panel-header" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color);">
+                <!-- Filter Buttons -->
+                <div id="audit-category-filters" style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+                  <button class="btn-secondary audit-cat-btn active" data-category="all" onclick="setAuditCategory('all')">All</button>
+                  <button class="btn-secondary audit-cat-btn" data-category="errors" onclick="setAuditCategory('errors')">Errors</button>
+                  <button class="btn-secondary audit-cat-btn" data-category="warnings" onclick="setAuditCategory('warnings')">Warnings</button>
+                  <button class="btn-secondary audit-cat-btn" data-category="ai" onclick="setAuditCategory('ai')">AI</button>
+                  <button class="btn-secondary audit-cat-btn" data-category="facebook" onclick="setAuditCategory('facebook')">Facebook</button>
+                  <button class="btn-secondary audit-cat-btn" data-category="auth" onclick="setAuditCategory('auth')">Auth</button>
+                  <button class="btn-secondary audit-cat-btn" data-category="system" onclick="setAuditCategory('system')">System</button>
+                </div>
+
+                <!-- Search Input -->
+                <div style="display:flex; align-items:center; gap:0.5rem; min-width:240px;">
+                  <input type="text" id="audit-search-input" class="form-input" style="padding:0.4rem 0.75rem; font-size:0.85rem;" placeholder="Search events, operations..." onkeyup="handleAuditSearch(event)" />
+                  <button class="btn-secondary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="executeAuditSearch()">Search</button>
+                </div>
               </div>
+
               <div class="table-container">
-                <table>
+                <table style="width:100%; table-layout:fixed; border-collapse:collapse;">
                   <thead>
                     <tr>
-                      <th>Event Type</th>
-                      <th>Actor</th>
-                      <th>Entity</th>
-                      <th>Details</th>
-                      <th>Timestamp</th>
+                      <th style="width:110px;">Status</th>
+                      <th style="width:150px;">Event</th>
+                      <th>Operation</th>
+                      <th>Result / Summary</th>
+                      <th style="width:130px; text-align:right;">Time</th>
                     </tr>
                   </thead>
                   <tbody id="full-audit-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading full audit log records...</td></tr>
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading full audit log records...</td></tr>
                   </tbody>
                 </table>
+              </div>
+
+              <!-- Pagination Controls -->
+              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border-color);">
+                <div id="audit-pagination-info" style="font-size:0.825rem; color:var(--text-muted);">
+                  Showing 0 - 0 of 0 events
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <button id="audit-prev-btn" class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="changeAuditPage(-1)" disabled>
+                    Previous
+                  </button>
+                  <span id="audit-page-indicator" style="font-size:0.825rem; color:var(--text-main); font-weight:600;">Page 1</span>
+                  <button id="audit-next-btn" class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="changeAuditPage(1)" disabled>
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
           </div>

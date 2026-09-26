@@ -495,24 +495,119 @@ export function getAdminScripts(): string {
       }
     }
 
-    // Load Full Audit Log Data
+    // Audit Log State
+    let currentAuditPage = 1;
+    let currentAuditCategory = 'all';
+    let currentAuditSearch = '';
+    let currentAuditTotalPages = 1;
+
+    // Load Full Audit Log Data from /api/admin/audit
     async function loadAuditData() {
       try {
-        const res = await fetch('/api/admin/dashboard');
+        const queryParams = new URLSearchParams({
+          page: String(currentAuditPage),
+          pageSize: '25',
+          category: currentAuditCategory,
+          search: currentAuditSearch,
+        });
+
+        const res = await fetch('/api/admin/audit?' + queryParams.toString());
         if (!res.ok) {
           if (res.status === 401) showLoginForm();
           return;
         }
 
         const data = await res.json();
+
+        // Update Summary Stats
+        if (data.stats) {
+          const evEl = document.getElementById('audit-stat-events');
+          if (evEl) evEl.textContent = data.stats.totalEvents || 0;
+          const errEl = document.getElementById('audit-stat-errors');
+          if (errEl) errEl.textContent = data.stats.errorCount || 0;
+          const warnEl = document.getElementById('audit-stat-warnings');
+          if (warnEl) warnEl.textContent = data.stats.warningCount || 0;
+          const aiEl = document.getElementById('audit-stat-ai');
+          if (aiEl) aiEl.textContent = data.stats.aiOperations || 0;
+        }
+
+        // Update Pagination Controls
+        if (data.pagination) {
+          currentAuditTotalPages = data.pagination.totalPages || 1;
+          const start = (data.pagination.page - 1) * data.pagination.pageSize + (data.events.length > 0 ? 1 : 0);
+          const end = Math.min(data.pagination.totalCount, data.pagination.page * data.pagination.pageSize);
+          const infoEl = document.getElementById('audit-pagination-info');
+          if (infoEl) infoEl.textContent = 'Showing ' + start + ' - ' + end + ' of ' + data.pagination.totalCount + ' events';
+
+          const pageInd = document.getElementById('audit-page-indicator');
+          if (pageInd) pageInd.textContent = 'Page ' + data.pagination.page + ' of ' + currentAuditTotalPages;
+
+          const prevBtn = document.getElementById('audit-prev-btn');
+          if (prevBtn) (prevBtn as HTMLButtonElement).disabled = currentAuditPage <= 1;
+
+          const nextBtn = document.getElementById('audit-next-btn');
+          if (nextBtn) (nextBtn as HTMLButtonElement).disabled = currentAuditPage >= currentAuditTotalPages;
+        }
+
         const fullBody = document.getElementById('full-audit-body');
-        if (fullBody && data.recentActivity) {
-          fullBody.innerHTML = renderAuditRows(data.recentActivity);
+        if (fullBody && data.events) {
+          fullBody.innerHTML = renderAuditRows(data.events);
         }
       } catch (err) {
         console.error('Failed to load audit data:', err);
       }
     }
+
+    function setAuditCategory(category: string) {
+      currentAuditCategory = category;
+      currentAuditPage = 1;
+
+      const buttons = document.querySelectorAll('.audit-cat-btn');
+      buttons.forEach(btn => {
+        if (btn.getAttribute('data-category') === category) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      loadAuditData();
+    }
+
+    function executeAuditSearch() {
+      const input = document.getElementById('audit-search-input') as HTMLInputElement | null;
+      currentAuditSearch = input ? input.value.trim() : '';
+      currentAuditPage = 1;
+      loadAuditData();
+    }
+
+    function handleAuditSearch(e: KeyboardEvent) {
+      if (e.key === 'Enter') {
+        executeAuditSearch();
+      }
+    }
+
+    function changeAuditPage(delta: number) {
+      const newPage = currentAuditPage + delta;
+      if (newPage >= 1 && newPage <= currentAuditTotalPages) {
+        currentAuditPage = newPage;
+        loadAuditData();
+      }
+    }
+
+    function toggleAuditDetail(detailId: string) {
+      const row = document.getElementById(detailId);
+      if (row) {
+        row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+      }
+    }
+
+    (window as any).loadAuditData = loadAuditData;
+    (window as any).setAuditCategory = setAuditCategory;
+    (window as any).executeAuditSearch = executeAuditSearch;
+    (window as any).handleAuditSearch = handleAuditSearch;
+    (window as any).changeAuditPage = changeAuditPage;
+    (window as any).toggleAuditDetail = toggleAuditDetail;
 
     // Load Research Tab Data
     async function loadResearchData() {
@@ -1095,44 +1190,137 @@ export function getAdminScripts(): string {
       return monthNames[d.getMonth()] + ' ' + d.getDate() + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     }
 
-    function renderAuditRows(recentActivity) {
-      if (!recentActivity || recentActivity.length === 0) {
-        return '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events recorded</div></td></tr>';
+    function renderAuditRows(events) {
+      if (!events || events.length === 0) {
+        return '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events found</div><div style="font-size:0.8rem; color:var(--text-subtle);">Try adjusting category filters or search queries</div></td></tr>';
       }
 
-      return recentActivity.map(act => {
+      return events.map((act, idx) => {
         const evt = formatAuditEvent(act.eventType);
-        const actorInfo = formatAuditActor(act.actor, act.details);
-        const entInfo = formatAuditEntity(act.entityType, act.entityId);
-        const dtItems = formatAuditDetails(act.details);
         const tsInfo = formatAuditTimestamp(act.timestamp);
+        const level = act.level || (act.status === 'FAILED' ? 'ERROR' : act.status === 'DEFERRED' ? 'WARNING' : 'INFO');
+
+        let statusBadgeClass = 'status-disabled';
+        let statusIcon = '🔵';
+        let statusText = 'Info';
+
+        if (level === 'ERROR' || act.status === 'FAILED') {
+          statusBadgeClass = 'status-alert';
+          statusIcon = '🔴';
+          statusText = 'Failed';
+        } else if (level === 'WARNING' || act.status === 'DEFERRED') {
+          statusBadgeClass = 'status-disabled';
+          statusIcon = '🟡';
+          statusText = 'Warning';
+        } else if (level === 'SUCCESS' || act.status === 'COMPLETED') {
+          statusBadgeClass = 'status-healthy';
+          statusIcon = '🟢';
+          statusText = 'Completed';
+        }
+
+        const operationTitle = act.operation || (act.details && (act.details.title || act.details.sourceName)) || act.entityType + ':' + (act.entityId ? act.entityId.substring(0, 8) : '—');
+
+        let summaryText = '—';
+        if (act.error && act.error.message) {
+          summaryText = (act.error.stage ? act.error.stage + ': ' : '') + act.error.message;
+        } else if (act.details && act.details.error) {
+          summaryText = String(act.details.error);
+        } else if (act.durationMs) {
+          summaryText = evt.title + ' · ' + (act.durationMs / 1000).toFixed(2) + 's';
+        } else if (act.details && act.details.reason) {
+          summaryText = String(act.details.reason);
+        } else {
+          summaryText = evt.title;
+        }
+
+        if (summaryText.length > 55) {
+          summaryText = summaryText.substring(0, 52) + '…';
+        }
+
+        const rowKey = act.id || ('idx-' + idx + '-' + Math.random().toString(36).substring(2, 7));
+        const detailId = 'detail-' + rowKey;
+
+        const safeDetailsJson = escapeHtml(JSON.stringify(act.details || {}, null, 2));
+        const fullErrorMessage = act.error && act.error.message ? escapeHtml(act.error.message) : (act.details && act.details.error ? escapeHtml(String(act.details.error)) : null);
 
         return \`
-          <tr>
+          <tr class="audit-row-clickable" onclick="toggleAuditDetail('\${detailId}')" title="Click to view full technical diagnostic details">
             <td>
-              <div style="display:flex; align-items:center; gap:0.4rem;">
-                <span class="status-badge \${evt.badgeClass}">\${evt.category}</span>
-                <div>
-                  <strong style="font-size:0.875rem; color:var(--text-main);">\${evt.title}</strong>
-                  <div style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;" title="Technical Event Type">\${act.eventType}</div>
-                </div>
+              <span class="status-badge \${statusBadgeClass}" style="white-space:nowrap;">
+                \${statusIcon} \${statusText}
+              </span>
+            </td>
+            <td>
+              <strong style="font-size:0.85rem; color:var(--text-main); display:block; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">\${evt.title}</strong>
+              <span style="font-size:0.7rem; color:var(--text-subtle); font-family:monospace;">\${act.eventType}</span>
+            </td>
+            <td>
+              <div style="font-weight:600; font-size:0.85rem; color:var(--text-main); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="\${escapeHtml(operationTitle)}">
+                \${escapeHtml(operationTitle)}
               </div>
+              <div style="font-size:0.725rem; color:var(--text-subtle);">Actor: \${act.actor || 'system'}</div>
             </td>
-            <td>
-              <span class="status-badge \${actorInfo.badgeClass}">\${actorInfo.label}</span>
-              \${actorInfo.subtext ? \`<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">\${actorInfo.subtext}</div>\` : ''}
+            <td style="word-break:break-word;">
+              <span style="font-size:0.825rem; color:\${level === 'ERROR' ? '#fda4af' : 'var(--text-muted)'};">
+                \${escapeHtml(summaryText)}
+              </span>
             </td>
-            <td>
-              <div style="font-weight:600; font-size:0.825rem;">\${entInfo.typeLabel}</div>
-              <div style="font-size:0.725rem; color:var(--text-subtle); font-family:monospace;" title="\${entInfo.fullId}">\${entInfo.truncatedId}</div>
-            </td>
-            <td>
-              <div class="audit-details-compact">
-                \${dtItems.length > 0 ? dtItems.map(d => \`<span class="detail-pill"><span class="detail-key">\${d.label}:</span> <span class="detail-val">\${d.value}</span></span>\`).join('') : '<span style="color:var(--text-subtle); font-size:0.8rem;">—</span>'}
-              </div>
-            </td>
-            <td style="white-space:nowrap; font-size:0.8rem; color:var(--text-muted);" title="\${tsInfo.full}">
+            <td style="white-space:nowrap; font-size:0.8rem; color:var(--text-muted); text-align:right;" title="\${tsInfo.full}">
               \${tsInfo.compact}
+            </td>
+          </tr>
+          <tr id="\${detailId}" class="audit-detail-row" style="display:none; background:#0a0e17;">
+            <td colspan="5" style="padding: 1rem 1.25rem;">
+              <div class="audit-detail-panel">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid var(--border-color);">
+                  <div>
+                    <h4 style="font-size:1rem; color:var(--text-main); margin-bottom:0.2rem;">\${escapeHtml(operationTitle)}</h4>
+                    <span class="status-badge \${statusBadgeClass}">\${act.eventType} — \${statusText.toUpperCase()}</span>
+                  </div>
+                  <div style="font-size:0.8rem; color:var(--text-muted); text-align:right;">
+                    <strong>Timestamp:</strong> \${tsInfo.full}
+                  </div>
+                </div>
+
+                <div class="audit-detail-grid">
+                  <div class="audit-detail-field">
+                    <span class="audit-detail-label">Stage / Component</span>
+                    <span class="audit-detail-value">\${escapeHtml((act.error && act.error.stage) || (act.details && act.details.stage) || '—')}</span>
+                  </div>
+                  <div class="audit-detail-field">
+                    <span class="audit-detail-label">Model / Provider</span>
+                    <span class="audit-detail-value">\${escapeHtml((act.details && (act.details.model || act.details.provider)) || '—')}</span>
+                  </div>
+                  <div class="audit-detail-field">
+                    <span class="audit-detail-label">Duration</span>
+                    <span class="audit-detail-value">\${act.durationMs ? (act.durationMs / 1000).toFixed(2) + 's (' + act.durationMs + ' ms)' : '—'}</span>
+                  </div>
+                  <div class="audit-detail-field">
+                    <span class="audit-detail-label">HTTP Status</span>
+                    <span class="audit-detail-value">\${(act.error && act.error.httpStatus) || (act.details && act.details.httpStatus) || '—'}</span>
+                  </div>
+                  <div class="audit-detail-field">
+                    <span class="audit-detail-label">Correlation ID</span>
+                    <span class="audit-detail-value" style="font-family:monospace; font-size:0.8rem;">\${escapeHtml(act.correlationId || '—')}</span>
+                  </div>
+                  <div class="audit-detail-field">
+                    <span class="audit-detail-label">Entity</span>
+                    <span class="audit-detail-value" style="font-family:monospace; font-size:0.8rem;">\${act.entityType}:\${act.entityId}</span>
+                  </div>
+                </div>
+
+                \${fullErrorMessage ? \`
+                  <div style="margin-top:0.75rem;">
+                    <span class="audit-detail-label" style="color:var(--accent-rose);">Diagnostic Error Details</span>
+                    <div class="audit-error-box">\${fullErrorMessage}</div>
+                  </div>
+                \` : ''}
+
+                <details style="margin-top:1rem;">
+                  <summary style="font-size:0.8rem; color:var(--accent-blue); cursor:pointer; font-weight:600;">View Raw Event Payload JSON</summary>
+                  <pre style="background:#05070c; padding:0.75rem; border-radius:6px; border:1px solid var(--border-color); font-size:0.775rem; color:var(--text-muted); margin-top:0.5rem; max-height:200px; overflow:auto;">\${safeDetailsJson}</pre>
+                </details>
+              </div>
             </td>
           </tr>
         \`;
