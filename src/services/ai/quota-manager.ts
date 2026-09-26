@@ -20,9 +20,9 @@ export const CONTENT_CREATOR_DAILY_NEURON_TARGET = 5000;
 export type BudgetState = 'NORMAL' | 'CONTROLLED' | 'RESTRICTED' | 'HARD_STOP';
 
 export const DEFAULT_AI_LIMITS = {
-  maxRequestsPerRun: 5,
-  maxRequestsPerDay: 50,
-  maxRequestsPerMonth: 1000,
+  maxRequestsPerRun: 25,
+  maxRequestsPerDay: 300,
+  maxRequestsPerMonth: 5000,
   maxNeuronsPerDay: CONTENT_CREATOR_DAILY_NEURON_HARD_LIMIT,
 };
 
