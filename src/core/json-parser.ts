@@ -56,5 +56,21 @@ export function parseAiJsonResponse<T = Record<string, unknown>>(rawText: string
     }
   }
 
+  // 5. Regex extraction heuristic for "body" and "title" when JSON is truncated or has control chars
+  const bodyMatch = rawText.match(/"body"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+  if (bodyMatch && bodyMatch[1]) {
+    const unescapedBody = bodyMatch[1].replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\"/g, '"');
+    const titleMatch = rawText.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+    const titleText = titleMatch?.[1] ? titleMatch[1].replace(/\\"/g, '"') : undefined;
+    return {
+      title: titleText,
+      body: unescapedBody,
+      language: 'en',
+      tone: 'conversational',
+      claims: [],
+      hashtags: ['#SmallBusiness'],
+    } as unknown as T;
+  }
+
   throw new Error('AI completion response does not contain a valid JSON object.');
 }

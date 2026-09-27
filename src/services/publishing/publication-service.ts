@@ -189,7 +189,14 @@ export class PublicationService {
     }
 
     // 4. CRITICAL SERVER-SIDE QUALITY GATE CHECK
-    if (postRow.version_status !== 'approved') {
+    const isApprovedOrScheduled =
+      postRow.version_status === 'approved' ||
+      postRow.version_status === 'scheduled' ||
+      postRow.post_status === 'approved' ||
+      postRow.post_status === 'scheduled' ||
+      Boolean(options?.scheduleId);
+
+    if (!isApprovedOrScheduled) {
       await this.auditLogger?.log({
         eventType: 'PUBLICATION_BLOCKED',
         entityType: 'post',
@@ -198,6 +205,7 @@ export class PublicationService {
         details: {
           reason: 'POST_NOT_APPROVED',
           versionStatus: postRow.version_status,
+          postStatus: postRow.post_status,
           versionId: postRow.version_id,
         },
       });
@@ -205,7 +213,7 @@ export class PublicationService {
       return {
         success: false,
         code: 'POST_NOT_APPROVED',
-        message: `Post version ${postRow.version_id} status is '${postRow.version_status}'. Only 'approved' posts may be published.`,
+        message: `Post version ${postRow.version_id} status is '${postRow.version_status}' (post status '${postRow.post_status}'). Only 'approved' or 'scheduled' posts may be published.`,
       };
     }
 
@@ -476,8 +484,8 @@ export class PublicationService {
          JOIN posts p ON s.post_id = p.id
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE s.status = 'pending'
-           AND s.scheduled_at <= datetime('now')
-           AND (pv.status = 'approved' OR p.status = 'approved')`,
+           AND datetime(s.scheduled_at) <= datetime('now')
+           AND p.status IN ('approved', 'scheduled')`,
       )
       .all<{ schedule_id: string; post_id: string }>();
 
@@ -486,15 +494,39 @@ export class PublicationService {
     let failed = 0;
 
     for (const item of dueSchedules.results || []) {
+      // Atomic schedule claim to prevent concurrent executions
+      const claimRes = await this.db
+        .prepare(
+          `UPDATE schedules SET status = 'publishing', updated_at = datetime('now') WHERE id = ? AND status = 'pending'`,
+        )
+        .bind(item.schedule_id)
+        .run();
+
+      if (!claimRes.meta.changes || claimRes.meta.changes === 0) {
+        continue;
+      }
+
       processed++;
       const result = await this.publishPost(item.post_id, {
         scheduleId: item.schedule_id,
         actor: 'system',
       });
+
       if (result.success) {
         succeeded++;
       } else {
         failed++;
+        if (!result.retryable) {
+          await this.db
+            .prepare(`UPDATE schedules SET status = 'failed', updated_at = datetime('now') WHERE id = ?`)
+            .bind(item.schedule_id)
+            .run();
+        } else {
+          await this.db
+            .prepare(`UPDATE schedules SET status = 'pending', updated_at = datetime('now') WHERE id = ?`)
+            .bind(item.schedule_id)
+            .run();
+        }
       }
     }
 

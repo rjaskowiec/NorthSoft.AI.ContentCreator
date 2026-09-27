@@ -132,6 +132,7 @@ Return ONLY a valid JSON object matching this schema:
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.3,
+        maxTokens: 1500,
         responseFormat: 'json',
       });
 

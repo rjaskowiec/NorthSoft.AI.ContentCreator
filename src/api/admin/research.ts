@@ -8,6 +8,7 @@ import { getAIProvider } from '../../ai/factory';
 import { csrfProtection } from '../../core/auth/csrf';
 import { QuotaManager } from '../../services/ai/quota-manager';
 import { ResearchService } from '../../services/research/research-service';
+import { D1AuditLogger } from '../../core/audit';
 
 export const researchRouter = new Hono<AppEnv>();
 
@@ -204,17 +205,31 @@ researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) 
     ids?: string[];
   };
 
-  const ids = Array.isArray(body.ids) ? body.ids : [];
+  const ids = Array.isArray(body.ids) ? body.ids.filter((i): i is string => typeof i === 'string' && i.trim().length > 0) : [];
   if (ids.length === 0) {
-    return c.json({ error: 'Missing required field: ids (array)' }, 400);
+    return c.json({ success: false, error: 'Missing required field: ids (non-empty array)' }, 400);
   }
 
-  for (const id of ids) {
-    await db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id).run();
-    await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
-  }
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    await db.batch([
+      db.prepare(`UPDATE posts SET idea_id = NULL WHERE idea_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM content_topic_history WHERE idea_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM content_ideas WHERE id IN (${placeholders})`).bind(...ids),
+    ]);
+    return c.json({ success: true, count: ids.length });
+  } catch (err: unknown) {
+    const errorLogger = new D1AuditLogger(db);
+    await errorLogger.log({
+      eventType: 'SYSTEM_ERROR',
+      entityType: 'topic',
+      entityId: 'bulk',
+      actor: 'admin',
+      details: { action: 'bulk-delete', count: ids.length, error: err instanceof Error ? err.message : String(err) },
+    }).catch(() => {});
 
-  return c.json({ success: true, count: ids.length });
+    return c.json({ success: false, error: 'Unable to bulk delete selected topics' }, 500);
+  }
 });
 
 /**
@@ -286,9 +301,28 @@ researchRouter.delete('/research/topics/:id', csrfProtection, async (c) => {
   const db = c.env.DB;
   const id = c.req.param('id');
 
-  await db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id).run();
-  await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
+  if (!id) {
+    return c.json({ success: false, error: 'Invalid topic ID' }, 400);
+  }
 
-  return c.json({ success: true, id });
+  try {
+    await db.batch([
+      db.prepare('UPDATE posts SET idea_id = NULL WHERE idea_id = ?').bind(id),
+      db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id),
+      db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id),
+    ]);
+    return c.json({ success: true, id });
+  } catch (err: unknown) {
+    const errorLogger = new D1AuditLogger(db);
+    await errorLogger.log({
+      eventType: 'SYSTEM_ERROR',
+      entityType: 'topic',
+      entityId: id,
+      actor: 'admin',
+      details: { action: 'single-delete', error: err instanceof Error ? err.message : String(err) },
+    }).catch(() => {});
+
+    return c.json({ success: false, error: 'Unable to delete selected topic' }, 500);
+  }
 });
 

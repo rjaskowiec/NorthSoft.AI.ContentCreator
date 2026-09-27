@@ -79,12 +79,13 @@ function createMockDb() {
       };
     }
 
-    if (normSql.startsWith('DELETE FROM content_ideas WHERE id =')) {
+    if (normSql.includes('DELETE FROM content_ideas')) {
       return {
         bind: vi.fn((...args: unknown[]) => ({
           run: vi.fn().mockImplementation(async () => {
-            const id = args[0] as string;
-            topicsMap.delete(id);
+            for (const arg of args) {
+              if (typeof arg === 'string') topicsMap.delete(arg);
+            }
             return { success: true };
           }),
         })),
@@ -151,12 +152,13 @@ function createMockDb() {
       };
     }
 
-    if (normSql.startsWith('DELETE FROM posts WHERE id =')) {
+    if (normSql.includes('DELETE FROM posts')) {
       return {
         bind: vi.fn((...args: unknown[]) => ({
           run: vi.fn().mockImplementation(async () => {
-            const id = args[0] as string;
-            postsMap.delete(id);
+            for (const arg of args) {
+              if (typeof arg === 'string') postsMap.delete(arg);
+            }
             return { success: true };
           }),
         })),
@@ -193,7 +195,16 @@ function createMockDb() {
     };
   });
 
-  return { prepare } as unknown as D1Database;
+  const batch = vi.fn(async (statements: Array<{ run?: () => Promise<unknown> }>) => {
+    for (const stmt of statements) {
+      if (stmt && typeof stmt.run === 'function') {
+        await stmt.run();
+      }
+    }
+    return [];
+  });
+
+  return { prepare, batch } as unknown as D1Database;
 }
 
 const authHeaders = {

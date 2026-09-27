@@ -4,9 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-25",
 
-  // Cron Triggers (Daily automated research run)
+  // Cron Triggers (Automated 5-minute publication scheduler check & daily research run)
   "triggers": {
-    "crons": ["0 8 * * *"]
+    "crons": ["*/5 * * * *"]
   },
 
   // D1 Database bindings

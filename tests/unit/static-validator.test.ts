@@ -76,4 +76,109 @@ describe('StaticValidator — Deterministic Content Rules', () => {
     expect(res.valid).toBe(false);
     expect(res.errors[0]).toContain('missing associated research source references');
   });
+
+  describe('Structural Discrepancy Validation (Declared Count vs List Items)', () => {
+    it('fails when draft claims "5 key takeaways" but only contains 3 bullet points', () => {
+      const discrepancyDraft: PostDraft = {
+        ...validDraft,
+        body:
+          'Want to know the secret to building a marketing team that can handle it all?\n' +
+          'Learn how AI can help you automate tasks, save time, and focus on high-leverage activities.\n\n' +
+          'Here are 5 key takeaways to get you started:\n\n' +
+          '• Build a team of specialist agents for research, writing, design, and analytics\n' +
+          '• Automate repetitive tasks to free up more time for strategy and creativity\n' +
+          '• Focus on high-leverage activities that drive real results\n\n' +
+          'How can you start leveraging AI to build your dream marketing team?',
+      };
+
+      const res = validator.validate(discrepancyDraft);
+      expect(res.valid).toBe(false);
+      expect(res.errors.some((e) => e.includes('claims 5 takeaways but body contains 3 list items'))).toBe(true);
+    });
+
+    it('passes when draft claims "5 key takeaways" and contains exactly 5 bullet points', () => {
+      const valid5Draft: PostDraft = {
+        ...validDraft,
+        body:
+          'Want to know the secret to building a marketing team that can handle it all?\n' +
+          'Learn how AI can help you automate tasks, save time, and focus on high-leverage activities.\n\n' +
+          'Here are 5 key takeaways to get you started:\n\n' +
+          '• Item 1: Build a team of specialist agents for research and writing\n' +
+          '• Item 2: Automate repetitive tasks to free up time for strategy\n' +
+          '• Item 3: Focus on high-leverage activities that drive results\n' +
+          '• Item 4: Implement continuous feedback loops across all agents\n' +
+          '• Item 5: Measure business impact and scale top performing content\n\n' +
+          'How can you start leveraging AI today?',
+      };
+
+      const res = validator.validate(valid5Draft);
+      expect(res.valid).toBe(true);
+    });
+
+    it('passes when draft claims "3 reasons" and contains exactly 3 numbered items', () => {
+      const numbered3Draft: PostDraft = {
+        ...validDraft,
+        body:
+          'Here are 3 reasons why serverless compute is transforming modern web development:\n\n' +
+          '1. Instant global scaling without managing servers or Kubernetes clusters.\n' +
+          '2. Zero cold starts when running logic directly at edge data centers.\n' +
+          '3. Significant cost savings by paying strictly for execution duration.\n\n' +
+          'Start deploying your application to the edge today!',
+      };
+
+      const res = validator.validate(numbered3Draft);
+      expect(res.valid).toBe(true);
+    });
+
+    it('fails when draft claims "3 reasons" but contains only 2 numbered items', () => {
+      const discrepancy3Draft: PostDraft = {
+        ...validDraft,
+        body:
+          'Here are 3 reasons why serverless compute is transforming modern web development:\n\n' +
+          '1. Instant global scaling without managing servers.\n' +
+          '2. Zero cold starts when running logic directly at edge.\n\n' +
+          'Start deploying today!',
+      };
+
+      const res = validator.validate(discrepancy3Draft);
+      expect(res.valid).toBe(false);
+      expect(res.errors.some((e) => e.includes('claims 3 reasons but body contains 2 list items'))).toBe(true);
+    });
+
+    it('fails when draft claims "7 ways" but contains only 4 bullet points', () => {
+      const discrepancy7Draft: PostDraft = {
+        ...validDraft,
+        body:
+          'Here are 7 ways to scale your business with edge computing:\n\n' +
+          '- Way 1: Global caching\n' +
+          '- Way 2: Edge databases\n' +
+          '- Way 3: Automated image optimization\n' +
+          '- Way 4: Fine-grained security headers\n\n' +
+          'Try these strategies now!',
+      };
+
+      const res = validator.validate(discrepancy7Draft);
+      expect(res.valid).toBe(false);
+      expect(res.errors.some((e) => e.includes('claims 7 ways but body contains 4 list items'))).toBe(true);
+    });
+
+    it('passes when draft claims "7 ways" and contains exactly 7 bullet points', () => {
+      const valid7Draft: PostDraft = {
+        ...validDraft,
+        body:
+          'Here are 7 ways to scale your business with edge computing:\n\n' +
+          '- Way 1: Global caching\n' +
+          '- Way 2: Edge databases\n' +
+          '- Way 3: Automated image optimization\n' +
+          '- Way 4: Fine-grained security headers\n' +
+          '- Way 5: Zero cold starts\n' +
+          '- Way 6: Low latency routing\n' +
+          '- Way 7: Reduced infrastructure costs\n\n' +
+          'Try these strategies now!',
+      };
+
+      const res = validator.validate(valid7Draft);
+      expect(res.valid).toBe(true);
+    });
+  });
 });

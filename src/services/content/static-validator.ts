@@ -31,6 +31,21 @@ export const PLACEHOLDER_PATTERNS = [
   /TODO:/i,
 ];
 
+export const DECLARED_COUNT_PATTERN =
+  /\b(?:here\s+are\s+)?(\d{1,2})\s+(?:[a-z-]+\s+){0,3}(takeaways|tips|reasons|ways|steps|ideas|benefits|mistakes|things|insights|rules|hacks|strategies|lessons)\b/i;
+
+export function countListItems(body: string): number {
+  if (!body) return 0;
+  const lines = body.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  let count = 0;
+  for (const line of lines) {
+    if (/^[\u2022\u25cf\u25cb\u25a0\u2013\u2014\-*+]\s+/.test(line) || /^\d+[.)]\s+/.test(line)) {
+      count++;
+    }
+  }
+  return count;
+}
+
 export class StaticValidator {
   /**
    * Evaluates deterministic validation rules against a generated post draft.
@@ -101,6 +116,21 @@ export class StaticValidator {
     const uniqueSentences = new Set(sentences);
     if (sentences.length - uniqueSentences.size > 0) {
       errors.push('Post body contains repeated duplicate sentences.');
+    }
+
+    // 8. Deterministic Structural Discrepancy Check (Declared count vs Detected list items)
+    const combinedText = `${draft.title || ''}\n${draft.body || ''}`;
+    const declaredMatch = combinedText.match(DECLARED_COUNT_PATTERN);
+    if (declaredMatch && declaredMatch[1]) {
+      const declaredCount = parseInt(declaredMatch[1], 10);
+      const itemType = declaredMatch[2] || 'items';
+      const detectedCount = countListItems(draft.body);
+
+      if (detectedCount > 0 && declaredCount !== detectedCount) {
+        errors.push(
+          `Structural discrepancy: text claims ${declaredCount} ${itemType} but body contains ${detectedCount} list items.`,
+        );
+      }
     }
 
     return {

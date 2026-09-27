@@ -119,29 +119,13 @@ export class ContentPlannerService {
       };
     }
 
-    const postId = crypto.randomUUID();
+    let postId: string | undefined = undefined;
+    let postCreatedInDb = false;
     let currentVersion = 0;
     let finalDecision: 'PASS' | 'FAIL' | 'BLOCKED' = 'FAIL';
     let finalScore = 0;
     let lastDraft: PostDraft | undefined;
     let runErrorMessage: string | undefined;
-
-    // 4. Initial Post Record Creation
-    await this.db
-      .prepare(
-        `INSERT INTO posts (id, idea_id, title, status, current_version, regeneration_count, created_at, updated_at)
-         VALUES (?, ?, ?, 'draft', 1, 0, ?, ?)`,
-      )
-      .bind(postId, topicId, topicRow.title, nowIso, nowIso)
-      .run();
-
-    await this.auditLogger.log({
-      eventType: 'POST_GENERATION_STARTED',
-      entityType: 'post',
-      entityId: postId,
-      actor,
-      details: { topicTitle: topicRow.title },
-    });
 
     const writerProvider = getAIProvider(this.env, 'writer');
     const qaProvider = getAIProvider(this.env, 'qa');
@@ -149,7 +133,22 @@ export class ContentPlannerService {
     const writerService = new WriterService(this.db, writerProvider);
     const qaService = new QualityReviewerService(this.db, qaProvider);
 
-    // 5. Generation & Bounded Regeneration Loop (Max 3 attempts = 2 retries)
+    // Helper to execute DB batch or sequential statements safely
+    const executeBatch = async (statements: unknown[]) => {
+      const dbAny = this.db as unknown as { batch?: (stmts: unknown[]) => Promise<unknown> };
+      if (typeof dbAny.batch === 'function') {
+        await dbAny.batch(statements);
+      } else {
+        for (const stmt of statements) {
+          const s = stmt as { run?: () => Promise<unknown> };
+          if (s && typeof s.run === 'function') {
+            await s.run();
+          }
+        }
+      }
+    };
+
+    // 4. Generation & Bounded Regeneration Loop (Max 3 attempts = 2 retries)
     for (let attempt = 1; attempt <= 3; attempt++) {
       currentVersion = attempt;
 
@@ -167,16 +166,18 @@ export class ContentPlannerService {
           break;
         }
 
-        await this.auditLogger.log({
-          eventType: 'POST_REGENERATION_STARTED',
-          entityType: 'post',
-          entityId: postId,
-          actor,
-          details: { attemptNumber: attempt },
-        });
+        if (postId) {
+          await this.auditLogger.log({
+            eventType: 'POST_REGENERATION_STARTED',
+            entityType: 'post',
+            entityId: postId,
+            actor,
+            details: { attemptNumber: attempt },
+          });
+        }
       }
 
-      // 5a. Call Writer AI
+      // 4a. Call Writer AI BEFORE inserting post record in DB
       const genRes = await writerService.generateDraft(topicRow, sources);
       if (genRes.deferred) {
         runErrorMessage = `Writer deferred: ${genRes.error}`;
@@ -188,29 +189,77 @@ export class ContentPlannerService {
       }
 
       lastDraft = genRes.draft;
+      const metadataJson = JSON.stringify({
+        claims: lastDraft.claims,
+        hashtags: lastDraft.hashtags,
+        cta: lastDraft.callToAction,
+      });
 
-      // 5b. Persist Version in post_versions (Never overwrite previous versions!)
+      // 4b. Persist Post & Version in D1 atomically
       const versionId = crypto.randomUUID();
-      await this.db
-        .prepare(
-          `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
-           VALUES (?, ?, ?, ?, 'text', ?, ?, ?, ?)`,
-        )
-        .bind(
-          versionId,
-          postId,
-          attempt,
-          lastDraft.body,
-          JSON.stringify({
-            claims: lastDraft.claims,
-            hashtags: lastDraft.hashtags,
-            cta: lastDraft.callToAction,
-          }),
-          'llama-3.1-8b-instruct',
-          writerProvider.name,
-          new Date().toISOString(),
-        )
-        .run();
+      const versionCreatedAt = new Date().toISOString();
+
+      if (!postCreatedInDb) {
+        postId = crypto.randomUUID();
+
+        await executeBatch([
+          this.db
+            .prepare(
+              `INSERT INTO posts (id, idea_id, title, status, current_version, regeneration_count, created_at, updated_at)
+               VALUES (?, ?, ?, 'draft', 1, 0, ?, ?)`,
+            )
+            .bind(postId, topicId, topicRow.title, nowIso, nowIso),
+          this.db
+            .prepare(
+              `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+               VALUES (?, ?, ?, ?, 'text', ?, ?, ?, ?)`,
+            )
+            .bind(
+              versionId,
+              postId,
+              attempt,
+              lastDraft.body,
+              metadataJson,
+              'llama-3.1-8b-instruct',
+              writerProvider.name,
+              versionCreatedAt,
+            ),
+        ]);
+
+        postCreatedInDb = true;
+
+        await this.auditLogger.log({
+          eventType: 'POST_GENERATION_STARTED',
+          entityType: 'post',
+          entityId: postId,
+          actor,
+          details: { topicTitle: topicRow.title },
+        });
+      } else {
+        // Subsequent regeneration attempt
+        await executeBatch([
+          this.db
+            .prepare(
+              `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+               VALUES (?, ?, ?, ?, 'text', ?, ?, ?, ?)`,
+            )
+            .bind(
+              versionId,
+              postId!,
+              attempt,
+              lastDraft.body,
+              metadataJson,
+              'llama-3.1-8b-instruct',
+              writerProvider.name,
+              versionCreatedAt,
+            ),
+          this.db
+            .prepare(
+              `UPDATE posts SET current_version = ?, regeneration_count = ?, updated_at = ? WHERE id = ?`,
+            )
+            .bind(attempt, attempt - 1, new Date().toISOString(), postId!),
+        ]);
+      }
 
       await this.auditLogger.log({
         eventType: 'POST_GENERATED',
@@ -220,7 +269,7 @@ export class ContentPlannerService {
         details: { versionNumber: attempt, bodyLength: lastDraft.body.length },
       });
 
-      // 5c. Static Validation
+      // 4c. Static Validation
       const staticResult = this.staticValidator.validate(lastDraft);
       if (!staticResult.valid) {
         await this.auditLogger.log({
@@ -240,7 +289,7 @@ export class ContentPlannerService {
         });
       }
 
-      // 5d. Policy Review
+      // 4d. Policy Review
       await this.auditLogger.log({
         eventType: 'POLICY_REVIEW_STARTED',
         entityType: 'post_version',
@@ -268,7 +317,7 @@ export class ContentPlannerService {
         });
       }
 
-      // 5e. Independent QA Review
+      // 4e. Independent QA Review
       await this.auditLogger.log({
         eventType: 'QA_STARTED',
         entityType: 'post_version',
@@ -296,7 +345,7 @@ export class ContentPlannerService {
         )
         .bind(
           checkId,
-          postId,
+          postId!,
           versionId,
           attempt,
           qaReview.verdict,
@@ -331,7 +380,7 @@ export class ContentPlannerService {
         });
       }
 
-      // 5f. Evaluate Quality Gate Decision
+      // 4f. Evaluate Quality Gate Decision
       finalDecision = evaluatePipelineGate({
         staticValid: staticResult.valid,
         qaVerdict: qaReview.verdict,
@@ -348,7 +397,7 @@ export class ContentPlannerService {
              SET status = 'approved', current_version = ?, quality_score = ?, quality_decision = 'PASS', updated_at = ?
              WHERE id = ?`,
           )
-          .bind(attempt, finalScore, new Date().toISOString(), postId)
+          .bind(attempt, finalScore, new Date().toISOString(), postId!)
           .run();
 
         // Update content_ideas status to used
@@ -360,13 +409,13 @@ export class ContentPlannerService {
         await this.auditLogger.log({
           eventType: 'POST_APPROVED',
           entityType: 'post',
-          entityId: postId,
+          entityId: postId!,
           actor: 'system',
           details: { finalScore, attemptNumber: attempt },
         });
 
         return {
-          postId,
+          postId: postId!,
           topicId,
           status: 'approved',
           currentVersion: attempt,
@@ -382,41 +431,29 @@ export class ContentPlannerService {
       }
     }
 
-    // 6. Handle Rejection or Permanent Block
-    const finalPostStatus = finalDecision === 'BLOCKED' ? 'blocked' : 'rejected';
+    // 5. Handle Case Where Generation Failed — Clean up any created D1 rows so NO incomplete post remains
+    if (postCreatedInDb && postId) {
+      await executeBatch([
+        this.db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(postId),
+        this.db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(postId),
+        this.db.prepare('DELETE FROM posts WHERE id = ?').bind(postId),
+      ]);
+    }
+
     const blockReason =
       runErrorMessage || `Failed quality gate evaluation after ${currentVersion} attempts.`;
 
-    await this.db
-      .prepare(
-        `UPDATE posts
-         SET status = ?, current_version = ?, quality_score = ?, quality_decision = ?, blocked_at = ?, blocked_reason = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(
-        finalPostStatus,
-        currentVersion,
-        finalScore,
-        finalDecision,
-        finalPostStatus === 'blocked' ? new Date().toISOString() : null,
-        blockReason.substring(0, 500),
-        new Date().toISOString(),
-        postId,
-      )
-      .run();
-
     await this.auditLogger.log({
-      eventType: 'POST_BLOCKED',
-      entityType: 'post',
-      entityId: postId,
-      actor: 'system',
-      details: { decision: finalDecision, reason: blockReason },
+      eventType: 'WORKFLOW_FAILED',
+      entityType: 'content_idea',
+      entityId: topicId,
+      actor,
+      details: { reason: blockReason, currentVersion },
     });
 
     return {
-      postId,
       topicId,
-      status: finalPostStatus,
+      status: 'failed',
       currentVersion,
       qualityScore: finalScore,
       qualityDecision: finalDecision,

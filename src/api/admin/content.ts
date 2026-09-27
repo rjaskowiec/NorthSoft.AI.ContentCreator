@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../../index';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ContentPlannerService } from '../../services/content/content-planner-service';
+import { D1AuditLogger } from '../../core/audit';
 
 export const contentRouter = new Hono<AppEnv>();
 
@@ -19,14 +20,27 @@ contentRouter.post('/content/generate', csrfProtection, async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { topicId?: string };
 
   if (!body.topicId || typeof body.topicId !== 'string') {
-    return c.json({ error: 'Missing required string field: topicId' }, 400);
+    return c.json({ success: false, error: 'Missing required string field: topicId' }, 400);
   }
 
   const planner = new ContentPlannerService(db, c.env);
   const result = await planner.generatePostFromTopic(body.topicId, 'admin');
 
+  if (result.status === 'failed' && !result.postId) {
+    return c.json(
+      {
+        success: false,
+        error: result.errorMessage || 'AI post generation failed.',
+        result,
+      },
+      500,
+    );
+  }
+
+  const isSuccess = result.status === 'approved' || (!!result.postId && result.status !== 'failed');
+
   return c.json({
-    success: result.status === 'approved',
+    success: isSuccess,
     result,
   });
 });
@@ -191,19 +205,35 @@ contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => 
     ids?: string[];
   };
 
-  const ids = Array.isArray(body.ids) ? body.ids : [];
+  const ids = Array.isArray(body.ids) ? body.ids.filter((i): i is string => typeof i === 'string' && i.trim().length > 0) : [];
   if (ids.length === 0) {
-    return c.json({ error: 'Missing required field: ids (array)' }, 400);
+    return c.json({ success: false, error: 'Missing required field: ids (non-empty array)' }, 400);
   }
 
-  for (const id of ids) {
-    await db.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
-    await db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id).run();
-    await db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(id).run();
-    await db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id).run();
-  }
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    await db.batch([
+      db.prepare(`DELETE FROM publications WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM schedules WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM quality_checks WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM post_sources WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`UPDATE content_topic_history SET post_id = NULL WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM post_versions WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM posts WHERE id IN (${placeholders})`).bind(...ids),
+    ]);
+    return c.json({ success: true, count: ids.length });
+  } catch (err: unknown) {
+    const errorLogger = new D1AuditLogger(db);
+    await errorLogger.log({
+      eventType: 'SYSTEM_ERROR',
+      entityType: 'post',
+      entityId: 'bulk',
+      actor: 'admin',
+      details: { action: 'bulk-delete', count: ids.length, error: err instanceof Error ? err.message : String(err) },
+    }).catch(() => {});
 
-  return c.json({ success: true, count: ids.length });
+    return c.json({ success: false, error: 'Unable to bulk delete selected post drafts' }, 500);
+  }
 });
 
 /**
@@ -267,12 +297,33 @@ contentRouter.delete('/content/posts/:id', csrfProtection, async (c) => {
   const db = c.env.DB;
   const id = c.req.param('id');
 
-  await db.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
-  await db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id).run();
-  await db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(id).run();
-  await db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id).run();
+  if (!id) {
+    return c.json({ success: false, error: 'Invalid post ID' }, 400);
+  }
 
-  return c.json({ success: true, id });
+  try {
+    await db.batch([
+      db.prepare('DELETE FROM publications WHERE post_id = ?').bind(id),
+      db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id),
+      db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(id),
+      db.prepare('DELETE FROM post_sources WHERE post_id = ?').bind(id),
+      db.prepare('UPDATE content_topic_history SET post_id = NULL WHERE post_id = ?').bind(id),
+      db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id),
+      db.prepare('DELETE FROM posts WHERE id = ?').bind(id),
+    ]);
+    return c.json({ success: true, id });
+  } catch (err: unknown) {
+    const errorLogger = new D1AuditLogger(db);
+    await errorLogger.log({
+      eventType: 'SYSTEM_ERROR',
+      entityType: 'post',
+      entityId: id,
+      actor: 'admin',
+      details: { action: 'single-delete', error: err instanceof Error ? err.message : String(err) },
+    }).catch(() => {});
+
+    return c.json({ success: false, error: 'Unable to delete selected post draft' }, 500);
+  }
 });
 
 /**
