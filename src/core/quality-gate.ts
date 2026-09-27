@@ -112,10 +112,11 @@ export function evaluateQualityGate(result: QualityGateResult): QualityDecision 
 
 /**
  * Pipeline Quality Gate evaluation for Phase 3B.
- * Combines Static Validation, QA Review, Policy Review, and Quota compliance.
+ * Combines Static Validation, Content Quality Gate, QA Review, Policy Review, and Quota compliance.
  */
 export function evaluatePipelineGate(input: {
   staticValid: boolean;
+  contentQualityPassed?: boolean;
   qaVerdict: 'PASS' | 'FAIL';
   qaScore: number;
   policyPassed: boolean;
@@ -123,6 +124,10 @@ export function evaluatePipelineGate(input: {
 }): QualityDecision {
   if (!input.staticValid) {
     return 'FAIL';
+  }
+
+  if (input.contentQualityPassed === false) {
+    return input.attemptNumber >= MAX_REGENERATION_ATTEMPTS ? 'BLOCKED' : 'FAIL';
   }
 
   if (!input.policyPassed) {

@@ -10,6 +10,7 @@
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import { evaluatePipelineGate } from '../../core/quality-gate';
 import { getAIProvider } from '../../ai/factory';
+import { ContentQualityGate } from './content-quality-gate';
 import { PolicyReviewService } from './policy-service';
 import { QualityReviewerService } from './qa-service';
 import { StaticValidator } from './static-validator';
@@ -35,6 +36,7 @@ export interface GenerationResultSummary {
 export class ContentPlannerService {
   private quotaManager: QuotaManager;
   private staticValidator: StaticValidator;
+  private contentQualityGate: ContentQualityGate;
   private policyService: PolicyReviewService;
   private auditLogger: IAuditLogger;
 
@@ -45,6 +47,7 @@ export class ContentPlannerService {
   ) {
     this.quotaManager = new QuotaManager();
     this.staticValidator = new StaticValidator();
+    this.contentQualityGate = new ContentQualityGate();
     this.policyService = new PolicyReviewService();
     this.auditLogger = auditLogger ?? new D1AuditLogger(db);
   }
@@ -289,6 +292,26 @@ export class ContentPlannerService {
         });
       }
 
+      // 4c-2. Content Quality Gate (Semantic Substance & Anti-Filler Check)
+      const contentQualityResult = this.contentQualityGate.evaluate(lastDraft, topicRow.title);
+      if (!contentQualityResult.passed) {
+        await this.auditLogger.log({
+          eventType: 'CONTENT_QUALITY_GATE_FAILED',
+          entityType: 'post_version',
+          entityId: versionId,
+          actor: 'system',
+          details: { reasons: contentQualityResult.reasons, score: contentQualityResult.score },
+        });
+      } else {
+        await this.auditLogger.log({
+          eventType: 'CONTENT_QUALITY_GATE_PASSED',
+          entityType: 'post_version',
+          entityId: versionId,
+          actor: 'system',
+          details: { score: contentQualityResult.score },
+        });
+      }
+
       // 4d. Policy Review
       await this.auditLogger.log({
         eventType: 'POLICY_REVIEW_STARTED',
@@ -352,9 +375,10 @@ export class ContentPlannerService {
           qaReview.score,
           JSON.stringify({
             factual_accuracy: qaReview.verdict,
+            content_quality: contentQualityResult.passed ? 'PASS' : 'FAIL',
             policy_risk: policyResult.passed ? 'PASS' : 'FAIL',
           }),
-          JSON.stringify(qaReview.factualIssues),
+          JSON.stringify(qaReview.factualIssues.concat(contentQualityResult.reasons)),
           JSON.stringify(qaReview.requiredChanges),
           'llama-3.1-8b-instruct',
           qaProvider.name,
@@ -383,6 +407,7 @@ export class ContentPlannerService {
       // 4f. Evaluate Quality Gate Decision
       finalDecision = evaluatePipelineGate({
         staticValid: staticResult.valid,
+        contentQualityPassed: contentQualityResult.passed,
         qaVerdict: qaReview.verdict,
         qaScore: qaReview.score,
         policyPassed: policyResult.passed,
