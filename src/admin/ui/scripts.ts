@@ -2939,19 +2939,41 @@ export function getAdminScripts(): string {
 
       try {
         if (type === 'topic' && id) {
-          await fetch('/api/admin/research/topics/' + encodeURIComponent(id), { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
-          loadResearchData();
+          const res = await fetch('/api/admin/research/topics/' + encodeURIComponent(id), {
+            method: 'DELETE',
+            headers: { 'x-csrf-token': csrfToken }
+          });
+          if (res.ok) {
+            loadResearchData();
+          }
         } else if (type === 'topics_bulk' && selectedTopicIds.size > 0) {
-          await fetch('/api/admin/research/topics/bulk-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ ids: Array.from(selectedTopicIds) }) });
-          selectedTopicIds.clear();
-          loadResearchData();
+          const res = await fetch('/api/admin/research/topics/bulk-delete', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ ids: Array.from(selectedTopicIds) })
+          });
+          if (res.ok) {
+            selectedTopicIds.clear();
+            loadResearchData();
+          }
         } else if (type === 'post' && id) {
-          await fetch('/api/admin/content/posts/' + encodeURIComponent(id), { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
-          loadContentData();
+          const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(id), {
+            method: 'DELETE',
+            headers: { 'x-csrf-token': csrfToken }
+          });
+          if (res.ok) {
+            loadContentData();
+          }
         } else if (type === 'posts_bulk' && selectedPostIds.size > 0) {
-          await fetch('/api/admin/content/posts/bulk-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ ids: Array.from(selectedPostIds) }) });
-          selectedPostIds.clear();
-          loadContentData();
+          const res = await fetch('/api/admin/content/posts/bulk-delete', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ ids: Array.from(selectedPostIds) })
+          });
+          if (res.ok) {
+            selectedPostIds.clear();
+            loadContentData();
+          }
         }
       } catch (err) {
         console.error('Failed executing delete operation:', err);

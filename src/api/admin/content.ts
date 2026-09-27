@@ -153,6 +153,60 @@ contentRouter.post('/content/manual-post', csrfProtection, async (c) => {
 });
 
 /**
+ * PATCH /api/admin/content/posts/bulk-status
+ * Bulk updates status for multiple post drafts.
+ */
+contentRouter.patch('/content/posts/bulk-status', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    ids?: string[];
+    status?: string;
+  };
+
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  const status = (body.status || '').trim();
+
+  if (ids.length === 0 || !status) {
+    return c.json({ error: 'Missing required fields: ids (array) and status' }, 400);
+  }
+
+  const nowIso = new Date().toISOString();
+  for (const id of ids) {
+    await db
+      .prepare('UPDATE posts SET status = ?, updated_at = ? WHERE id = ?')
+      .bind(status, nowIso, id)
+      .run();
+  }
+
+  return c.json({ success: true, count: ids.length, status });
+});
+
+/**
+ * DELETE /api/admin/content/posts/bulk-delete
+ * Bulk deletes multiple post drafts.
+ */
+contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    ids?: string[];
+  };
+
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  if (ids.length === 0) {
+    return c.json({ error: 'Missing required field: ids (array)' }, 400);
+  }
+
+  for (const id of ids) {
+    await db.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
+    await db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id).run();
+    await db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(id).run();
+    await db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id).run();
+  }
+
+  return c.json({ success: true, count: ids.length });
+});
+
+/**
  * PATCH /api/admin/content/posts/:id
  * Updates an existing post's title, body content, or status.
  */
@@ -219,60 +273,6 @@ contentRouter.delete('/content/posts/:id', csrfProtection, async (c) => {
   await db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id).run();
 
   return c.json({ success: true, id });
-});
-
-/**
- * PATCH /api/admin/content/posts/bulk-status
- * Bulk updates status for multiple post drafts.
- */
-contentRouter.patch('/content/posts/bulk-status', csrfProtection, async (c) => {
-  const db = c.env.DB;
-  const body = (await c.req.json().catch(() => ({}))) as {
-    ids?: string[];
-    status?: string;
-  };
-
-  const ids = Array.isArray(body.ids) ? body.ids : [];
-  const status = (body.status || '').trim();
-
-  if (ids.length === 0 || !status) {
-    return c.json({ error: 'Missing required fields: ids (array) and status' }, 400);
-  }
-
-  const nowIso = new Date().toISOString();
-  for (const id of ids) {
-    await db
-      .prepare('UPDATE posts SET status = ?, updated_at = ? WHERE id = ?')
-      .bind(status, nowIso, id)
-      .run();
-  }
-
-  return c.json({ success: true, count: ids.length, status });
-});
-
-/**
- * DELETE /api/admin/content/posts/bulk-delete
- * Bulk deletes multiple post drafts.
- */
-contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => {
-  const db = c.env.DB;
-  const body = (await c.req.json().catch(() => ({}))) as {
-    ids?: string[];
-  };
-
-  const ids = Array.isArray(body.ids) ? body.ids : [];
-  if (ids.length === 0) {
-    return c.json({ error: 'Missing required field: ids (array)' }, 400);
-  }
-
-  for (const id of ids) {
-    await db.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
-    await db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id).run();
-    await db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(id).run();
-    await db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id).run();
-  }
-
-  return c.json({ success: true, count: ids.length });
 });
 
 /**

@@ -167,6 +167,57 @@ researchRouter.post('/research/topics', csrfProtection, async (c) => {
 });
 
 /**
+ * PATCH /api/admin/research/topics/bulk-status
+ * Bulk updates status for multiple selected topics.
+ */
+researchRouter.patch('/research/topics/bulk-status', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    ids?: string[];
+    status?: string;
+  };
+
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  const status = (body.status || '').trim();
+
+  if (ids.length === 0 || !status) {
+    return c.json({ error: 'Missing required fields: ids (array) and status' }, 400);
+  }
+
+  for (const id of ids) {
+    await db
+      .prepare("UPDATE content_ideas SET status = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(status, id)
+      .run();
+  }
+
+  return c.json({ success: true, count: ids.length, status });
+});
+
+/**
+ * DELETE /api/admin/research/topics/bulk-delete
+ * Bulk deletes multiple selected topics.
+ */
+researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    ids?: string[];
+  };
+
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  if (ids.length === 0) {
+    return c.json({ error: 'Missing required field: ids (array)' }, 400);
+  }
+
+  for (const id of ids) {
+    await db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id).run();
+    await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
+  }
+
+  return c.json({ success: true, count: ids.length });
+});
+
+/**
  * PATCH /api/admin/research/topics/:id
  * Updates an existing topic's fields (title, description, category, status, priority).
  */
@@ -239,56 +290,5 @@ researchRouter.delete('/research/topics/:id', csrfProtection, async (c) => {
   await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
 
   return c.json({ success: true, id });
-});
-
-/**
- * PATCH /api/admin/research/topics/bulk-status
- * Bulk updates status for multiple selected topics.
- */
-researchRouter.patch('/research/topics/bulk-status', csrfProtection, async (c) => {
-  const db = c.env.DB;
-  const body = (await c.req.json().catch(() => ({}))) as {
-    ids?: string[];
-    status?: string;
-  };
-
-  const ids = Array.isArray(body.ids) ? body.ids : [];
-  const status = (body.status || '').trim();
-
-  if (ids.length === 0 || !status) {
-    return c.json({ error: 'Missing required fields: ids (array) and status' }, 400);
-  }
-
-  for (const id of ids) {
-    await db
-      .prepare("UPDATE content_ideas SET status = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(status, id)
-      .run();
-  }
-
-  return c.json({ success: true, count: ids.length, status });
-});
-
-/**
- * DELETE /api/admin/research/topics/bulk-delete
- * Bulk deletes multiple selected topics.
- */
-researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) => {
-  const db = c.env.DB;
-  const body = (await c.req.json().catch(() => ({}))) as {
-    ids?: string[];
-  };
-
-  const ids = Array.isArray(body.ids) ? body.ids : [];
-  if (ids.length === 0) {
-    return c.json({ error: 'Missing required field: ids (array)' }, 400);
-  }
-
-  for (const id of ids) {
-    await db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id).run();
-    await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
-  }
-
-  return c.json({ success: true, count: ids.length });
 });
 

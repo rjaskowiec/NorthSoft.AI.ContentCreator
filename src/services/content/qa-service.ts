@@ -6,6 +6,7 @@
  */
 
 import type { IAIProvider } from '../../ai/provider';
+import { parseAiJsonResponse } from '../../core/json-parser';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
 import { QuotaManager } from '../ai/quota-manager';
 import type { PostDraft, ResearchSourceItem } from './writer-service';
@@ -113,7 +114,7 @@ Return ONLY a valid JSON object matching this schema:
 
       let parsed: Record<string, unknown>;
       try {
-        parsed = JSON.parse(completion.content) as Record<string, unknown>;
+        parsed = parseAiJsonResponse(completion.content);
       } catch {
         return { error: 'QA Reviewer produced malformed JSON completion.' };
       }

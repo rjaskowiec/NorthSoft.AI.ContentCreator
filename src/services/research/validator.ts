@@ -4,6 +4,7 @@
  * Validates AI research outputs against post-angle schemas before database persistence.
  */
 
+import { parseAiJsonResponse } from '../../core/json-parser';
 import { determineContentPillar, type ContentPillar } from './taxonomy';
 
 export interface CandidateIdeaPayload {
@@ -56,14 +57,7 @@ export function validateCandidateIdeaOutput(
 
   let parsed: unknown;
   try {
-    let cleanedJson = rawAiOutput.trim();
-    if (cleanedJson.startsWith('```')) {
-      cleanedJson = cleanedJson
-        .replace(/^```(json)?\n?/, '')
-        .replace(/\n?```$/, '')
-        .trim();
-    }
-    parsed = JSON.parse(cleanedJson);
+    parsed = parseAiJsonResponse(rawAiOutput);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown JSON parse error';
     return { valid: false, errors: [`Failed to parse AI output as JSON: ${msg}`] };
