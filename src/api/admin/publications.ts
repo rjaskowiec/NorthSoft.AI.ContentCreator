@@ -285,3 +285,36 @@ publicationsRouter.post('/publications/manual', csrfProtection, async (c) => {
     );
   }
 });
+
+/**
+ * DELETE /api/admin/publications/:id
+ * Deletes a local publication history record from the D1 database.
+ * Protected by requireAdmin and csrfProtection.
+ */
+publicationsRouter.delete('/publications/:id', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id') || '';
+
+  const pub = await db
+    .prepare('SELECT id, post_id FROM publications WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; post_id: string }>();
+
+  if (!pub) {
+    return c.json({ error: 'Publication record not found' }, 404);
+  }
+
+  await db.prepare('DELETE FROM publications WHERE id = ?').bind(id).run();
+
+  const auditLogger = new D1AuditLogger(db);
+  await auditLogger.log({
+    eventType: 'PUBLICATION_RECORD_DELETED',
+    entityType: 'publication',
+    entityId: id,
+    actor: 'admin',
+    details: { postId: pub.post_id },
+  });
+
+  return c.json({ success: true, id });
+});
+

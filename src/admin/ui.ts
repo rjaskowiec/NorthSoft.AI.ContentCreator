@@ -408,7 +408,7 @@ export function renderAdminHtml(): string {
                 <h1 class="page-title">Topic Research</h1>
                 <p class="page-subtitle" style="margin-bottom:0;">Discover, manage, and create topic proposals for Facebook posts in English.</p>
               </div>
-              <div style="display:flex; gap:0.75rem;">
+              <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
                 <button id="run-research-btn" class="btn-primary" onclick="runResearchNow()">
                   🔎 FIND NEW TOPICS
                 </button>
@@ -420,6 +420,27 @@ export function renderAdminHtml(): string {
 
             <div id="research-run-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
+            <!-- Topic Bulk Action Toolbar -->
+            <div id="topic-bulk-toolbar" class="bulk-toolbar" style="display:none;">
+              <div class="bulk-toolbar-info">
+                <span id="topic-selected-count">0</span> topics selected
+              </div>
+              <div class="bulk-toolbar-actions">
+                <select id="topic-bulk-status-select" class="bulk-select-status" onchange="executeTopicBulkStatusChange(this.value)">
+                  <option value="">Change Status...</option>
+                  <option value="queued">Set Status: Queued</option>
+                  <option value="accepted">Set Status: Accepted</option>
+                  <option value="rejected">Set Status: Rejected</option>
+                </select>
+                <button class="btn-primary" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="generatePostsForSelectedTopics()">
+                  ⚡ Generate Posts for Selected
+                </button>
+                <button class="btn-logout" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="confirmDeleteSelectedTopics()">
+                  Delete Selected
+                </button>
+              </div>
+            </div>
+
             <!-- Topics Table / Cards -->
             <div class="panel">
               <div class="panel-header">
@@ -429,6 +450,9 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
+                      <th style="width:36px; text-align:center;">
+                        <input type="checkbox" id="topic-select-all" onclick="toggleSelectAllTopics(this)" title="Select all topics" />
+                      </th>
                       <th>Topic Title</th>
                       <th>Description</th>
                       <th>Category</th>
@@ -437,7 +461,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="topics-table-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -451,12 +475,39 @@ export function renderAdminHtml(): string {
                 <h1 class="page-title">Content Drafts</h1>
                 <p class="page-subtitle" style="margin-bottom:0;">Review, edit, schedule, or instantly publish Facebook post drafts in English. (1 Topic = 1 Post)</p>
               </div>
-              <button class="btn-primary" onclick="openAddPostModal()">
-                + ADD POST
-              </button>
+              <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                <button class="btn-secondary" onclick="openGenerateSingleTopicModal()">
+                  ⚡ Generate from Topic
+                </button>
+                <button class="btn-secondary" onclick="generatePostsForAllEligible()">
+                  ⚡ Generate Posts for All Eligible
+                </button>
+                <button class="btn-primary" onclick="openAddPostModal()">
+                  + ADD POST
+                </button>
+              </div>
             </div>
 
             <div id="content-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+
+            <!-- Post Bulk Action Toolbar -->
+            <div id="post-bulk-toolbar" class="bulk-toolbar" style="display:none;">
+              <div class="bulk-toolbar-info">
+                <span id="post-selected-count">0</span> drafts selected
+              </div>
+              <div class="bulk-toolbar-actions">
+                <select id="post-bulk-status-select" class="bulk-select-status" onchange="executePostBulkStatusChange(this.value)">
+                  <option value="">Change Status...</option>
+                  <option value="draft">Set Status: Draft</option>
+                  <option value="approved">Set Status: Approved</option>
+                  <option value="scheduled">Set Status: Scheduled</option>
+                  <option value="rejected">Set Status: Rejected</option>
+                </select>
+                <button class="btn-logout" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="confirmDeleteSelectedPosts()">
+                  Delete Selected
+                </button>
+              </div>
+            </div>
 
             <!-- Post Drafts Table -->
             <div class="panel">
@@ -467,6 +518,9 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
+                      <th style="width:36px; text-align:center;">
+                        <input type="checkbox" id="post-select-all" onclick="toggleSelectAllPosts(this)" title="Select all drafts" />
+                      </th>
                       <th>Associated Topic</th>
                       <th>Post Content Preview</th>
                       <th>Status</th>
@@ -475,7 +529,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="posts-table-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -738,20 +792,39 @@ export function renderAdminHtml(): string {
           <input type="hidden" id="topic-edit-id" value="" />
           <div class="form-group">
             <label class="form-label" for="topic-input-title">Topic Title (English)</label>
-            <input type="text" id="topic-input-title" class="form-input" required placeholder="e.g. Best Places to See the Northern Lights in Iceland" />
+            <input type="text" id="topic-input-title" class="form-input" required placeholder="e.g. 5 Reasons Your Small Business Needs Automated Booking" />
           </div>
           <div class="form-group">
-            <label class="form-label" for="topic-input-desc">Description / Notes (English)</label>
-            <textarea id="topic-input-desc" class="form-input" style="min-height:100px; font-family:inherit;" placeholder="Practical guidance for travelers..."></textarea>
+            <label class="form-label" for="topic-input-desc">Description / Context (English)</label>
+            <textarea id="topic-input-desc" class="form-input" style="min-height:90px; font-family:inherit;" placeholder="Key insights, angle, or source summary..."></textarea>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+            <div class="form-group">
+              <label class="form-label" for="topic-input-pillar">Category / Pillar</label>
+              <select id="topic-input-pillar" class="form-input">
+                <option value="WEBSITE">Websites &amp; UX</option>
+                <option value="MARKETING">Marketing &amp; SEO</option>
+                <option value="AI">AI &amp; Automation</option>
+                <option value="LOCAL_BUSINESS">Local Business</option>
+                <option value="SMALL_BUSINESS">Small Business</option>
+                <option value="SALES">Sales &amp; Growth</option>
+                <option value="CUSTOMER_EXPERIENCE">Customer Experience</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="topic-input-status">Status</label>
+              <select id="topic-input-status" class="form-input">
+                <option value="queued">Queued</option>
+                <option value="new">New</option>
+                <option value="accepted">Accepted</option>
+                <option value="rejected">Rejected</option>
+                <option value="used">Used</option>
+              </select>
+            </div>
           </div>
           <div class="form-group">
-            <label class="form-label" for="topic-input-pillar">Content Category / Pillar</label>
-            <select id="topic-input-pillar" class="form-input">
-              <option value="AI_AUTOMATION">AI &amp; Automation</option>
-              <option value="SMALL_BUSINESS">Small Business Tips</option>
-              <option value="WEB_TECHNOLOGY">Web Technology</option>
-              <option value="MARKETING">Marketing &amp; Growth</option>
-            </select>
+            <label class="form-label" for="topic-input-priority">Priority Score (1 - 100)</label>
+            <input type="number" id="topic-input-priority" class="form-input" value="50" min="1" max="100" />
           </div>
           <button type="submit" id="save-topic-btn" class="btn-primary" style="width:100%;">Save Topic</button>
         </form>
@@ -771,22 +844,130 @@ export function renderAdminHtml(): string {
           <input type="hidden" id="post-edit-id" value="" />
           <div class="form-group">
             <label class="form-label" for="post-input-topic">Associated Topic Title (English)</label>
-            <input type="text" id="post-input-topic" class="form-input" required placeholder="e.g. Icelandic Northern Lights Guide" />
+            <input type="text" id="post-input-topic" class="form-input" required placeholder="e.g. Automated Booking Guide for Small Businesses" />
           </div>
           <div class="form-group">
             <label class="form-label" for="post-input-content">Post Content (English)</label>
             <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write your Facebook post in English..."></textarea>
           </div>
+          <div class="form-group">
+            <label class="form-label" for="post-input-status">Status</label>
+            <select id="post-input-status" class="form-input">
+              <option value="draft">Draft</option>
+              <option value="approved">Approved</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
           <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
             <button type="button" class="btn-secondary" onclick="closeModal('post-modal')">Cancel</button>
-            <button type="submit" id="save-post-btn" class="btn-primary">Save Draft</button>
+            <button type="submit" id="save-post-btn" class="btn-primary">Save Post</button>
           </div>
         </form>
       </div>
     </div>
   </div>
 
-  <!-- 3. SCHEDULE POST MODAL -->
+  <!-- 3. GENERATE POST FROM TOPIC MODAL -->
+  <div id="generate-topic-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Generate Post from Topic</div>
+        <button class="modal-close-btn" onclick="closeModal('generate-topic-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="generate-topic-form" onsubmit="handleGeneratePostFromTopicSubmit(event)">
+          <div class="form-group">
+            <label class="form-label" for="gen-topic-title">Topic Title (English)</label>
+            <input type="text" id="gen-topic-title" class="form-input" required placeholder="e.g. 5 Reasons Your Email Marketing Campaign Isn't Working" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="gen-topic-desc">Description / Context (Optional)</label>
+            <textarea id="gen-topic-desc" class="form-input" style="min-height:80px; font-family:inherit;" placeholder="Add specific context or focus angle for AI writer..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="gen-topic-pillar">Category / Pillar</label>
+            <select id="gen-topic-pillar" class="form-input">
+              <option value="MARKETING">Marketing &amp; SEO</option>
+              <option value="WEBSITE">Websites &amp; UX</option>
+              <option value="AI">AI &amp; Automation</option>
+              <option value="LOCAL_BUSINESS">Local Business</option>
+              <option value="SMALL_BUSINESS">Small Business</option>
+            </select>
+          </div>
+          <button type="submit" id="gen-topic-submit-btn" class="btn-primary" style="width:100%;">
+            ⚡ Generate Post Now
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. BATCH GENERATION PROGRESS MODAL -->
+  <div id="batch-progress-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header">
+        <div class="modal-title" id="batch-progress-title">Generating Posts...</div>
+      </div>
+      <div class="modal-body">
+        <div id="batch-progress-summary" style="font-size:0.875rem; color:var(--text-muted); margin-bottom:1rem;">
+          Processing batch post generation sequentially.
+        </div>
+        <div id="batch-progress-list" class="batch-progress-list">
+          <!-- Live item stepper rendered by JS -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:flex-end;">
+        <button id="batch-close-btn" class="btn-primary" style="display:none;" onclick="closeModal('batch-progress-modal')">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. REUSABLE DELETE CONFIRMATION MODAL -->
+  <div id="delete-confirm-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="delete-confirm-title">Confirm Deletion</div>
+        <button class="modal-close-btn" onclick="closeModal('delete-confirm-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-confirm-message" style="font-size:0.9rem; color:var(--text-muted); line-height:1.5;">
+          Are you sure you want to delete this item? This action cannot be undone.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('delete-confirm-modal')">Cancel</button>
+        <button type="button" id="execute-delete-btn" class="btn-logout" onclick="executePendingDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. PUBLICATION DELETE CONFIRMATION MODAL -->
+  <div id="publication-delete-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:460px;">
+      <div class="modal-header">
+        <div class="modal-title">Delete Publication Record</div>
+        <button class="modal-close-btn" onclick="closeModal('publication-delete-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.9rem; color:var(--text-main); font-weight:600; margin-bottom:0.5rem;">
+          Delete from Content Creator history?
+        </p>
+        <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.5; margin-bottom:1rem;">
+          This action deletes the local publication history record from the Content Creator database.
+          <br/><br/>
+          <strong style="color:var(--accent-amber);">Important:</strong> This does NOT delete the actual post published on Facebook.
+        </p>
+        <input type="hidden" id="pub-delete-id" value="" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('publication-delete-modal')">Cancel</button>
+        <button type="button" class="btn-logout" onclick="executePublicationDelete()">Delete History Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. SCHEDULE POST MODAL -->
   <div id="schedule-post-modal" class="modal-backdrop">
     <div class="modal-box">
       <div class="modal-header">
@@ -818,7 +999,7 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- 4. INSTANT PUBLISH CONFIRMATION MODAL -->
+  <!-- 8. INSTANT PUBLISH CONFIRMATION MODAL -->
   <div id="publish-modal" class="modal-backdrop">
     <div class="modal-box" style="max-width:440px;">
       <div class="modal-header">

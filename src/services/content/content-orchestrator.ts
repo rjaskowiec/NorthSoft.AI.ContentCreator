@@ -103,7 +103,7 @@ export class ContentOrchestrator {
     try {
       // 3. Automated Research Phase (if candidate topics low)
       const unusedTopicsCount = await this.db
-        .prepare('SELECT COUNT(*) as cnt FROM content_ideas WHERE status IN ("new", "accepted")')
+        .prepare('SELECT COUNT(*) as cnt FROM content_ideas WHERE status IN ("queued", "new", "accepted", "discovered", "pending")')
         .first<{ cnt: number }>();
 
       let topicsDiscovered = unusedTopicsCount?.cnt ?? 0;
@@ -160,7 +160,7 @@ export class ContentOrchestrator {
         .prepare(
           `SELECT id, title, description, category, priority
            FROM content_ideas
-           WHERE status IN ("new", "accepted")
+           WHERE status IN ("queued", "new", "accepted", "discovered", "pending")
            ORDER BY priority DESC, created_at ASC
            LIMIT 10`,
         )

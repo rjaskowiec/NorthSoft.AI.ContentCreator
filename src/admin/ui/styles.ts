@@ -1320,6 +1320,79 @@ export function getAdminCss(): string {
       flex-wrap: wrap;
       justify-content: center;
     }
+
+    /* BULK ACTION TOOLBAR */
+    .bulk-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.75rem 1.25rem;
+      background: linear-gradient(135deg, rgba(24, 119, 242, 0.15), rgba(6, 182, 212, 0.15));
+      border: 1px solid rgba(24, 119, 242, 0.3);
+      border-radius: 10px;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    .bulk-toolbar-info {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .bulk-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .bulk-select-status {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+
+    /* BATCH PROGRESS MODAL */
+    .batch-progress-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 280px;
+      overflow-y: auto;
+      margin: 1rem 0;
+      padding-right: 0.25rem;
+    }
+
+    .batch-progress-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 0.85rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    .batch-status-icon {
+      font-size: 1.1rem;
+      margin-right: 0.5rem;
+    }
+
+    .batch-status-pending { color: var(--text-muted); }
+    .batch-status-running { color: var(--accent-cyan); animation: pulse 1.5s infinite; }
+    .batch-status-completed { color: var(--accent-emerald); }
+    .batch-status-failed { color: var(--accent-rose); }
   `;
 }
 

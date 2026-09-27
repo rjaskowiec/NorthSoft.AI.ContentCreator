@@ -171,7 +171,7 @@ export class PipelineOrchestratorService {
         .prepare(
           `SELECT id, title, content_angle, content_pillar, source_url
            FROM content_ideas
-           WHERE status IN ('new', 'accepted')
+           WHERE status IN ('queued', 'new', 'accepted', 'discovered', 'pending')
            ORDER BY created_at DESC
            LIMIT 10`,
         )
@@ -245,7 +245,7 @@ export class PipelineOrchestratorService {
         const topIdea = await this.db
           .prepare(
             `SELECT id FROM content_ideas
-             WHERE status IN ('new', 'accepted')
+             WHERE status IN ('queued', 'new', 'accepted', 'discovered', 'pending')
              ORDER BY relevance_score DESC, priority DESC, created_at ASC
              LIMIT 1`,
           )
@@ -429,7 +429,7 @@ export class PipelineOrchestratorService {
         const topIdea = await this.db
           .prepare(
             `SELECT id FROM content_ideas
-             WHERE status IN ('new', 'accepted')
+             WHERE status IN ('queued', 'new', 'accepted', 'discovered', 'pending')
              ORDER BY relevance_score DESC, priority DESC, created_at ASC
              LIMIT 1`,
           )

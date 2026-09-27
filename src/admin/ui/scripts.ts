@@ -6,6 +6,12 @@ export function getAdminScripts(): string {
   return `
     let csrfToken = '';
     let currentTab = 'dashboard';
+    let selectedTopicIds = new Set();
+    let selectedPostIds = new Set();
+    let cachedTopics = [];
+    let cachedPosts = [];
+    let pendingDeleteType = null;
+    let pendingDeleteId = null;
 
     // Safe String & Utility Normalizers for API Resilience
     function safeStr(val, defaultVal = '') {
@@ -870,27 +876,46 @@ export function getAdminScripts(): string {
         }
 
         // Topics Table
+        cachedTopics = Array.isArray(data.topics) ? data.topics : [];
         const topicsBody = document.getElementById('topics-table-body');
         if (topicsBody) {
-          if (Array.isArray(data.topics) && data.topics.length > 0) {
-            topicsBody.innerHTML = data.topics.map(t => {
+          if (cachedTopics.length > 0) {
+            topicsBody.innerHTML = cachedTopics.map(t => {
               if (!t) return '';
+              const id = safeStr(t.id);
+              const title = escapeHtml(safeStr(t.title, 'Untitled Topic'));
+              const desc = escapeHtml(safeStr(t.description));
+              const category = escapeHtml(safeStr(t.content_pillar || t.category, 'WEBSITE'));
+              const status = safeStr(t.status || 'queued').toLowerCase();
+              const statusUpper = safeUpper(t.status, 'QUEUED');
+              const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered') ? 'status-active' : status === 'used' ? 'status-healthy' : 'status-disabled';
+              const isChecked = selectedTopicIds.has(id) ? 'checked' : '';
+
               return \`
-              <tr>
-                <td>
-                  <strong>\${escapeHtml(safeStr(t.title, 'Untitled Topic'))}</strong>
-                  <div style="font-size:0.8rem; color:var(--text-muted);">\${escapeHtml(safeStr(t.description))}</div>
+              <tr data-id="\${id}">
+                <td style="text-align:center;">
+                  <input type="checkbox" class="topic-select-checkbox" data-id="\${id}" \${isChecked} onchange="updateTopicSelectionState()" />
                 </td>
-                <td><span class="code-tag">\${escapeHtml(safeStr(t.category, 'general'))}</span></td>
-                <td><span class="status-badge status-healthy">\${Number(t.priority || 0)}/100</span></td>
-                <td><span class="status-badge status-active">\${escapeHtml(safeUpper(t.status, 'DISCOVERED'))}</span></td>
-                <td class="code-tag">\${formatDateOnlySafe(t.created_at)}</td>
+                <td>
+                  <strong>\${title}</strong>
+                  \${desc ? \`<div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">\${desc}</div>\` : ''}
+                </td>
+                <td><span class="code-tag">\${category}</span></td>
+                <td><span class="status-badge \${statusClass}">\${statusUpper}</span></td>
+                <td>
+                  <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+                    <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${id}')">⚡ Generate Post</button>
+                    <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditTopicModal('\${id}')">Edit</button>
+                    <button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic('\${id}')">Delete</button>
+                  </div>
+                </td>
               </tr>
             \`;
             }).join('');
           } else {
-            topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No candidate topics discovered yet.</td></tr>';
+            topicsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Topic</button></td></tr>';
           }
+          updateTopicSelectionState();
         }
 
         // Sources Table
@@ -1041,42 +1066,55 @@ export function getAdminScripts(): string {
         }
 
         const data = await res.json();
+        cachedPosts = Array.isArray(data.posts) ? data.posts : [];
         const postsBody = document.getElementById('posts-table-body');
 
         if (postsBody) {
-          if (Array.isArray(data.posts) && data.posts.length > 0) {
-            postsBody.innerHTML = data.posts.map(p => {
+          if (cachedPosts.length > 0) {
+            postsBody.innerHTML = cachedPosts.map(p => {
               if (!p) return '';
               const statusStr = safeUpper(p.status, 'DRAFT');
               const statusClass = statusStr === 'PUBLISHED' ? 'status-healthy' : statusStr === 'SCHEDULED' ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
               const pId = safeStr(p.id);
+              const pIdeaId = safeStr(p.idea_id);
               const pTitle = safeStr(p.title, 'Untitled Post');
               const pBody = safeStr(p.latest_body || p.body);
+              const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
 
               return \`
-              <tr>
-                <td>
-                  <strong>\${escapeHtml(pTitle)}</strong>
+              <tr data-id="\${pId}">
+                <td style="text-align:center;">
+                  <input type="checkbox" class="post-select-checkbox" data-id="\${pId}" \${isChecked} onchange="updatePostSelectionState()" />
                 </td>
                 <td>
-                  <div style="font-size:0.85rem; color:var(--text-main); max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
+                  <strong>Topic:</strong> \${escapeHtml(pTitle)}
+                  <div style="font-size:0.75rem; color:var(--accent-cyan); margin-top:2px;">1 Topic = 1 Post</div>
+                </td>
+                <td>
+                  <div style="font-size:0.85rem; color:var(--text-main); max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
                 </td>
                 <td><span class="status-badge \${statusClass}">\${escapeHtml(statusStr)}</span></td>
                 <td class="code-tag">\${formatDateOnlySafe(p.created_at)}</td>
                 <td>
-                  \${statusStr !== 'PUBLISHED' ? \`
-                    <button class="btn-primary" style="padding:0.3rem 0.65rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}', '\${escapeHtml(pTitle)}')">Publish Now</button>
-                    <button class="btn-secondary" style="padding:0.3rem 0.65rem; font-size:0.75rem; margin-left:0.25rem;" onclick="openSchedulePostModal()">Schedule</button>
-                  \` : \`
-                    <span style="color:var(--accent-emerald); font-weight:600; font-size:0.8rem;">Live on Facebook</span>
-                  \`}
+                  <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+                    <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditPostModal('\${pId}')">Edit</button>
+                    \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate</button>\` : ''}
+                    \${statusStr !== 'PUBLISHED' ? \`
+                      <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}', '\${escapeHtml(pTitle)}')">Publish Now</button>
+                      <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openSchedulePostModal('\${pId}')">Schedule</button>
+                    \` : \`
+                      <span style="color:var(--accent-emerald); font-weight:600; font-size:0.8rem;">Live on Facebook</span>
+                    \`}
+                    <button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeletePost('\${pId}')">Delete</button>
+                  </div>
                 </td>
               </tr>
             \`;
             }).join('');
           } else {
-            postsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
+          updatePostSelectionState();
         }
       } catch (err) {
         console.error('Failed to load content data:', err);
@@ -1387,6 +1425,11 @@ export function getAdminScripts(): string {
           pageContainer.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts...</div></div>';
         }
         if (loadMoreWrap) loadMoreWrap.style.display = 'none';
+      }
+
+      let fetchUrl = '/api/admin/facebook/page-posts?limit=10';
+      if (isAppend && fbNextCursor) {
+        fetchUrl += '&after=' + encodeURIComponent(fbNextCursor);
       }
 
       try {
@@ -2357,87 +2400,565 @@ export function getAdminScripts(): string {
       }
     });
 
+    // ======================================================================
+    // TOPIC RESEARCH — CRUD & BULK ACTIONS
+    // ======================================================================
+    function updateTopicSelectionState() {
+      const checkboxes = document.querySelectorAll('.topic-select-checkbox');
+      selectedTopicIds = new Set();
+      checkboxes.forEach(cb => {
+        if (cb.checked) {
+          selectedTopicIds.add(cb.getAttribute('data-id'));
+        }
+      });
+      const toolbar = document.getElementById('topic-bulk-toolbar');
+      const countEl = document.getElementById('topic-selected-count');
+      const masterCb = document.getElementById('topic-select-all');
+
+      if (countEl) countEl.textContent = selectedTopicIds.size;
+      if (toolbar) toolbar.style.display = selectedTopicIds.size > 0 ? 'flex' : 'none';
+      if (masterCb) masterCb.checked = checkboxes.length > 0 && selectedTopicIds.size === checkboxes.length;
+    }
+
+    function toggleSelectAllTopics(master) {
+      const checkboxes = document.querySelectorAll('.topic-select-checkbox');
+      checkboxes.forEach(cb => {
+        cb.checked = Boolean(master && master.checked);
+      });
+      updateTopicSelectionState();
+    }
+
+    async function executeTopicBulkStatusChange(newStatus) {
+      if (!newStatus || selectedTopicIds.size === 0) return;
+      try {
+        const res = await fetch('/api/admin/research/topics/bulk-status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ ids: Array.from(selectedTopicIds), status: newStatus })
+        });
+        if (res.ok) {
+          selectedTopicIds.clear();
+          const sel = document.getElementById('topic-bulk-status-select');
+          if (sel) sel.value = '';
+          loadResearchData();
+        }
+      } catch (err) {
+        console.error('Failed bulk topic status update:', err);
+      }
+    }
+
+    function confirmDeleteSelectedTopics() {
+      if (selectedTopicIds.size === 0) return;
+      pendingDeleteType = 'topics_bulk';
+      pendingDeleteId = null;
+      const title = document.getElementById('delete-confirm-title');
+      const msg = document.getElementById('delete-confirm-message');
+      if (title) title.textContent = 'Delete Selected Topics';
+      if (msg) msg.textContent = 'Are you sure you want to delete ' + selectedTopicIds.size + ' selected topics? This action cannot be undone.';
+      openModal('delete-confirm-modal');
+    }
+
     function openAddTopicModal() {
+      const idInput = document.getElementById('topic-edit-id');
       const titleInput = document.getElementById('topic-input-title');
       const descInput = document.getElementById('topic-input-desc');
-      const idInput = document.getElementById('topic-edit-id');
+      const pillarInput = document.getElementById('topic-input-pillar');
+      const statusInput = document.getElementById('topic-input-status');
+      const prioInput = document.getElementById('topic-input-priority');
       const modalTitle = document.getElementById('topic-modal-title');
 
       if (idInput) idInput.value = '';
       if (titleInput) titleInput.value = '';
       if (descInput) descInput.value = '';
+      if (pillarInput) pillarInput.value = 'WEBSITE';
+      if (statusInput) statusInput.value = 'queued';
+      if (prioInput) prioInput.value = '50';
       if (modalTitle) modalTitle.textContent = 'Add New Topic';
 
       openModal('topic-modal');
     }
 
+    function openEditTopicModal(id) {
+      const t = cachedTopics.find(item => item && item.id === id);
+      if (!t) return;
+
+      const idInput = document.getElementById('topic-edit-id');
+      const titleInput = document.getElementById('topic-input-title');
+      const descInput = document.getElementById('topic-input-desc');
+      const pillarInput = document.getElementById('topic-input-pillar');
+      const statusInput = document.getElementById('topic-input-status');
+      const prioInput = document.getElementById('topic-input-priority');
+      const modalTitle = document.getElementById('topic-modal-title');
+
+      if (idInput) idInput.value = safeStr(t.id);
+      if (titleInput) titleInput.value = safeStr(t.title);
+      if (descInput) descInput.value = safeStr(t.description);
+      if (pillarInput) pillarInput.value = safeStr(t.content_pillar || t.category, 'WEBSITE');
+      if (statusInput) statusInput.value = safeStr(t.status || 'queued').toLowerCase();
+      if (prioInput) prioInput.value = safeStr(t.priority, '50');
+      if (modalTitle) modalTitle.textContent = 'Edit Topic';
+
+      openModal('topic-modal');
+    }
+
+    async function handleSaveTopic(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const id = safeStr(document.getElementById('topic-edit-id')?.value).trim();
+      const title = safeStr(document.getElementById('topic-input-title')?.value).trim();
+      const desc = safeStr(document.getElementById('topic-input-desc')?.value).trim();
+      const category = safeStr(document.getElementById('topic-input-pillar')?.value, 'WEBSITE');
+      const status = safeStr(document.getElementById('topic-input-status')?.value, 'queued');
+      const priority = parseInt(safeStr(document.getElementById('topic-input-priority')?.value, '50'), 10);
+
+      if (!title) return;
+
+      const url = id ? '/api/admin/research/topics/' + encodeURIComponent(id) : '/api/admin/research/topics';
+      const method = id ? 'PATCH' : 'POST';
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ title, description: desc, category, status, priority })
+        });
+        if (res.ok) {
+          closeModal('topic-modal');
+          loadResearchData();
+        }
+      } catch (err) {
+        console.error('Failed to save topic:', err);
+      }
+    }
+
+    function confirmDeleteTopic(id) {
+      pendingDeleteType = 'topic';
+      pendingDeleteId = id;
+      const t = cachedTopics.find(item => item && item.id === id);
+      const title = document.getElementById('delete-confirm-title');
+      const msg = document.getElementById('delete-confirm-message');
+      if (title) title.textContent = 'Delete Topic';
+      if (msg) msg.textContent = 'Are you sure you want to delete topic "' + safeStr(t?.title, id) + '"? This action cannot be undone.';
+      openModal('delete-confirm-modal');
+    }
+
+    async function generatePostFromTopic(topicId) {
+      if (!topicId) return;
+      const alertEl = document.getElementById('research-run-alert');
+      if (alertEl) {
+        alertEl.textContent = 'Generating post draft...';
+        alertEl.className = 'alert-info';
+        alertEl.style.display = 'block';
+      }
+
+      try {
+        const res = await fetch('/api/admin/content/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ topicId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (alertEl) {
+            alertEl.textContent = 'Post draft generated successfully.';
+            alertEl.className = 'alert-success';
+          }
+          switchTab('content');
+        } else {
+          if (alertEl) {
+            alertEl.textContent = 'Post generation failed: ' + safeStr(data.error || data.result?.errorMessage, 'Unknown error');
+            alertEl.className = 'alert-error';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to generate post from topic:', err);
+      }
+    }
+
+    // ======================================================================
+    // CONTENT DRAFTS — CRUD & BULK ACTIONS
+    // ======================================================================
+    function updatePostSelectionState() {
+      const checkboxes = document.querySelectorAll('.post-select-checkbox');
+      selectedPostIds = new Set();
+      checkboxes.forEach(cb => {
+        if (cb.checked) {
+          selectedPostIds.add(cb.getAttribute('data-id'));
+        }
+      });
+      const toolbar = document.getElementById('post-bulk-toolbar');
+      const countEl = document.getElementById('post-selected-count');
+      const masterCb = document.getElementById('post-select-all');
+
+      if (countEl) countEl.textContent = selectedPostIds.size;
+      if (toolbar) toolbar.style.display = selectedPostIds.size > 0 ? 'flex' : 'none';
+      if (masterCb) masterCb.checked = checkboxes.length > 0 && selectedPostIds.size === checkboxes.length;
+    }
+
+    function toggleSelectAllPosts(master) {
+      const checkboxes = document.querySelectorAll('.post-select-checkbox');
+      checkboxes.forEach(cb => {
+        cb.checked = Boolean(master && master.checked);
+      });
+      updatePostSelectionState();
+    }
+
+    async function executePostBulkStatusChange(newStatus) {
+      if (!newStatus || selectedPostIds.size === 0) return;
+      try {
+        const res = await fetch('/api/admin/content/posts/bulk-status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ ids: Array.from(selectedPostIds), status: newStatus })
+        });
+        if (res.ok) {
+          selectedPostIds.clear();
+          const sel = document.getElementById('post-bulk-status-select');
+          if (sel) sel.value = '';
+          loadContentData();
+        }
+      } catch (err) {
+        console.error('Failed bulk post status update:', err);
+      }
+    }
+
+    function confirmDeleteSelectedPosts() {
+      if (selectedPostIds.size === 0) return;
+      pendingDeleteType = 'posts_bulk';
+      pendingDeleteId = null;
+      const title = document.getElementById('delete-confirm-title');
+      const msg = document.getElementById('delete-confirm-message');
+      if (title) title.textContent = 'Delete Selected Drafts';
+      if (msg) msg.textContent = 'Are you sure you want to delete ' + selectedPostIds.size + ' selected post drafts? This action cannot be undone.';
+      openModal('delete-confirm-modal');
+    }
+
     function openAddPostModal() {
+      const idInput = document.getElementById('post-edit-id');
       const topicInput = document.getElementById('post-input-topic');
       const contentInput = document.getElementById('post-input-content');
-      const idInput = document.getElementById('post-edit-id');
+      const statusInput = document.getElementById('post-input-status');
       const modalTitle = document.getElementById('post-modal-title');
 
       if (idInput) idInput.value = '';
       if (topicInput) topicInput.value = '';
       if (contentInput) contentInput.value = '';
+      if (statusInput) statusInput.value = 'draft';
       if (modalTitle) modalTitle.textContent = 'Add Post Draft';
 
       openModal('post-modal');
     }
 
-    function openSchedulePostModal() {
-      const idInput = document.getElementById('schedule-edit-id');
-      const dateInput = document.getElementById('schedule-date');
-      const todayStr = new Date().toISOString().split('T')[0];
+    function openEditPostModal(id) {
+      const p = cachedPosts.find(item => item && item.id === id);
+      if (!p) return;
 
-      if (idInput) idInput.value = '';
-      if (dateInput) dateInput.value = todayStr;
+      const idInput = document.getElementById('post-edit-id');
+      const topicInput = document.getElementById('post-input-topic');
+      const contentInput = document.getElementById('post-input-content');
+      const statusInput = document.getElementById('post-input-status');
+      const modalTitle = document.getElementById('post-modal-title');
 
-      openModal('schedule-post-modal');
-    }
+      if (idInput) idInput.value = safeStr(p.id);
+      if (topicInput) topicInput.value = safeStr(p.title);
+      if (contentInput) contentInput.value = safeStr(p.latest_body || p.body);
+      if (statusInput) statusInput.value = safeStr(p.status || 'draft').toLowerCase();
+      if (modalTitle) modalTitle.textContent = 'Edit Post Draft';
 
-    async function handleSaveTopic(evt) {
-      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-      const title = safeStr(document.getElementById('topic-input-title')?.value).trim();
-      const desc = safeStr(document.getElementById('topic-input-desc')?.value).trim();
-      const pillar = safeStr(document.getElementById('topic-input-pillar')?.value, 'AI_AUTOMATION');
-
-      if (!title) return;
-
-      closeModal('topic-modal');
-      const alertEl = document.getElementById('research-run-alert');
-      if (alertEl) {
-        alertEl.textContent = 'Topic "' + title + '" added successfully.';
-        alertEl.className = 'alert-success';
-        alertEl.style.display = 'block';
-      }
-      loadResearchData();
+      openModal('post-modal');
     }
 
     async function handleSavePost(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const id = safeStr(document.getElementById('post-edit-id')?.value).trim();
       const topic = safeStr(document.getElementById('post-input-topic')?.value).trim();
       const content = safeStr(document.getElementById('post-input-content')?.value).trim();
+      const status = safeStr(document.getElementById('post-input-status')?.value, 'draft');
 
       if (!content) return;
 
-      closeModal('post-modal');
+      const url = id ? '/api/admin/content/posts/' + encodeURIComponent(id) : '/api/admin/content/manual-post';
+      const method = id ? 'PATCH' : 'POST';
+      const payload = id ? { title: topic, body: content, status } : { topicTitle: topic, content, status };
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeModal('post-modal');
+          loadContentData();
+        }
+      } catch (err) {
+        console.error('Failed to save post draft:', err);
+      }
+    }
+
+    function confirmDeletePost(id) {
+      pendingDeleteType = 'post';
+      pendingDeleteId = id;
+      const p = cachedPosts.find(item => item && item.id === id);
+      const title = document.getElementById('delete-confirm-title');
+      const msg = document.getElementById('delete-confirm-message');
+      if (title) title.textContent = 'Delete Post Draft';
+      if (msg) msg.textContent = 'Are you sure you want to delete draft "' + safeStr(p?.title, id) + '"? This action cannot be undone.';
+      openModal('delete-confirm-modal');
+    }
+
+    function openGenerateSingleTopicModal() {
+      const titleInput = document.getElementById('gen-topic-title');
+      const descInput = document.getElementById('gen-topic-desc');
+      if (titleInput) titleInput.value = '';
+      if (descInput) descInput.value = '';
+      openModal('generate-topic-modal');
+    }
+
+    async function handleGeneratePostFromTopicSubmit(evt) {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const title = safeStr(document.getElementById('gen-topic-title')?.value).trim();
+      const desc = safeStr(document.getElementById('gen-topic-desc')?.value).trim();
+      const pillar = safeStr(document.getElementById('gen-topic-pillar')?.value, 'MARKETING');
+
+      if (!title) return;
+      closeModal('generate-topic-modal');
+
       const alertEl = document.getElementById('content-alert');
       if (alertEl) {
-        alertEl.textContent = 'Post draft for topic "' + (topic || 'Manual') + '" created successfully.';
-        alertEl.className = 'alert-success';
+        alertEl.textContent = 'Generating post draft for topic "' + title + '"...';
+        alertEl.className = 'alert-info';
         alertEl.style.display = 'block';
       }
-      loadContentData();
+
+      try {
+        const res = await fetch('/api/admin/content/manual-topic-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ title, description: desc, category: pillar })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (alertEl) {
+            alertEl.textContent = 'Post generated successfully from topic.';
+            alertEl.className = 'alert-success';
+          }
+          loadContentData();
+        } else {
+          if (alertEl) {
+            alertEl.textContent = 'Failed to generate post: ' + safeStr(data.error || data.result?.errorMessage, 'Unknown error');
+            alertEl.className = 'alert-error';
+          }
+        }
+      } catch (err) {
+        console.error('Failed manual topic post generation:', err);
+      }
+    }
+
+    function openSchedulePostModal(postId) {
+      const idInput = document.getElementById('schedule-edit-id');
+      const dateInput = document.getElementById('schedule-date');
+      const selectEl = document.getElementById('schedule-post-select');
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      if (idInput) idInput.value = safeStr(postId);
+      if (dateInput) dateInput.value = todayStr;
+
+      if (selectEl) {
+        selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.map(p => {
+          if (!p) return '';
+          const selectedAttr = (postId && p.id === postId) ? 'selected' : '';
+          return '<option value="' + safeStr(p.id) + '" ' + selectedAttr + '>' + escapeHtml(safeStr(p.title)) + '</option>';
+        }).join('');
+      }
+
+      openModal('schedule-post-modal');
     }
 
     async function handleSaveSchedule(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      const selectEl = document.getElementById('schedule-post-select');
       const dateVal = safeStr(document.getElementById('schedule-date')?.value);
-      const timeVal = safeStr(document.getElementById('schedule-time')?.value, '09:00');
+      const timeVal = safeStr(document.getElementById('schedule-time')?.value, '08:00');
+      const postId = selectEl ? safeStr(selectEl.value) : '';
 
-      closeModal('schedule-post-modal');
-      loadSchedulesData();
+      if (!postId || !dateVal) return;
+
+      const scheduledAt = new Date(dateVal + 'T' + timeVal + ':00Z').toISOString();
+
+      try {
+        const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ scheduledAt })
+        });
+        if (res.ok) {
+          closeModal('schedule-post-modal');
+          loadContentData();
+          loadSchedulesData();
+        }
+      } catch (err) {
+        console.error('Failed to schedule post:', err);
+      }
+    }
+
+    // ======================================================================
+    // BATCH POST GENERATION (CONTROLLED SEQUENCE)
+    // ======================================================================
+    function generatePostsForSelectedTopics() {
+      if (selectedTopicIds.size === 0) return;
+      const topics = cachedTopics.filter(t => t && selectedTopicIds.has(t.id));
+      runBatchPostGeneration(topics);
+    }
+
+    async function generatePostsForAllEligible() {
+      const eligible = cachedTopics.filter(t => {
+        if (!t) return false;
+        const st = safeLower(t.status);
+        return st === 'queued' || st === 'new' || st === 'accepted' || st === 'discovered';
+      });
+      if (eligible.length === 0) {
+        alert('No eligible topics available for generation. Add or discover new topics first.');
+        return;
+      }
+      runBatchPostGeneration(eligible);
+    }
+
+    async function runBatchPostGeneration(topicsList) {
+      if (!topicsList || topicsList.length === 0) return;
+
+      const titleEl = document.getElementById('batch-progress-title');
+      const summaryEl = document.getElementById('batch-progress-summary');
+      const listEl = document.getElementById('batch-progress-list');
+      const closeBtn = document.getElementById('batch-close-btn');
+
+      if (titleEl) titleEl.textContent = 'Generating Posts (' + topicsList.length + ' topics)...';
+      if (summaryEl) summaryEl.textContent = 'Processing post generation in controlled sequence...';
+      if (closeBtn) closeBtn.style.display = 'none';
+
+      if (listEl) {
+        listEl.innerHTML = topicsList.map(t => \`
+          <div id="batch-item-\${safeStr(t.id)}" class="batch-progress-item">
+            <div>
+              <strong>\${escapeHtml(safeStr(t.title, 'Topic'))}</strong>
+              <div class="batch-item-status-msg" style="font-size:0.75rem; color:var(--text-muted);">Waiting in queue...</div>
+            </div>
+            <span class="batch-status-icon batch-status-pending">○</span>
+          </div>
+        \`).join('');
+      }
+
+      openModal('batch-progress-modal');
+
+      for (const t of topicsList) {
+        const itemEl = document.getElementById('batch-item-' + safeStr(t.id));
+        if (itemEl) {
+          const icon = itemEl.querySelector('.batch-status-icon');
+          const msg = itemEl.querySelector('.batch-item-status-msg');
+          if (icon) { icon.className = 'batch-status-icon batch-status-running'; icon.textContent = '⏳'; }
+          if (msg) { msg.textContent = 'Generating post...'; msg.style.color = 'var(--accent-cyan)'; }
+        }
+
+        try {
+          const res = await fetch('/api/admin/content/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ topicId: t.id })
+          });
+          const data = await res.json();
+
+          if (itemEl) {
+            const icon = itemEl.querySelector('.batch-status-icon');
+            const msg = itemEl.querySelector('.batch-item-status-msg');
+            if (res.ok && data.success) {
+              if (icon) { icon.className = 'batch-status-icon batch-status-completed'; icon.textContent = '✓'; }
+              if (msg) { msg.textContent = 'Completed successfully'; msg.style.color = 'var(--accent-emerald)'; }
+            } else {
+              if (icon) { icon.className = 'batch-status-icon batch-status-failed'; icon.textContent = '✗'; }
+              if (msg) { msg.textContent = safeStr(data.error || data.result?.errorMessage, 'Failed'); msg.style.color = 'var(--accent-rose)'; }
+            }
+          }
+        } catch (err) {
+          if (itemEl) {
+            const icon = itemEl.querySelector('.batch-status-icon');
+            const msg = itemEl.querySelector('.batch-item-status-msg');
+            if (icon) { icon.className = 'batch-status-icon batch-status-failed'; icon.textContent = '✗'; }
+            if (msg) { msg.textContent = 'Network error'; msg.style.color = 'var(--accent-rose)'; }
+          }
+        }
+      }
+
+      if (titleEl) titleEl.textContent = 'Batch Generation Finished';
+      if (summaryEl) summaryEl.textContent = 'All selected topics have been processed.';
+      if (closeBtn) closeBtn.style.display = 'block';
+
+      selectedTopicIds.clear();
+      updateTopicSelectionState();
+      loadContentData();
+      loadResearchData();
+    }
+
+    // ======================================================================
+    // PUBLICATIONS — DELETION & HISTORY MANAGEMENT
+    // ======================================================================
+    function openDeletePublicationModal(id) {
+      const idInput = document.getElementById('pub-delete-id');
+      if (idInput) idInput.value = safeStr(id);
+      openModal('publication-delete-modal');
+    }
+
+    async function executePublicationDelete() {
+      const idInput = document.getElementById('pub-delete-id');
+      const id = idInput ? safeStr(idInput.value) : '';
+      closeModal('publication-delete-modal');
+
+      if (!id) return;
+      try {
+        const res = await fetch('/api/admin/publications/' + encodeURIComponent(id), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken }
+        });
+        if (res.ok) {
+          const alertEl = document.getElementById('publication-alert');
+          if (alertEl) {
+            alertEl.textContent = 'Publication record removed from Content Creator history.';
+            alertEl.className = 'alert-success';
+            alertEl.style.display = 'block';
+          }
+          loadPublicationsData();
+        }
+      } catch (err) {
+        console.error('Failed to delete publication record:', err);
+      }
+    }
+
+    // Generic Delete Router
+    async function executePendingDelete() {
+      closeModal('delete-confirm-modal');
+      const type = pendingDeleteType;
+      const id = pendingDeleteId;
+
+      try {
+        if (type === 'topic' && id) {
+          await fetch('/api/admin/research/topics/' + encodeURIComponent(id), { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+          loadResearchData();
+        } else if (type === 'topics_bulk' && selectedTopicIds.size > 0) {
+          await fetch('/api/admin/research/topics/bulk-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ ids: Array.from(selectedTopicIds) }) });
+          selectedTopicIds.clear();
+          loadResearchData();
+        } else if (type === 'post' && id) {
+          await fetch('/api/admin/content/posts/' + encodeURIComponent(id), { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+          loadContentData();
+        } else if (type === 'posts_bulk' && selectedPostIds.size > 0) {
+          await fetch('/api/admin/content/posts/bulk-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ ids: Array.from(selectedPostIds) }) });
+          selectedPostIds.clear();
+          loadContentData();
+        }
+      } catch (err) {
+        console.error('Failed executing delete operation:', err);
+      } finally {
+        pendingDeleteType = null;
+        pendingDeleteId = null;
+      }
     }
 
     function toggleAdvancedSchedulerSettings() {
@@ -2588,7 +3109,9 @@ export function getAdminScripts(): string {
     window.openModal = openModal;
     window.closeModal = closeModal;
     window.openAddTopicModal = openAddTopicModal;
+    window.openEditTopicModal = openEditTopicModal;
     window.openAddPostModal = openAddPostModal;
+    window.openEditPostModal = openEditPostModal;
     window.openSchedulePostModal = openSchedulePostModal;
     window.handleSaveTopic = handleSaveTopic;
     window.handleSavePost = handleSavePost;
@@ -2598,5 +3121,24 @@ export function getAdminScripts(): string {
     window.setQueueView = setQueueView;
     window.navigateCalendar = navigateCalendar;
     window.renderCalendarGrid = renderCalendarGrid;
+    window.updateTopicSelectionState = updateTopicSelectionState;
+    window.toggleSelectAllTopics = toggleSelectAllTopics;
+    window.executeTopicBulkStatusChange = executeTopicBulkStatusChange;
+    window.confirmDeleteSelectedTopics = confirmDeleteSelectedTopics;
+    window.generatePostsForSelectedTopics = generatePostsForSelectedTopics;
+    window.generatePostsForAllEligible = generatePostsForAllEligible;
+    window.confirmDeleteTopic = confirmDeleteTopic;
+    window.generatePostFromTopic = generatePostFromTopic;
+    window.updatePostSelectionState = updatePostSelectionState;
+    window.toggleSelectAllPosts = toggleSelectAllPosts;
+    window.executePostBulkStatusChange = executePostBulkStatusChange;
+    window.confirmDeleteSelectedPosts = confirmDeleteSelectedPosts;
+    window.confirmDeletePost = confirmDeletePost;
+    window.openGenerateSingleTopicModal = openGenerateSingleTopicModal;
+    window.handleGeneratePostFromTopicSubmit = handleGeneratePostFromTopicSubmit;
+    window.openDeletePublicationModal = openDeletePublicationModal;
+    window.executePublicationDelete = executePublicationDelete;
+    window.executePendingDelete = executePendingDelete;
+
   `;
 }

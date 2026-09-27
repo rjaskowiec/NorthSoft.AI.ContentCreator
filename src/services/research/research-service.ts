@@ -355,30 +355,33 @@ export class ResearchService {
 NorthSoft builds websites, landing pages, local SEO, online marketing, automation, and AI solutions for small and local businesses.
 Your objective is to read the provided source item and extract a SIMPLE, PRACTICAL, HIGHLY ENGAGING SOCIAL MEDIA POST IDEA (Facebook/Instagram) for a small business owner.
 
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL OUTPUT MUST BE WRITTEN STRICTLY AND 100% IN ENGLISH. Do NOT write in Polish, German, Spanish, or any other language. All topic titles, hooks, angles, summaries, key points, and questions MUST be in clean, human, conversational English.
+
 CORE PHILOSOPHY:
 - Treat the source item as INSPIRATION / FACT ANCHOR, NOT as a text to translate or summarize.
 - Ask: "Why would a small business owner want to read this?" (getting clients, saving time, improving service, automating annoying tasks).
-- Prefer simple social formats: LIST ("5 rzeczy..."), CHECKLIST ("Sprawdź czy..."), QUESTION ("Czy Twoja firma...?"), STAT_INSIGHT ("Coraz więcej firm..."), MYTH, TIPS ("3 proste sposoby..."), COMPARISON ("FB vs własna strona"), PROBLEM_SOLUTION, ENGAGEMENT.
+- Prefer simple social formats: LIST ("5 Ways to..."), CHECKLIST ("Check if your website..."), QUESTION ("Is your business ready for...?"), STAT_INSIGHT ("More small businesses are..."), MYTH, TIPS ("3 Simple Ways to..."), COMPARISON ("Social Media vs Own Website"), PROBLEM_SOLUTION, ENGAGEMENT.
 
 CRITICAL RULES:
 1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. The following buzzwords are FORBIDDEN:
-   "odblokuj potencjał", "transformacja cyfrowa", "game changer", "holistyczne podejście", "skalowanie biznesu",
-   "nowa era przedsiębiorczości", "rewolucjonizuje sposób", "wykorzystaj synergię", "maksymalizuj konwersję".
+   "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business",
+   "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
 2. FACT PRESERVATION RULE: If referencing specific numbers, percentages, or statistics from the source, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not present in the source. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
-3. Write in friendly, human conversational Polish.
+3. Write in friendly, human conversational English speaking directly to a small business owner.
 4. NO ARTIFICIAL BRIDGES: If the source item does NOT offer a genuine, logical, or clear inspiration for a small business owner post (e.g. internal compiler releases, framework updates, corporate announcements without small-business application), DO NOT FORCE AN ARTIFICIAL POST. Instead, return: {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
 
 Return ONLY a valid JSON object matching this schema:
 {
   "usefulAngle": true,
-  "title": "Chwytliwy nagłówek posta w prostym języku dla właściciela małej firmy",
-  "angle": "Proste wyjaśnienie ujęcia tematu i dlaczego ma znaczenie dla przedsiębiorcy",
-  "hook": "Pierwsze zdanie przykuwające uwagę w social media",
-  "summary": "Krótki zarys treści posta (2-3 zdania)",
-  "keyPoints": ["Praktyczny punkt 1", "Praktyczny punkt 2", "Praktyczny punkt 3"],
+  "title": "Catchy post headline in plain conversational English for a small business owner",
+  "angle": "Simple explanation of the post angle and why it matters to an entrepreneur",
+  "hook": "Attention-grabbing first line for social media in English",
+  "summary": "Short post outline (2-3 sentences in English)",
+  "keyPoints": ["Practical point 1 in English", "Practical point 2 in English", "Practical point 3 in English"],
   "contentPillar": "WEBSITE | MARKETING | SALES | AI | SMALL_BUSINESS | CUSTOMER_EXPERIENCE | LOCAL_BUSINESS",
   "postType": "LIST | CHECKLIST | QUESTION | STAT_INSIGHT | MYTH | TIPS | COMPARISON | PROBLEM_SOLUTION | ENGAGEMENT",
-  "engagementQuestion": "Proste pytanie na końcu posta zachęcające klientów do dyskusji",
+  "engagementQuestion": "Simple question at the end encouraging readers to comment in English",
   "commercialRelevance": 85,
   "engagementPotential": 90,
   "relevanceScore": 80
@@ -462,14 +465,21 @@ Return ONLY a valid JSON object matching this schema:
             continue;
           }
 
-          // Check if exact title already exists in content_ideas
-          const existingTitle = await this.db
-            .prepare('SELECT id FROM content_ideas WHERE title = ?')
-            .bind(ideaData.title)
-            .first();
+          // Check if title is a duplicate or near-duplicate against existing content_ideas
+          const existingIdeasRes = await this.db
+            .prepare('SELECT title FROM content_ideas ORDER BY created_at DESC LIMIT 100')
+            .all<{ title: string }>();
+          const existingIdeaTitles = (existingIdeasRes.results || []).map((row) => row.title);
 
-          if (existingTitle) {
+          if (TopicRegistry.isDuplicateAngle(ideaData.title, existingIdeaTitles)) {
             rejectedDuplicateAngle++;
+            await this.auditLogger.log({
+              eventType: 'DUPLICATE_TITLE_REJECTED',
+              entityType: 'content_idea',
+              entityId: item.id,
+              actor: 'ai',
+              details: { title: ideaData.title },
+            });
             continue;
           }
 

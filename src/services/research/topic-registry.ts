@@ -25,33 +25,78 @@ export class TopicRegistry {
   constructor(private db: D1Database) {}
 
   /**
-   * Checks if a proposed content angle is too similar to an existing angle in topic history.
-   * Returns true if duplicate angle within cooldown period (default 7 days).
+   * Checks if a proposed content title/angle is too similar to an existing entry in topic history.
+   * Detects exact matches, normalized token overlaps, bigrams, and near-duplicates.
    */
-  static isDuplicateAngle(newAngle: string, existingAngles: string[]): boolean {
-    const normalize = (text: string) =>
+  static isDuplicateAngle(newText: string, existingTexts: string[]): boolean {
+    if (!newText || !existingTexts || existingTexts.length === 0) return false;
+
+    const STOP_WORDS = new Set([
+      'the', 'a', 'an', 'and', 'or', 'for', 'to', 'in', 'on', 'at', 'with', 'by', 'from',
+      'how', 'why', 'what', 'your', 'you', 'is', 'are', 'this', 'that', 'can', 'help', 'of',
+      'jak', 'dlaczego', 'co', 'czy', 'twoja', 'twojej', 'twojego', 'dla', 'jest', 'sa',
+      'moze', 'pomoc', 'dzieki', 'dzięki', 'razem', 'miejsce', 'miejscu', 'zespół', 'zespole', 'jeden', 'jednym'
+    ]);
+
+    const stemWord = (w: string) => {
+      let stemmed = w;
+      if (stemmed.endsWith('ing') && stemmed.length > 5) stemmed = stemmed.slice(0, -3);
+      else if (stemmed.endsWith('es') && stemmed.length > 4) stemmed = stemmed.slice(0, -2);
+      else if (stemmed.endsWith('s') && !stemmed.endsWith('ss') && stemmed.length > 3) stemmed = stemmed.slice(0, -1);
+      else if (stemmed.endsWith('ed') && stemmed.length > 4) stemmed = stemmed.slice(0, -2);
+      return stemmed;
+    };
+
+    const getTokens = (text: string) =>
       text
         .toLowerCase()
         .replace(/[^a-z0-9\s]/g, '')
         .split(/\s+/)
-        .filter((w) => w.length > 3);
+        .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
+        .map(stemWord);
 
-    const newTokens = new Set(normalize(newAngle));
-    if (newTokens.size === 0) return false;
-
-    for (const existing of existingAngles) {
-      const existingTokens = new Set(normalize(existing));
-      if (existingTokens.size === 0) continue;
-
-      let overlapCount = 0;
-      for (const token of newTokens) {
-        if (existingTokens.has(token)) {
-          overlapCount++;
-        }
+    const getBigrams = (tokens: string[]) => {
+      const bigrams: string[] = [];
+      for (let i = 0; i < tokens.length - 1; i++) {
+        bigrams.push(`${tokens[i]}_${tokens[i + 1]}`);
       }
+      return bigrams;
+    };
 
-      const similarity = overlapCount / Math.min(newTokens.size, existingTokens.size);
-      if (similarity >= 0.7) {
+    const newNorm = newText.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const newTokens = getTokens(newText);
+    if (newTokens.length === 0) return false;
+    const newBigrams = new Set(getBigrams(newTokens));
+
+    for (const existing of existingTexts) {
+      if (!existing) continue;
+      const existingNorm = existing.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (newNorm === existingNorm) return true;
+
+      const existingTokens = getTokens(existing);
+      if (existingTokens.length === 0) continue;
+
+      // 1. Unigram Token Overlap Ratio
+      const tokenSetA = new Set(newTokens);
+      const tokenSetB = new Set(existingTokens);
+      let commonTokens = 0;
+      for (const t of tokenSetA) {
+        if (tokenSetB.has(t)) commonTokens++;
+      }
+      const minTokens = Math.min(tokenSetA.size, tokenSetB.size);
+      const tokenOverlap = minTokens > 0 ? commonTokens / minTokens : 0;
+
+      // 2. Bigram Overlap Ratio
+      const existingBigrams = new Set(getBigrams(existingTokens));
+      let commonBigrams = 0;
+      for (const b of newBigrams) {
+        if (existingBigrams.has(b)) commonBigrams++;
+      }
+      const minBigrams = Math.min(newBigrams.size, existingBigrams.size);
+      const bigramOverlap = minBigrams > 0 ? commonBigrams / minBigrams : 0;
+
+      // Duplicate detected if high token overlap (>= 0.5) OR bigram overlap (>= 0.33)
+      if (tokenOverlap >= 0.5 || (bigramOverlap >= 0.33 && commonBigrams >= 1)) {
         return true;
       }
     }

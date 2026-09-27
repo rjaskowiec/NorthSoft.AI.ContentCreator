@@ -130,3 +130,165 @@ researchRouter.post('/research/run', csrfProtection, async (c) => {
     summary,
   });
 });
+
+/**
+ * POST /api/admin/research/topics
+ * Manually creates a new content topic idea in English.
+ */
+researchRouter.post('/research/topics', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    title?: string;
+    description?: string;
+    category?: string;
+    priority?: number;
+  };
+
+  const title = (body.title || '').trim();
+  if (!title) {
+    return c.json({ error: 'Topic title is required.' }, 400);
+  }
+
+  const id = crypto.randomUUID();
+  const description = (body.description || '').trim();
+  const category = (body.category || 'WEBSITE').trim();
+  const priority = typeof body.priority === 'number' ? body.priority : 50;
+  const nowIso = new Date().toISOString();
+
+  await db
+    .prepare(
+      `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'manual', ?, 'queued', ?, ?)`,
+    )
+    .bind(id, title, description, category, priority, nowIso, nowIso)
+    .run();
+
+  return c.json({ success: true, id, title });
+});
+
+/**
+ * PATCH /api/admin/research/topics/:id
+ * Updates an existing topic's fields (title, description, category, status, priority).
+ */
+researchRouter.patch('/research/topics/:id', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    title?: string;
+    description?: string;
+    category?: string;
+    status?: string;
+    priority?: number;
+  };
+
+  const existing = await db
+    .prepare('SELECT id FROM content_ideas WHERE id = ?')
+    .bind(id)
+    .first();
+
+  if (!existing) {
+    return c.json({ error: 'Topic not found' }, 404);
+  }
+
+  const updates: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (body.title !== undefined) {
+    updates.push('title = ?');
+    bindings.push(body.title.trim());
+  }
+  if (body.description !== undefined) {
+    updates.push('description = ?');
+    bindings.push(body.description.trim());
+  }
+  if (body.category !== undefined) {
+    updates.push('category = ?');
+    bindings.push(body.category.trim());
+  }
+  if (body.status !== undefined) {
+    updates.push('status = ?');
+    bindings.push(body.status.trim());
+  }
+  if (body.priority !== undefined && typeof body.priority === 'number') {
+    updates.push('priority = ?');
+    bindings.push(body.priority);
+  }
+
+  if (updates.length === 0) {
+    return c.json({ success: true, message: 'No fields to update' });
+  }
+
+  updates.push("updated_at = datetime('now')");
+  bindings.push(id);
+
+  const sql = `UPDATE content_ideas SET ${updates.join(', ')} WHERE id = ?`;
+  await db.prepare(sql).bind(...bindings).run();
+
+  return c.json({ success: true, id });
+});
+
+/**
+ * DELETE /api/admin/research/topics/:id
+ * Deletes a specific content topic.
+ */
+researchRouter.delete('/research/topics/:id', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+
+  await db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id).run();
+  await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
+
+  return c.json({ success: true, id });
+});
+
+/**
+ * PATCH /api/admin/research/topics/bulk-status
+ * Bulk updates status for multiple selected topics.
+ */
+researchRouter.patch('/research/topics/bulk-status', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    ids?: string[];
+    status?: string;
+  };
+
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  const status = (body.status || '').trim();
+
+  if (ids.length === 0 || !status) {
+    return c.json({ error: 'Missing required fields: ids (array) and status' }, 400);
+  }
+
+  for (const id of ids) {
+    await db
+      .prepare("UPDATE content_ideas SET status = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(status, id)
+      .run();
+  }
+
+  return c.json({ success: true, count: ids.length, status });
+});
+
+/**
+ * DELETE /api/admin/research/topics/bulk-delete
+ * Bulk deletes multiple selected topics.
+ */
+researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    ids?: string[];
+  };
+
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  if (ids.length === 0) {
+    return c.json({ error: 'Missing required field: ids (array)' }, 400);
+  }
+
+  for (const id of ids) {
+    await db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id).run();
+    await db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id).run();
+  }
+
+  return c.json({ success: true, count: ids.length });
+});
+
