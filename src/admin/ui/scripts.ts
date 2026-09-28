@@ -16,8 +16,14 @@ export function getAdminScripts(): string {
     // Safe String & Utility Normalizers for API Resilience
     function safeStr(val, defaultVal = '') {
       if (val === null || val === undefined) return defaultVal;
+      if (typeof val === 'object') {
+        if (typeof val.message === 'string' && val.message) return val.message;
+        if (typeof val.error === 'string' && val.error) return val.error;
+        if (typeof val.code === 'string' && val.code) return val.code;
+      }
       return String(val);
     }
+
 
     function safeUpper(val, defaultVal = '') {
       return safeStr(val, defaultVal).toUpperCase();
@@ -91,6 +97,8 @@ export function getAdminScripts(): string {
               switchTab('dashboard');
             }
           }
+          // Auto-trigger Facebook Page Posts feed load for rail sidebar
+          loadFacebookPagePosts();
         } else {
           showLoginForm();
         }
@@ -1436,6 +1444,18 @@ export function getAdminScripts(): string {
         const res = await guardedFetch(fetchUrl);
         if (!res.ok) {
           console.error('Failed to fetch Facebook page posts:', res.status);
+          if (fbReadCard) fbReadCard.innerHTML = '<span class="status-badge status-alert">● Error</span>';
+          if (railReadStatus) {
+            railReadStatus.className = 'fb-rail-status-chip status-alert';
+            railReadStatus.innerHTML = '● READ: Error';
+          }
+          if (railBadge) railBadge.innerHTML = '<span class="status-badge status-alert">HTTP ' + res.status + '</span>';
+          if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-alert">HTTP ' + res.status + '</span>';
+
+          const errorHtml = '<div style="text-align:center; padding:1.5rem 0.5rem;"><div style="font-weight:600; color:var(--accent-rose); font-size:0.85rem; margin-bottom:0.25rem;">Unable to load Facebook feed</div><div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">HTTP ' + res.status + '</div><button class="btn-secondary" style="font-size:0.78rem; padding:0.3rem 0.75rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
+          if (railContainer && !isAppend) railContainer.innerHTML = errorHtml;
+          if (pageContainer && !isAppend) pageContainer.innerHTML = errorHtml;
+          if (loadMoreWrap) loadMoreWrap.style.display = 'none';
           return;
         }
 
@@ -2714,11 +2734,22 @@ export function getAdminScripts(): string {
     function openSchedulePostModal(postId) {
       const idInput = document.getElementById('schedule-edit-id');
       const dateInput = document.getElementById('schedule-date');
+      const timeInput = document.getElementById('schedule-time');
       const selectEl = document.getElementById('schedule-post-select');
+
+      // Default to tomorrow 10:00 AM UTC to strictly enforce future scheduling
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const tomorrowDateStr = tomorrow.toISOString().split('T')[0];
       const todayStr = new Date().toISOString().split('T')[0];
 
       if (idInput) idInput.value = safeStr(postId);
-      if (dateInput) dateInput.value = todayStr;
+      if (dateInput) {
+        dateInput.value = tomorrowDateStr;
+        dateInput.min = todayStr;
+      }
+      if (timeInput) {
+        timeInput.value = '10:00';
+      }
 
       if (selectEl) {
         selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.map(p => {
@@ -2735,12 +2766,21 @@ export function getAdminScripts(): string {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
       const selectEl = document.getElementById('schedule-post-select');
       const dateVal = safeStr(document.getElementById('schedule-date')?.value);
-      const timeVal = safeStr(document.getElementById('schedule-time')?.value, '08:00');
+      const timeVal = safeStr(document.getElementById('schedule-time')?.value, '10:00');
       const postId = selectEl ? safeStr(selectEl.value) : '';
 
-      if (!postId || !dateVal) return;
+      if (!postId || !dateVal) {
+        alert('Please select a post draft and publication date.');
+        return;
+      }
 
-      const scheduledAt = new Date(dateVal + 'T' + timeVal + ':00Z').toISOString();
+      const scheduledMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
+      if (isNaN(scheduledMs) || scheduledMs < Date.now()) {
+        alert('A post cannot be scheduled in the past. Please select a date and time in the future.');
+        return;
+      }
+
+      const scheduledAt = new Date(scheduledMs).toISOString();
 
       try {
         const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/schedule', {
@@ -2748,15 +2788,156 @@ export function getAdminScripts(): string {
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
           body: JSON.stringify({ scheduledAt })
         });
-        if (res.ok) {
+        const data = await res.json();
+        if (res.ok && data.success) {
           closeModal('schedule-post-modal');
           loadContentData();
           loadSchedulesData();
+        } else {
+          const errorMsg = safeStr(data.error || data.message, 'A post cannot be scheduled in the past.');
+          alert('Scheduling failed: ' + errorMsg);
         }
       } catch (err) {
         console.error('Failed to schedule post:', err);
+        alert('Failed to connect to server when saving schedule.');
       }
     }
+
+    function openScheduledPostDetailModal(scheduleId, postId) {
+      const idInput = document.getElementById('sched-detail-schedule-id');
+      const postInput = document.getElementById('sched-detail-post-id');
+      const titleInput = document.getElementById('sched-detail-post-title');
+      const bodyInput = document.getElementById('sched-detail-post-body');
+      const statusBadge = document.getElementById('sched-detail-status-badge');
+      const timeSpan = document.getElementById('sched-detail-time');
+      const conflictBanner = document.getElementById('sched-detail-conflict-banner');
+
+      const sched = (Array.isArray(cachedSchedules) ? cachedSchedules : []).find(s => s && (s.id === scheduleId || s.post_id === postId));
+      const post = (Array.isArray(cachedPosts) ? cachedPosts : []).find(p => p && p.id === postId) || (sched ? { title: sched.post_title, body: sched.post_body, status: sched.status } : null);
+
+      if (idInput) idInput.value = safeStr(scheduleId);
+      if (postInput) postInput.value = safeStr(postId);
+      if (titleInput) titleInput.value = safeStr(post?.title || sched?.post_title, 'Scheduled Post');
+      if (bodyInput) bodyInput.value = safeStr(post?.latest_body || post?.body || sched?.post_body, '');
+
+      if (statusBadge) {
+        const st = safeUpper(sched?.status || post?.status, 'SCHEDULED');
+        statusBadge.textContent = st;
+        statusBadge.className = 'status-badge ' + (st === 'PUBLISHED' ? 'status-healthy' : st === 'SCHEDULED' || st === 'PENDING' ? 'status-active' : 'status-alert');
+      }
+
+      if (timeSpan) {
+        timeSpan.textContent = sched?.scheduled_at ? formatDateUtcSafe(sched.scheduled_at) : 'Future';
+      }
+
+      if (conflictBanner) {
+        const isConflict = post?.sync_status === 'CONFLICT' || sched?.sync_status === 'CONFLICT';
+        conflictBanner.style.display = isConflict ? 'block' : 'none';
+      }
+
+      openModal('scheduled-post-detail-modal');
+    }
+
+    async function saveScheduledPostEdits() {
+      const postId = safeStr(document.getElementById('sched-detail-post-id')?.value).trim();
+      const body = safeStr(document.getElementById('sched-detail-post-body')?.value).trim();
+
+      if (!postId || !body) return;
+
+      try {
+        const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ body })
+        });
+        if (res.ok) {
+          closeModal('scheduled-post-detail-modal');
+          loadSchedulesData();
+          loadContentData();
+
+          const post = (Array.isArray(cachedPosts) ? cachedPosts : []).find(p => p && p.id === postId);
+          if (post && (post.status === 'published' || post.facebook_post_id)) {
+            await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+              body: JSON.stringify({ content: body })
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to save scheduled post edits:', err);
+      }
+    }
+
+    async function unscheduleSelectedPost() {
+      const scheduleId = safeStr(document.getElementById('sched-detail-schedule-id')?.value).trim();
+      const postId = safeStr(document.getElementById('sched-detail-post-id')?.value).trim();
+      const idToDelete = scheduleId || postId;
+      if (!idToDelete) return;
+
+      try {
+        const res = await fetch('/api/admin/content/schedules/' + encodeURIComponent(idToDelete), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken }
+        });
+        if (res.ok) {
+          closeModal('scheduled-post-detail-modal');
+          loadSchedulesData();
+          loadContentData();
+        }
+      } catch (err) {
+        console.error('Failed to unschedule post:', err);
+      }
+    }
+
+    async function unschedulePost(scheduleId) {
+      if (!scheduleId) return;
+      try {
+        const res = await fetch('/api/admin/content/schedules/' + encodeURIComponent(scheduleId), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken }
+        });
+        if (res.ok) {
+          loadSchedulesData();
+          loadContentData();
+        }
+      } catch (err) {
+        console.error('Failed to unschedule post:', err);
+      }
+    }
+
+    async function resolvePostConflict(resolution) {
+      const postId = safeStr(document.getElementById('sched-detail-post-id')?.value).trim();
+      if (!postId) return;
+
+      try {
+        const res = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/resolve-conflict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ resolution })
+        });
+        if (res.ok) {
+          closeModal('scheduled-post-detail-modal');
+          loadSchedulesData();
+          loadContentData();
+          loadPublicationsData();
+        }
+      } catch (err) {
+        console.error('Failed to resolve conflict:', err);
+      }
+    }
+
+    async function syncFacebook() {
+      try {
+        await fetch('/api/admin/facebook/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
+        });
+      } catch (err) {
+        console.error('Failed to trigger Facebook sync:', err);
+      }
+    }
+
 
     // ======================================================================
     // BATCH POST GENERATION (CONTROLLED SEQUENCE)
@@ -3033,7 +3214,9 @@ export function getAdminScripts(): string {
         dayItems.forEach(item => {
           const timeStr = item.scheduled_at ? new Date(item.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00';
           const title = escapeHtml(safeStr(item.post_title, 'Post'));
-          html += '<div class="calendar-item-chip" title="' + title + '">';
+          const schedIdStr = safeStr(item.id);
+          const postIdStr = safeStr(item.post_id);
+          html += '<div class="calendar-item-chip" style="cursor:pointer;" title="' + title + '" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">';
           html += '<span class="calendar-item-time">' + timeStr + '</span>' + title;
           html += '</div>';
         });
@@ -3118,6 +3301,12 @@ export function getAdminScripts(): string {
     window.openDeletePublicationModal = openDeletePublicationModal;
     window.executePublicationDelete = executePublicationDelete;
     window.executePendingDelete = executePendingDelete;
+    window.openScheduledPostDetailModal = openScheduledPostDetailModal;
+    window.saveScheduledPostEdits = saveScheduledPostEdits;
+    window.unscheduleSelectedPost = unscheduleSelectedPost;
+    window.unschedulePost = unschedulePost;
+    window.resolvePostConflict = resolvePostConflict;
+    window.syncFacebook = syncFacebook;
 
   `;
 }

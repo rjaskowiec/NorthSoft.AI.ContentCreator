@@ -383,3 +383,27 @@ contentRouter.post('/content/posts/:id/schedule', csrfProtection, async (c) => {
   return c.json({ success: true, postId: id, scheduledAt });
 });
 
+/**
+ * DELETE /api/admin/content/schedules/:id
+ * Unschedules a post, deleting the schedule row and resetting post status to approved/draft.
+ */
+contentRouter.delete('/content/schedules/:id', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  const nowIso = new Date().toISOString();
+
+  const sched = await db
+    .prepare('SELECT post_id FROM schedules WHERE id = ? OR post_id = ?')
+    .bind(id, id)
+    .first<{ post_id: string }>();
+
+  if (sched && sched.post_id) {
+    await db.prepare('DELETE FROM schedules WHERE id = ? OR post_id = ?').bind(id, id).run();
+    await db
+      .prepare('UPDATE posts SET status = "approved", updated_at = ? WHERE id = ? AND status = "scheduled"')
+      .bind(nowIso, sched.post_id)
+      .run();
+  }
+
+  return c.json({ success: true, id });
+});

@@ -6,7 +6,14 @@
  * and unescaped newlines in JSON strings.
  */
 
-export function parseAiJsonResponse<T = Record<string, unknown>>(rawText: string): T {
+export interface ParseAiJsonOptions {
+  allowPlainTextFallback?: boolean;
+}
+
+export function parseAiJsonResponse<T = Record<string, unknown>>(
+  rawText: string,
+  options: ParseAiJsonOptions = {},
+): T {
   if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
     throw new Error('AI completion response is empty.');
   }
@@ -71,6 +78,21 @@ export function parseAiJsonResponse<T = Record<string, unknown>>(rawText: string
     return {
       title: titleText,
       body: unescapedBody,
+      language: 'en',
+      tone: 'conversational',
+      claims: [],
+      hashtags: ['#SmallBusiness'],
+    } as unknown as T;
+  }
+
+  // 6. Opt-in fallback for plain text completion (when no JSON braces exist)
+  if (options.allowPlainTextFallback && !cleaned.includes('{') && !cleaned.includes('}') && cleaned.length >= 20) {
+    const lines = cleaned.split('\n').map((l) => l.trim()).filter(Boolean);
+    const firstLine = lines[0] || 'Social Post';
+    const title = firstLine.length <= 80 ? firstLine.replace(/^[#*\s]+/, '') : firstLine.substring(0, 60) + '...';
+    return {
+      title,
+      body: cleaned,
       language: 'en',
       tone: 'conversational',
       claims: [],

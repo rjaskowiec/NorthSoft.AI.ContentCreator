@@ -151,7 +151,7 @@ Return ONLY a valid JSON object matching this schema:
       let parsed: Record<string, unknown>;
 
       try {
-        parsed = parseAiJsonResponse(rawText);
+        parsed = parseAiJsonResponse(rawText, { allowPlainTextFallback: true });
       } catch {
         return { error: 'Writer produced malformed JSON completion response.' };
       }
