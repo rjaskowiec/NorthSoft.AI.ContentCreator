@@ -46,7 +46,7 @@ export function renderAdminHtml(): string {
 
       <form id="login-form">
         <div class="form-group">
-          <label class="form-label" for="username">Administrator Username</label>
+          <label class="form-label" for="username">Username</label>
           <input type="text" id="username" class="form-input" required autocomplete="username" autofocus>
         </div>
 
@@ -58,7 +58,7 @@ export function renderAdminHtml(): string {
           <input type="password" id="password" class="form-input" required autocomplete="current-password">
         </div>
 
-        <button type="submit" id="login-btn" class="btn-primary" style="width:100%;">Authenticate</button>
+        <button type="submit" id="login-btn" class="btn-primary" style="width:100%;">Sign in</button>
       </form>
 
       <!-- FORGOT PASSWORD FORM -->
@@ -66,11 +66,11 @@ export function renderAdminHtml(): string {
         <div id="forgot-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
 
         <div class="form-group">
-          <label class="form-label" for="forgot-email">Administrator Email Address</label>
+          <label class="form-label" for="forgot-email">Email Address</label>
           <input type="email" id="forgot-email" class="form-input" required placeholder="admin@northsoft.is" autocomplete="email">
         </div>
 
-        <button type="submit" id="forgot-btn" class="btn-primary" style="width:100%; margin-bottom:1rem;">Request Password Reset Link</button>
+        <button type="submit" id="forgot-btn" class="btn-primary" style="width:100%; margin-bottom:1rem;">Send reset link</button>
         <div style="text-align:center;">
           <a href="#" id="back-to-login-link" style="color:var(--text-muted); font-size:0.85rem; text-decoration:none;">&larr; Back to Sign In</a>
         </div>
@@ -190,11 +190,11 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Dashboard</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">NorthSoft AI ContentCreator — System Overview &amp; Health</p>
+                <p class="page-subtitle" style="margin-bottom:0;">System overview and status.</p>
               </div>
               <div style="display:flex; gap:0.75rem;">
                 <button class="btn-primary" onclick="switchTab('pipeline', event)">
-                  🚀 Pipeline Control &rarr;
+                  Pipeline Control &rarr;
                 </button>
               </div>
             </div>
@@ -204,7 +204,7 @@ export function renderAdminHtml(): string {
               <div class="card">
                 <div class="card-label">Pipeline Engine</div>
                 <div class="card-val" id="dash-pipeline-status" style="font-size:1.1rem; color:var(--accent-emerald);">● READY</div>
-                <div class="card-sub">Workers AI &amp; Discovery</div>
+                <div class="card-sub">Research &amp; Generation</div>
               </div>
               <div class="card">
                 <div class="card-label">Automation Master</div>
@@ -296,11 +296,11 @@ export function renderAdminHtml(): string {
           <div id="tab-pipeline" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
-                <h1 class="page-title">Pipeline Control &amp; Automation</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Control topic discovery, post generation, quality evaluation, and automated publishing.</p>
+                <h1 class="page-title">Pipeline Control</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Manage automation and content pipeline execution.</p>
               </div>
               <button id="run-full-pipeline-btn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:0.95rem; padding:0.75rem 1.4rem;" onclick="runFullPipelineNow()">
-                🚀 RUN FULL PIPELINE NOW
+                Run full pipeline
               </button>
             </div>
 
@@ -313,51 +313,51 @@ export function renderAdminHtml(): string {
                 <span class="status-badge badge-running">RUNNING</span>
               </div>
               <div class="pipeline-stepper">
-                <div class="stepper-step" id="step-1"><span class="stepper-icon">1</span> <span>Finding topics from sources...</span></div>
-                <div class="stepper-step" id="step-2"><span class="stepper-icon">2</span> <span>Analyzing &amp; selecting candidate topic...</span></div>
-                <div class="stepper-step" id="step-3"><span class="stepper-icon">3</span> <span>Generating post draft with Workers AI...</span></div>
-                <div class="stepper-step" id="step-4"><span class="stepper-icon">4</span> <span>Quality &amp; policy rule evaluation...</span></div>
-                <div class="stepper-step" id="step-5"><span class="stepper-icon">5</span> <span>Publishing to Facebook Page...</span></div>
+                <div class="stepper-step" id="step-1"><span class="stepper-icon">1</span> <span>Finding topics...</span></div>
+                <div class="stepper-step" id="step-2"><span class="stepper-icon">2</span> <span>Selecting topic...</span></div>
+                <div class="stepper-step" id="step-3"><span class="stepper-icon">3</span> <span>Generating post draft...</span></div>
+                <div class="stepper-step" id="step-4"><span class="stepper-icon">4</span> <span>Evaluating content quality...</span></div>
+                <div class="stepper-step" id="step-5"><span class="stepper-icon">5</span> <span>Publishing to Facebook...</span></div>
               </div>
             </div>
 
             <!-- 3 Pipeline Stage Cards -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Pipeline Execution Stages</div>
+                <div class="panel-title">Pipeline Stages</div>
               </div>
 
               <div class="section-grid" style="margin-bottom:0.5rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
                 <!-- Stage 1 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">1. Topic Research</div>
+                  <div class="card-label">Topic Research</div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Find relevant content ideas and generate topic proposals from RSS sources.
+                    Find content ideas from configured sources.
                   </p>
                   <button id="stage-discovery-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runDiscoveryNow()">
-                    🔎 Run Topic Discovery
+                    Find topics
                   </button>
                 </div>
 
                 <!-- Stage 2 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">2. Post Generation &amp; QA</div>
+                  <div class="card-label">Post Generation</div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Generate posts from topics and evaluate quality &amp; policy rules.
+                    Generate post drafts from active topics.
                   </p>
                   <button id="stage-generation-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPostGenerationNow()">
-                    ✍ Run Post Generation
+                    Generate post
                   </button>
                 </div>
 
                 <!-- Stage 3 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">3. Facebook Publishing</div>
+                  <div class="card-label">Facebook Publishing</div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Publish approved content directly to the connected Facebook Page.
+                    Publish approved drafts to Facebook.
                   </p>
                   <button id="stage-publishing-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPublishNow()">
-                    📤 Run Publishing
+                    Publish now
                   </button>
                 </div>
               </div>
@@ -366,14 +366,14 @@ export function renderAdminHtml(): string {
             <!-- Master Automation Settings -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Master Automation &amp; Schedule Configuration</div>
+                <div class="panel-title">Automation Settings</div>
                 <div id="scheduler-status-badge"><span class="status-badge status-healthy">AUTOMATION ON</span></div>
               </div>
 
               <form id="scheduler-config-form" onsubmit="saveSchedulerConfig(event)">
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1.25rem; margin-bottom:1.25rem;">
                   <div>
-                    <label class="form-label" for="sched-master-switch">Master Automation Switch</label>
+                    <label class="form-label" for="sched-master-switch">Automation</label>
                     <select id="sched-master-switch" class="form-input">
                       <option value="1">ON — Enabled</option>
                       <option value="0">OFF — Disabled</option>
@@ -381,7 +381,7 @@ export function renderAdminHtml(): string {
                   </div>
 
                   <div>
-                    <label class="form-label" for="sched-frequency">Publication Frequency</label>
+                    <label class="form-label" for="sched-frequency">Frequency</label>
                     <select id="sched-frequency" class="form-input">
                       <option value="daily">Daily (Once per 24 hours)</option>
                       <option value="12h">Every 12 Hours</option>
@@ -389,13 +389,13 @@ export function renderAdminHtml(): string {
                   </div>
 
                   <div>
-                    <label class="form-label" for="sched-time">Publication Schedule Time (UTC)</label>
+                    <label class="form-label" for="sched-time">Schedule Time (UTC)</label>
                     <input type="text" id="sched-time" class="form-input" value="08:00" placeholder="08:00" />
                   </div>
                 </div>
 
                 <button type="submit" id="save-scheduler-btn" class="btn-primary">
-                  Save Automation Settings
+                  Save settings
                 </button>
               </form>
             </div>
@@ -406,14 +406,14 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Topic Research</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Discover, manage, and create topic proposals for Facebook posts in English.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Discover and manage topic proposals for posts.</p>
               </div>
               <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
                 <button id="run-research-btn" class="btn-primary" onclick="runResearchNow()">
-                  🔎 FIND NEW TOPICS
+                  Find topics
                 </button>
                 <button class="btn-secondary" onclick="openAddTopicModal()">
-                  + Add Topic
+                  + Add topic
                 </button>
               </div>
             </div>
@@ -433,10 +433,10 @@ export function renderAdminHtml(): string {
                   <option value="rejected">Set Status: Rejected</option>
                 </select>
                 <button class="btn-primary" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="generatePostsForSelectedTopics()">
-                  ⚡ Generate Posts for Selected
+                  Generate selected
                 </button>
                 <button class="btn-logout" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="confirmDeleteSelectedTopics()">
-                  Delete Selected
+                  Delete selected
                 </button>
               </div>
             </div>
@@ -473,17 +473,17 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Content Drafts</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Review, edit, schedule, or instantly publish Facebook post drafts in English. (1 Topic = 1 Post)</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Review, edit, schedule, or publish post drafts.</p>
               </div>
               <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
                 <button class="btn-secondary" onclick="openGenerateSingleTopicModal()">
-                  ⚡ Generate from Topic
+                  Generate from topic
                 </button>
                 <button class="btn-secondary" onclick="generatePostsForAllEligible()">
-                  ⚡ Generate Posts for All Eligible
+                  Generate all
                 </button>
                 <button class="btn-primary" onclick="openAddPostModal()">
-                  + ADD POST
+                  + Add post
                 </button>
               </div>
             </div>
@@ -504,7 +504,7 @@ export function renderAdminHtml(): string {
                   <option value="rejected">Set Status: Rejected</option>
                 </select>
                 <button class="btn-logout" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="confirmDeleteSelectedPosts()">
-                  Delete Selected
+                  Delete selected
                 </button>
               </div>
             </div>
@@ -541,7 +541,7 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Scheduled Queue</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Publication calendar and queue of upcoming Facebook posts.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Publication calendar and scheduled queue.</p>
               </div>
               <div style="display:flex; gap:0.75rem; align-items:center;">
                 <!-- View Toggle Buttons -->
@@ -550,7 +550,7 @@ export function renderAdminHtml(): string {
                   <button id="btn-view-list" class="btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem; border:none; background:transparent;" onclick="setQueueView('list')">List</button>
                 </div>
                 <button class="btn-primary" onclick="openSchedulePostModal()">
-                  + SCHEDULE POST
+                  + Schedule post
                 </button>
               </div>
             </div>
@@ -600,7 +600,7 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
                 <h1 class="page-title">Publications</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">History of posts published to Facebook with live platform status.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">History of published posts.</p>
               </div>
             </div>
 
@@ -634,7 +634,7 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
                 <h1 class="page-title">Account &amp; Security</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Manage administrator credentials, recovery configuration, and active sessions.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Account security and password settings.</p>
               </div>
             </div>
 
@@ -689,7 +689,7 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
               <div>
                 <h1 class="page-title">Audit Log</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Technical audit ledger, security logs, and operational events.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">System activity and audit logs.</p>
               </div>
               <button class="btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.85rem;" onclick="loadAuditData()">
                 🔄 Refresh
@@ -791,16 +791,16 @@ export function renderAdminHtml(): string {
         <form id="topic-form" onsubmit="handleSaveTopic(event)">
           <input type="hidden" id="topic-edit-id" value="" />
           <div class="form-group">
-            <label class="form-label" for="topic-input-title">Topic Title (English)</label>
+            <label class="form-label" for="topic-input-title">Topic</label>
             <input type="text" id="topic-input-title" class="form-input" required placeholder="e.g. 5 Reasons Your Small Business Needs Automated Booking" />
           </div>
           <div class="form-group">
-            <label class="form-label" for="topic-input-desc">Description / Context (English)</label>
+            <label class="form-label" for="topic-input-desc">Description</label>
             <textarea id="topic-input-desc" class="form-input" style="min-height:90px; font-family:inherit;" placeholder="Key insights, angle, or source summary..."></textarea>
           </div>
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
             <div class="form-group">
-              <label class="form-label" for="topic-input-pillar">Category / Pillar</label>
+              <label class="form-label" for="topic-input-pillar">Category</label>
               <select id="topic-input-pillar" class="form-input">
                 <option value="WEBSITE">Websites &amp; UX</option>
                 <option value="MARKETING">Marketing &amp; SEO</option>
@@ -823,10 +823,10 @@ export function renderAdminHtml(): string {
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label" for="topic-input-priority">Priority Score (1 - 100)</label>
+            <label class="form-label" for="topic-input-priority">Priority (1 - 100)</label>
             <input type="number" id="topic-input-priority" class="form-input" value="50" min="1" max="100" />
           </div>
-          <button type="submit" id="save-topic-btn" class="btn-primary" style="width:100%;">Save Topic</button>
+          <button type="submit" id="save-topic-btn" class="btn-primary" style="width:100%;">Save</button>
         </form>
       </div>
     </div>
@@ -843,12 +843,12 @@ export function renderAdminHtml(): string {
         <form id="post-form" onsubmit="handleSavePost(event)">
           <input type="hidden" id="post-edit-id" value="" />
           <div class="form-group">
-            <label class="form-label" for="post-input-topic">Associated Topic Title (English)</label>
+            <label class="form-label" for="post-input-topic">Topic</label>
             <input type="text" id="post-input-topic" class="form-input" required placeholder="e.g. Automated Booking Guide for Small Businesses" />
           </div>
           <div class="form-group">
-            <label class="form-label" for="post-input-content">Post Content (English)</label>
-            <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write your Facebook post in English..."></textarea>
+            <label class="form-label" for="post-input-content">Content</label>
+            <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write post content..."></textarea>
           </div>
           <div class="form-group">
             <label class="form-label" for="post-input-status">Status</label>
@@ -861,7 +861,7 @@ export function renderAdminHtml(): string {
           </div>
           <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
             <button type="button" class="btn-secondary" onclick="closeModal('post-modal')">Cancel</button>
-            <button type="submit" id="save-post-btn" class="btn-primary">Save Post</button>
+            <button type="submit" id="save-post-btn" class="btn-primary">Save</button>
           </div>
         </form>
       </div>
@@ -878,15 +878,15 @@ export function renderAdminHtml(): string {
       <div class="modal-body">
         <form id="generate-topic-form" onsubmit="handleGeneratePostFromTopicSubmit(event)">
           <div class="form-group">
-            <label class="form-label" for="gen-topic-title">Topic Title (English)</label>
+            <label class="form-label" for="gen-topic-title">Topic</label>
             <input type="text" id="gen-topic-title" class="form-input" required placeholder="e.g. 5 Reasons Your Email Marketing Campaign Isn't Working" />
           </div>
           <div class="form-group">
-            <label class="form-label" for="gen-topic-desc">Description / Context (Optional)</label>
-            <textarea id="gen-topic-desc" class="form-input" style="min-height:80px; font-family:inherit;" placeholder="Add specific context or focus angle for AI writer..."></textarea>
+            <label class="form-label" for="gen-topic-desc">Description (Optional)</label>
+            <textarea id="gen-topic-desc" class="form-input" style="min-height:80px; font-family:inherit;" placeholder="Add specific context or focus angle..."></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label" for="gen-topic-pillar">Category / Pillar</label>
+            <label class="form-label" for="gen-topic-pillar">Category</label>
             <select id="gen-topic-pillar" class="form-input">
               <option value="MARKETING">Marketing &amp; SEO</option>
               <option value="WEBSITE">Websites &amp; UX</option>
@@ -896,7 +896,7 @@ export function renderAdminHtml(): string {
             </select>
           </div>
           <button type="submit" id="gen-topic-submit-btn" class="btn-primary" style="width:100%;">
-            ⚡ Generate Post Now
+            Generate
           </button>
         </form>
       </div>
@@ -962,7 +962,7 @@ export function renderAdminHtml(): string {
       </div>
       <div class="modal-footer">
         <button type="button" class="btn-secondary" onclick="closeModal('publication-delete-modal')">Cancel</button>
-        <button type="button" class="btn-logout" onclick="executePublicationDelete()">Delete History Record</button>
+        <button type="button" class="btn-logout" onclick="executePublicationDelete()">Delete</button>
       </div>
     </div>
   </div>
@@ -993,29 +993,77 @@ export function renderAdminHtml(): string {
               <input type="time" id="schedule-time" class="form-input" value="08:00" required />
             </div>
           </div>
-          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Schedule Post</button>
+          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Schedule</button>
         </form>
       </div>
     </div>
   </div>
 
-  <!-- 8. INSTANT PUBLISH CONFIRMATION MODAL -->
+  <!-- 8. SCHEDULED POST DETAIL MODAL -->
+  <div id="scheduled-post-detail-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:620px;">
+      <div class="modal-header">
+        <div class="modal-title" id="sched-detail-title">Scheduled Post</div>
+        <button class="modal-close-btn" onclick="closeModal('scheduled-post-detail-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="sched-detail-post-id" value="" />
+        <input type="hidden" id="sched-detail-schedule-id" value="" />
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+          <span id="sched-detail-status-badge" class="status-badge status-healthy">Scheduled</span>
+          <span id="sched-detail-time" style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">--</span>
+        </div>
+
+        <!-- Conflict Alert Banner -->
+        <div id="sched-detail-conflict-banner" style="display:none; background:rgba(244, 63, 94, 0.1); border:1px solid rgba(244, 63, 94, 0.3); border-radius:8px; padding:1rem; margin-bottom:1rem;">
+          <div style="color:#fda4af; font-weight:700; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.4rem;">
+            <span>⚠️ Sync Conflict Detected</span>
+          </div>
+          <p style="font-size:0.825rem; color:var(--text-main); margin-bottom:0.75rem;">
+            This post was edited on Facebook directly and also edited in the app. Choose which version to keep:
+          </p>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn-primary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="resolvePostConflict('use_local')">Use Local Version</button>
+            <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="resolvePostConflict('use_facebook')">Use Facebook Version</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Title</label>
+          <input type="text" id="sched-detail-post-title" class="form-input" readonly />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Content</label>
+          <textarea id="sched-detail-post-body" class="form-input" rows="6"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('scheduled-post-detail-modal')">Close</button>
+        <button type="button" id="sched-detail-save-btn" class="btn-primary" onclick="saveScheduledPostEdits()">Save</button>
+        <button type="button" id="sched-detail-unschedule-btn" class="btn-logout" onclick="unscheduleSelectedPost()">Unschedule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. INSTANT PUBLISH CONFIRMATION MODAL -->
   <div id="publish-modal" class="modal-backdrop">
     <div class="modal-box" style="max-width:440px;">
       <div class="modal-header">
-        <div class="modal-title">Publish Directly to Facebook</div>
+        <div class="modal-title">Publish to Facebook</div>
         <button class="modal-close-btn" onclick="closeModal('publish-modal')">&times;</button>
       </div>
       <div class="modal-body">
         <p style="font-size:0.9rem; color:var(--text-muted); line-height:1.5;">
-          This action will immediately publish the selected post directly to your connected Facebook Page via Meta Graph API.
+          This action will publish the selected post directly to your connected Facebook Page.
         </p>
         <input type="hidden" id="publish-modal-post-id" value="" />
         <input type="hidden" id="publish-modal-content-text" value="" />
       </div>
       <div class="modal-footer">
         <button type="button" class="btn-logout" onclick="closeModal('publish-modal')">Cancel</button>
-        <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="executeInstantPublication()">Publish Now</button>
+        <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="executeInstantPublication()">Publish</button>
       </div>
     </div>
   </div>

@@ -187,8 +187,15 @@ export class ContentPlannerService {
         break;
       }
       if (!genRes.draft) {
-        runErrorMessage = genRes.error || 'Writer service failed to produce draft.';
-        break;
+        runErrorMessage = genRes.error || 'Writer service failed to produce valid draft.';
+        await this.auditLogger.log({
+          eventType: 'POST_GENERATION_STARTED',
+          entityType: 'content_idea',
+          entityId: topicId,
+          actor: 'ai',
+          details: { attemptNumber: attempt, error: runErrorMessage },
+        });
+        continue;
       }
 
       lastDraft = genRes.draft;

@@ -7,6 +7,7 @@
 
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
+import { isAiExecutionPermitted } from '../../core/ai-window-policy';
 import type { IAIProvider } from '../../ai/provider';
 import { QuotaManager } from '../ai/quota-manager';
 import {
@@ -93,6 +94,46 @@ export class ResearchService {
     const startTime = Date.now();
     const runId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
+
+    // 0. AI Background Window Check: Automated cron research is restricted to 18:00–23:30 UTC
+    if (!isAiExecutionPermitted(triggerType)) {
+      return {
+        runId,
+        triggerType,
+        status: 'completed',
+        sourcesChecked: 0,
+        rawItemsDiscovered: 0,
+        newSourcesCount: 0,
+        knownSourcesCount: 0,
+        sourceReuseCandidates: 0,
+        potentialAnglesDiscovered: 0,
+        noUsefulAngleCount: 0,
+        rejectedTooTechnical: 0,
+        rejectedIrrelevant: 0,
+        rejectedDuplicateAngle: 0,
+        rejectedRecentCooldown: 0,
+        ideasQueued: 0,
+        ideasDeferred: 0,
+        aiProviderName: this.aiProvider.name,
+        aiModelName: '@cf/meta/llama-3.1-8b-instruct-fp8',
+        aiInferenceRequests: 0,
+        aiInferenceSuccessful: 0,
+        aiInferenceFailed: 0,
+        fallbackExecutions: 0,
+        topicsCreated: 0,
+        duplicatesFound: 0,
+        itemsDiscovered: 0,
+        itemsNormalized: 0,
+        rejectedLowQuality: 0,
+        pillarBreakdown: {},
+        errorMessage: 'Outside AI background execution window (18:00–23:30 UTC). Research run deferred.',
+        durationMs: Date.now() - startTime,
+        localEstimatedTokens: 0,
+        cloudflareVerifiedUsage: null,
+        usageSource: 'none',
+        usageTimestamp: nowIso,
+      };
+    }
 
     // 1. Lock Check / Idempotency: Prevent concurrent active runs
     const recentRunning = await this.db

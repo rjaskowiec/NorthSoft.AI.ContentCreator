@@ -326,4 +326,139 @@ export class FacebookPublisher implements IMetaPublisher {
       };
     }
   }
+
+  public async getPost(facebookPostId: string): Promise<{ success: boolean; post?: import('./meta-publisher.js').FacebookPostRecord; error?: string; httpStatus?: number }> {
+    const config = this.getConfigStatus();
+    if (!config.tokenConfigured) {
+      return { success: false, error: 'Meta access token not configured.', httpStatus: 400 };
+    }
+
+    try {
+      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}?fields=id,message,created_time,updated_time,permalink_url,full_picture&access_token=${encodeURIComponent(this.accessToken)}`;
+      const res = await fetch(url, { method: 'GET' });
+      const data = (await res.json()) as {
+        id?: string;
+        message?: string;
+        created_time?: string;
+        updated_time?: string;
+        permalink_url?: string;
+        full_picture?: string;
+        error?: { message?: string };
+      };
+
+      if (!res.ok || data.error) {
+        return {
+          success: false,
+          httpStatus: res.status,
+          error: sanitizeSecretTokens(data.error?.message || `HTTP ${res.status}`),
+        };
+      }
+
+      return {
+        success: true,
+        httpStatus: res.status,
+        post: {
+          id: data.id || facebookPostId,
+          message: data.message || '',
+          createdTime: data.created_time,
+          updatedTime: data.updated_time,
+          permalinkUrl: data.permalink_url,
+          fullPicture: data.full_picture,
+        },
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: sanitizeSecretTokens(msg) };
+    }
+  }
+
+  public async updatePostMessage(facebookPostId: string, message: string): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+    const config = this.getConfigStatus();
+    if (!config.configured) {
+      return { success: false, error: 'Facebook publisher is disabled or not configured.', httpStatus: 400 };
+    }
+
+    try {
+      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          access_token: this.accessToken,
+        }),
+      });
+
+      const data = (await res.json()) as { success?: boolean; error?: { message?: string } };
+      if (!res.ok || data.error) {
+        return {
+          success: false,
+          httpStatus: res.status,
+          error: sanitizeSecretTokens(data.error?.message || `HTTP ${res.status}`),
+        };
+      }
+
+      return { success: true, httpStatus: res.status };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: sanitizeSecretTokens(msg) };
+    }
+  }
+
+  public async fetchPagePosts(limit = 10, after?: string): Promise<import('./meta-publisher.js').FacebookPagePostsResult> {
+    const config = this.getConfigStatus();
+    if (!config.tokenConfigured || !config.pageIdConfigured) {
+      return { success: false, posts: [], error: 'Meta Page ID or Token not configured.' };
+    }
+
+    try {
+      let url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(this.pageId)}/published_posts?fields=id,message,created_time,updated_time,permalink_url,full_picture&limit=${limit}&access_token=${encodeURIComponent(this.accessToken)}`;
+      if (after) {
+        url += `&after=${encodeURIComponent(after)}`;
+      }
+
+      const res = await fetch(url, { method: 'GET' });
+      const data = (await res.json()) as {
+        data?: Array<{
+          id: string;
+          message?: string;
+          created_time?: string;
+          updated_time?: string;
+          permalink_url?: string;
+          full_picture?: string;
+        }>;
+        paging?: { cursors?: { after?: string }; next?: string };
+        error?: { message?: string };
+      };
+
+      if (!res.ok || data.error) {
+        return {
+          success: false,
+          posts: [],
+          error: sanitizeSecretTokens(data.error?.message || `HTTP ${res.status}`),
+        };
+      }
+
+      const posts = (data.data || []).map((item) => ({
+        id: item.id,
+        message: item.message || '',
+        createdTime: item.created_time,
+        updatedTime: item.updated_time,
+        permalinkUrl: item.permalink_url,
+        fullPicture: item.full_picture,
+      }));
+
+      return {
+        success: true,
+        posts,
+        paging: {
+          after: data.paging?.cursors?.after,
+          next: data.paging?.next,
+        },
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, posts: [], error: sanitizeSecretTokens(msg) };
+    }
+  }
 }

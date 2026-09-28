@@ -30,10 +30,14 @@ contentRouter.post('/content/generate', csrfProtection, async (c) => {
     return c.json(
       {
         success: false,
-        error: result.errorMessage || 'AI post generation failed.',
+        error: {
+          code: 'AI_GENERATION_FAILED',
+          message: result.errorMessage || 'Post generation failed. Please try again.',
+          retryable: true,
+        },
         result,
       },
-      500,
+      422,
     );
   }
 
@@ -339,7 +343,12 @@ contentRouter.post('/content/posts/:id/schedule', csrfProtection, async (c) => {
 
   const scheduledAt = (body.scheduledAt || '').trim();
   if (!scheduledAt) {
-    return c.json({ error: 'scheduledAt ISO date-time is required.' }, 400);
+    return c.json({ success: false, error: 'scheduledAt ISO date-time is required.' }, 400);
+  }
+
+  const scheduledMs = new Date(scheduledAt).getTime();
+  if (isNaN(scheduledMs) || scheduledMs < Date.now()) {
+    return c.json({ success: false, error: 'A post cannot be scheduled in the past.' }, 400);
   }
 
   const scheduleId = crypto.randomUUID();

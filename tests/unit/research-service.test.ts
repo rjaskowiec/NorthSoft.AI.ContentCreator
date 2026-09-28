@@ -26,7 +26,7 @@ describe('ResearchService Pipeline', () => {
     const mockAi = new MockAIProvider();
     const service = new ResearchService(mockDb, mockAi);
 
-    const summary = await service.runResearchPipeline('cron');
+    const summary = await service.runResearchPipeline('manual');
 
     expect(summary.status).toBe('completed');
     expect(summary.sourcesChecked).toBe(0);

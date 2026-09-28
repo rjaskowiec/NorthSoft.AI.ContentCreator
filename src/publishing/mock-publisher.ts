@@ -83,4 +83,48 @@ export class MockMetaPublisher implements IMetaPublisher {
       httpStatus: 200,
     };
   }
+
+  public mockPostsMap: Map<string, { message: string; updatedTime: string }> = new Map();
+
+  public async getPost(facebookPostId: string) {
+    if (!this.isConfigured) return { success: false, error: 'Not configured', httpStatus: 400 };
+    const existing = this.mockPostsMap.get(facebookPostId);
+    if (!existing) {
+      return {
+        success: true,
+        post: {
+          id: facebookPostId,
+          message: 'Default mock post content from Facebook',
+          createdTime: new Date().toISOString(),
+          updatedTime: new Date().toISOString(),
+        },
+      };
+    }
+    return {
+      success: true,
+      post: {
+        id: facebookPostId,
+        message: existing.message,
+        createdTime: new Date().toISOString(),
+        updatedTime: existing.updatedTime,
+      },
+    };
+  }
+
+  public async updatePostMessage(facebookPostId: string, message: string) {
+    if (!this.isConfigured) return { success: false, error: 'Not configured', httpStatus: 400 };
+    if (!this.shouldSucceed) return { success: false, error: this.mockErrorMessage || 'Mock update failed', httpStatus: this.mockHttpStatus || 400 };
+    this.mockPostsMap.set(facebookPostId, { message, updatedTime: new Date().toISOString() });
+    return { success: true };
+  }
+
+  public async fetchPagePosts(limit = 10) {
+    if (!this.isConfigured) return { success: false, posts: [], error: 'Not configured' };
+    const posts = Array.from(this.mockPostsMap.entries()).slice(0, limit).map(([id, data]) => ({
+      id,
+      message: data.message,
+      updatedTime: data.updatedTime,
+    }));
+    return { success: true, posts };
+  }
 }

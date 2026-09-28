@@ -15,6 +15,9 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
 
   it('defers execution when concurrent run is currently in progress', async () => {
     const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes('pipeline_scheduler_config')) {
+        return mockStmt({ first: { enabled: 1 } });
+      }
       if (sql.includes('FROM orchestrator_runs WHERE status = "running"')) {
         return mockStmt({ first: { id: 'orch-active-123' } });
       }
@@ -25,7 +28,7 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
     const mockEnv = { ENVIRONMENT: 'development', DB: mockDb } as unknown as Env;
 
     const orchestrator = new ContentOrchestrator(mockDb, mockEnv);
-    const result = await orchestrator.runPipeline('cron');
+    const result = await orchestrator.runPipeline('manual');
 
     expect(result.status).toBe('deferred');
     expect(result.errorMessage).toContain('Concurrent orchestrator run in progress');
@@ -50,7 +53,7 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
     const mockEnv = { ENVIRONMENT: 'development', DB: mockDb } as unknown as Env;
 
     const orchestrator = new ContentOrchestrator(mockDb, mockEnv);
-    const result = await orchestrator.runPipeline('cron');
+    const result = await orchestrator.runPipeline('manual');
 
     expect(result.status).toBe('deferred');
     expect(result.errorMessage).toContain('Daily post generation limit reached');
@@ -92,7 +95,7 @@ describe('ContentOrchestrator — Unit & Budget Protection', () => {
     const mockEnv = { ENVIRONMENT: 'development', DB: mockDb } as unknown as Env;
 
     const orchestrator = new ContentOrchestrator(mockDb, mockEnv);
-    const result = await orchestrator.runPipeline('cron');
+    const result = await orchestrator.runPipeline('manual');
 
     expect(result.status).toBe('deferred');
     expect(result.errorMessage).toContain('request limit reached');

@@ -971,7 +971,7 @@ export function getAdminScripts(): string {
 
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = 'Executing Research Pipeline...';
+        btn.textContent = 'Finding topics...';
       }
 
       try {
@@ -1033,7 +1033,7 @@ export function getAdminScripts(): string {
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Research Pipeline Now';
+          btn.textContent = 'Find topics';
         }
       }
     }
@@ -1149,7 +1149,7 @@ export function getAdminScripts(): string {
 
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = 'Executing Pipeline...';
+        btn.textContent = 'Running full pipeline...';
       }
 
       try {
@@ -1164,12 +1164,12 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (alertEl) {
           if (res.ok && data.success) {
-            alertEl.textContent = 'Autonomous pipeline completed! Result: ' + safeUpper(data.result?.resultStatus, 'COMPLETED');
+            alertEl.textContent = 'Pipeline run completed successfully.';
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
             loadDashboardData();
           } else {
-            alertEl.textContent = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an issue or was deferred by quota.');
+            alertEl.textContent = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an error.');
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -1183,7 +1183,7 @@ export function getAdminScripts(): string {
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 3l14 9-14 9V3z"/></svg> Run Pipeline Now';
+          btn.textContent = 'Run full pipeline';
         }
       }
     }
@@ -1313,7 +1313,7 @@ export function getAdminScripts(): string {
               \`;
             }).join('');
           } else {
-            pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No publication records found. Approved scheduled posts will automatically publish via Meta Graph API.</td></tr>';
+            pubBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No publication records found. Scheduled posts will publish automatically.</td></tr>';
           }
         }
       } catch (err) {
@@ -1419,7 +1419,7 @@ export function getAdminScripts(): string {
         fbHasMore = false;
         loadedFbPostIds = new Set();
         if (railContainer) {
-          railContainer.innerHTML = '<div style="text-align:center; padding:2rem 0; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.825rem;">Fetching posts from Meta Graph API...</div></div>';
+          railContainer.innerHTML = '<div style="text-align:center; padding:2rem 0; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.825rem;">Loading Facebook posts...</div></div>';
         }
         if (pageContainer) {
           pageContainer.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts...</div></div>';
@@ -1891,7 +1891,7 @@ export function getAdminScripts(): string {
 
       if (content.length > 63206) {
         if (alertEl) {
-          alertEl.textContent = 'Validation error: Post content exceeds Meta Graph API 63,206 character limit.';
+          alertEl.textContent = 'Post content exceeds maximum character limit.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
@@ -2101,22 +2101,13 @@ export function getAdminScripts(): string {
 
         if (res.ok && data.success) {
           const r = data.result || {};
-          let html = '<strong>Stage 1 — Content Discovery Completed Successfully!</strong><br><br>' +
-            '• Sources checked: <strong>' + (r.sourcesChecked || 0) + '</strong><br>' +
-            '• Raw items found: <strong>' + (r.rawItemsDiscovered || 0) + '</strong><br>' +
-            '• AI Inference requests: <strong>' + (r.aiInferenceRequests || 0) + '</strong> (Successful: ' + (r.aiInferenceSuccessful || 0) + ', Failed: ' + (r.aiInferenceFailed || 0) + ')<br>' +
-            '• Useful inspirations: <strong>' + (r.usefulInspirations || 0) + '</strong><br>' +
-            '• NO_USEFUL_ANGLE count: <strong>' + (r.noUsefulAngleCount || 0) + '</strong><br>' +
-            '• Duplicates skipped: <strong>' + (r.duplicatesFound || 0) + '</strong><br>' +
-            '• Rejected: <strong>' + (r.rejectedCount || 0) + '</strong><br>' +
-            '• New proposals added: <strong>' + (r.newProposalsCount || 0) + '</strong><br>' +
-            '• Cloudflare Verified Neurons: <strong style="color:var(--accent-cyan);">' + (r.cloudflareVerifiedNeurons !== null ? r.cloudflareVerifiedNeurons.toLocaleString() + ' Neurons' : 'Not Configured') + '</strong><br>' +
-            '• Duration: <strong>' + ((r.durationMs || 0) / 1000).toFixed(1) + 's</strong>';
+          let html = '<strong>Topic discovery completed.</strong><br>' +
+            'Discovered ' + (r.newProposalsCount || 0) + ' new topics.';
 
           if (Array.isArray(r.proposals) && r.proposals.length > 0) {
-            html += '<br><br><strong>Generated Topic Proposals:</strong><ul style="margin-top:0.4rem; padding-left:1.2rem;">';
+            html += '<br><br><strong>Topic Proposals:</strong><ul style="margin-top:0.4rem; padding-left:1.2rem;">';
             r.proposals.forEach(p => {
-              if (p) html += '<li><strong>' + escapeHtml(safeStr(p.title)) + '</strong> (' + escapeHtml(safeStr(p.contentPillar)) + '): <em>' + escapeHtml(safeStr(p.contentAngle)) + '</em></li>';
+              if (p) html += '<li><strong>' + escapeHtml(safeStr(p.title)) + '</strong> (' + escapeHtml(safeStr(p.contentPillar)) + ')</li>';
             });
             html += '</ul>';
           }
@@ -2128,19 +2119,19 @@ export function getAdminScripts(): string {
           }
         } else {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>Stage 1 Content Discovery Failed:</strong> ' + escapeHtml(safeStr(data.error, 'Unknown error'));
+            alertEl.innerHTML = '<strong>Topic discovery failed.</strong> Please try again.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
         }
       } catch (err) {
         if (alertEl) {
-          alertEl.textContent = 'Network error while running Content Discovery.';
+          alertEl.textContent = 'Network error while running Topic Discovery.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '🔎 Run Content Discovery'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Find topics'; }
         loadPipelineData();
       }
     }
@@ -2148,7 +2139,7 @@ export function getAdminScripts(): string {
     async function runPostGenerationNow() {
       const btn = document.getElementById('stage-generation-btn');
       const alertEl = document.getElementById('pipeline-control-alert');
-      if (btn) { btn.disabled = true; btn.textContent = '✍ Generating & Evaluating Post...'; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Generating post...'; }
       if (alertEl) alertEl.style.display = 'none';
 
       try {
@@ -2160,15 +2151,8 @@ export function getAdminScripts(): string {
         const r = data.result || {};
 
         if (res.ok && data.success && r.finalDecision === 'PASS') {
-          const c = r.classification || {};
-          let html = '<strong>Stage 2 — Post Generation & Quality Evaluation Passed!</strong><br><br>' +
-            '• Post Title: <strong>' + escapeHtml(safeStr(r.title)) + '</strong><br>' +
-            '• Quality Score: <strong>' + (r.qualityScore || 0) + ' / 100</strong><br>' +
-            '• Final Decision: <span class="status-badge status-healthy">PASS</span><br>' +
-            '• Pillar: <strong>' + escapeHtml(safeStr(c.pillar, 'GENERAL')) + '</strong> | Type: <strong>' + escapeHtml(safeStr(c.postType, 'SHORT_POST')) + '</strong><br>' +
-            '• Sub-scores — Engagement: ' + (c.engagementPotential || 0) + ' | Clarity: ' + (c.clarity || 0) + ' | Value: ' + (c.practicalValue || 0) + ' | Brand: ' + (c.brandRelevance || 0) + ' | Originality: ' + (c.originality || 0) + '<br>' +
-            '• Suggested Publication Time: <strong>' + (r.suggestedPublishTime ? new Date(r.suggestedPublishTime).toUTCString() : 'Immediate') + '</strong><br><br>' +
-            '<div style="background:rgba(0,0,0,0.3); padding:0.8rem; border-radius:6px; font-family:monospace; white-space:pre-wrap; max-height:150px; overflow-y:auto; font-size:0.85rem;">' + escapeHtml(safeStr(r.body)) + '</div>';
+          let html = '<strong>Post generated successfully.</strong><br>' +
+            'Draft: <strong>"' + escapeHtml(safeStr(r.title, 'Untitled Draft')) + '"</strong>';
 
           if (alertEl) {
             alertEl.innerHTML = html;
@@ -2176,13 +2160,7 @@ export function getAdminScripts(): string {
             alertEl.style.display = 'block';
           }
         } else {
-          let html = '<strong>Stage 2 — Post Generation Rejected / Failed:</strong><br>';
-          if (r.finalDecision === 'REJECTED' || r.finalDecision === 'BLOCKED') {
-            html += 'Decision: <span class="status-badge status-alert">' + escapeHtml(safeStr(r.finalDecision)) + '</span><br>' +
-              'Reason: ' + escapeHtml(safeStr(r.rejectionReason || data.error, 'Post draft failed quality gate controls.'));
-          } else {
-            html += escapeHtml(safeStr(data.error, 'Failed to generate post.'));
-          }
+          let html = '<strong>Post generation failed.</strong> Please try again.';
           if (alertEl) {
             alertEl.innerHTML = html;
             alertEl.className = 'alert-error';
@@ -2191,12 +2169,12 @@ export function getAdminScripts(): string {
         }
       } catch (err) {
         if (alertEl) {
-          alertEl.textContent = 'Network error while running Post Generation & Quality evaluation.';
+          alertEl.textContent = 'Network error while generating post.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '✍ Generate & Process Selected'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Generate post'; }
         loadPipelineData();
       }
     }
@@ -2204,7 +2182,7 @@ export function getAdminScripts(): string {
     async function runPublishNow() {
       const btn = document.getElementById('stage-publishing-btn');
       const alertEl = document.getElementById('pipeline-control-alert');
-      if (btn) { btn.disabled = true; btn.textContent = '📤 Publishing to Facebook Page...'; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Publishing...'; }
       if (alertEl) alertEl.style.display = 'none';
 
       try {
@@ -2214,7 +2192,7 @@ export function getAdminScripts(): string {
 
         if (!readyPost) {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>Stage 3 Facebook Publishing Failed:</strong> No approved post drafts ready in queue. Run Stage 2 first.';
+            alertEl.innerHTML = '<strong>Publishing failed:</strong> No approved posts available to publish.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -2231,30 +2209,25 @@ export function getAdminScripts(): string {
 
         if (res.ok && data.success && r.success) {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>Stage 3 — Published to Facebook Successfully!</strong><br><br>' +
-              '• Facebook Post ID: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">' + escapeHtml(safeStr(r.facebookPostId, 'Confirmed')) + '</code><br>' +
-              '• Published At: <strong>' + (r.publishedAt ? new Date(r.publishedAt).toUTCString() : new Date().toUTCString()) + '</strong><br>' +
-              '• Target: <strong>NorthSoft Facebook Page</strong>';
+            alertEl.innerHTML = '<strong>Post published successfully.</strong>';
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
           }
         } else {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>PUBLISH FAILED:</strong><br>' +
-              'Reason: ' + escapeHtml(safeStr(r.error || data.error, 'Meta Facebook API rejected publication.')) + '<br>' +
-              'No post status was changed to published.';
+            alertEl.innerHTML = '<strong>Publication failed.</strong> Please verify Facebook connection and try again.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
         }
       } catch (err) {
         if (alertEl) {
-          alertEl.textContent = 'Network error while attempting Facebook publication.';
+          alertEl.textContent = 'Network error while publishing post.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '📤 Publish Selected Post'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Publish now'; }
         loadPipelineData();
       }
     }
@@ -2262,7 +2235,7 @@ export function getAdminScripts(): string {
     async function runFullPipelineNow() {
       const btn = document.getElementById('run-full-pipeline-btn');
       const alertEl = document.getElementById('pipeline-control-alert');
-      if (btn) { btn.disabled = true; btn.textContent = '🚀 Executing Full Pipeline (End-to-End)...'; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Executing full pipeline...'; }
       if (alertEl) alertEl.style.display = 'none';
 
       try {
@@ -2275,7 +2248,7 @@ export function getAdminScripts(): string {
 
         if (res.status === 409 || data.code === 'PIPELINE_ALREADY_RUNNING') {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>PIPELINE ALREADY RUNNING:</strong> A pipeline execution is currently in progress. Please wait for it to finish.';
+            alertEl.innerHTML = '<strong>Pipeline currently running.</strong> Please wait for it to complete.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
@@ -2283,41 +2256,25 @@ export function getAdminScripts(): string {
         }
 
         if (res.ok && data.success && r.status === 'SUCCESS') {
-          const s1 = r.stage1Discovery || {};
-          const s2 = r.stage2Generation || {};
-          const s3 = r.stage3Publishing || {};
-
-          let html = '<strong>🚀 1-Click Full Pipeline Executed Successfully!</strong><br><br>' +
-            '• Stage 1 Content Discovery: <span class="status-badge status-healthy">SUCCESS</span> (' + (s1.newProposalsCount || 0) + ' new topics)<br>' +
-            '• Stage 2 Post Generation: <span class="status-badge status-healthy">SUCCESS</span> ("' + escapeHtml(safeStr(s2.title)) + '", QA Score: ' + (s2.qualityScore || 0) + ')<br>' +
-            '• Stage 3 Quality Evaluation: <span class="status-badge status-healthy">PASS</span><br>' +
-            '• Stage 4 Facebook Publishing: <span class="status-badge status-healthy">SUCCESS</span> (Post ID: <code>' + escapeHtml(safeStr(s3.facebookPostId || r.facebookPostId)) + '</code>)<br>' +
-            '• Published Posts Count: <strong>EXACTLY 1 POST</strong><br>' +
-            '• Total Duration: <strong>' + ((r.durationMs || 0) / 1000).toFixed(1) + 's</strong>';
-
           if (alertEl) {
-            alertEl.innerHTML = html;
+            alertEl.innerHTML = '<strong>Pipeline execution completed successfully.</strong>';
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
           }
         } else {
           if (alertEl) {
-            alertEl.innerHTML = '<strong>Full Pipeline Execution Failed:</strong><br>' +
-              'Reason: ' + escapeHtml(safeStr(data.error || r.errorMessage, 'One of the pipeline stages failed execution.')) + '<br>' +
-              'No unverified posts were published.';
+            alertEl.innerHTML = '<strong>Pipeline execution failed.</strong> Please try again.';
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
         }
       } catch (err) {
         if (alertEl) {
-          alertEl.textContent = 'Network error while executing Full Pipeline.';
+          alertEl.textContent = 'Network error while executing pipeline.';
           alertEl.className = 'alert-error';
           alertEl.style.display = 'block';
         }
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '🚀 RUN FULL PIPELINE NOW'; }
-        loadPipelineData();
       }
     }
 

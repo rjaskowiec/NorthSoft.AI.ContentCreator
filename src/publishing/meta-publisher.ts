@@ -91,6 +91,25 @@ export interface MetaPublisherConfigStatus {
   lastErrorCategory?: MetaErrorCategory;
 }
 
+export interface FacebookPostRecord {
+  id: string;
+  message?: string;
+  createdTime?: string;
+  updatedTime?: string;
+  permalinkUrl?: string;
+  fullPicture?: string;
+}
+
+export interface FacebookPagePostsResult {
+  success: boolean;
+  posts: FacebookPostRecord[];
+  paging?: {
+    next?: string;
+    after?: string;
+  };
+  error?: string;
+}
+
 /**
  * Meta Publisher interface.
  * Isolates all Meta/Facebook API interactions behind a clean boundary.
@@ -115,4 +134,19 @@ export interface IMetaPublisher {
    * Check if the publisher is properly configured and the API is reachable.
    */
   healthCheck(): Promise<boolean>;
+
+  /**
+   * Fetch a single post from Facebook Graph API by its external Facebook Post ID.
+   */
+  getPost(facebookPostId: string): Promise<{ success: boolean; post?: FacebookPostRecord; error?: string; httpStatus?: number }>;
+
+  /**
+   * Update the message/content of an existing published post on Facebook via Graph API.
+   */
+  updatePostMessage(facebookPostId: string, message: string): Promise<{ success: boolean; error?: string; httpStatus?: number }>;
+
+  /**
+   * Fetch recent published posts from the Facebook Page feed via Graph API.
+   */
+  fetchPagePosts(limit?: number, after?: string): Promise<FacebookPagePostsResult>;
 }

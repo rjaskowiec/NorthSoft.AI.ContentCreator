@@ -1113,7 +1113,7 @@ export function getAdminCss(): string {
 
     .calendar-grid-header {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       text-align: center;
       font-size: 0.75rem;
       font-weight: 700;
@@ -1127,19 +1127,25 @@ export function getAdminCss(): string {
 
     .calendar-grid {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 0.4rem;
+      width: 100%;
     }
 
     .calendar-day-cell {
       background: #090d16;
       border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: 8px;
-      min-height: 100px;
+      min-height: 105px;
+      max-height: 135px;
       padding: 0.5rem;
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
+      overflow: hidden;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       transition: border-color 0.15s ease, background 0.15s ease;
     }
 
@@ -1175,13 +1181,16 @@ export function getAdminCss(): string {
       background: rgba(24, 119, 242, 0.15);
       border: 1px solid rgba(24, 119, 242, 0.3);
       border-radius: 6px;
-      padding: 0.3rem 0.45rem;
+      padding: 0.25rem 0.4rem;
       font-size: 0.725rem;
       color: #93c5fd;
       cursor: pointer;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      max-width: 100%;
+      display: block;
+      box-sizing: border-box;
       transition: transform 0.15s ease, background 0.15s ease;
     }
 
@@ -1190,9 +1199,27 @@ export function getAdminCss(): string {
       transform: translateY(-1px);
     }
 
+    .calendar-item-chip.historical {
+      opacity: 0.55;
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .calendar-item-chip.more-badge {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-align: center;
+    }
+
     .calendar-item-time {
       font-weight: 700;
       color: #ffffff;
+      margin-right: 0.3rem;
+    }
       margin-right: 0.3rem;
     }
 

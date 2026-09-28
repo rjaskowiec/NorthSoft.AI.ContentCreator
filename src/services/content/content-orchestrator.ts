@@ -14,6 +14,7 @@
 
 import { getAIProvider } from '../../ai/factory';
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
+import { isAiExecutionPermitted } from '../../core/ai-window-policy';
 import { QuotaManager } from '../ai/quota-manager';
 import { ResearchService } from '../research/research-service';
 import { ContentPlannerService } from './content-planner-service';
@@ -52,6 +53,45 @@ export class ContentOrchestrator {
     const startTime = Date.now();
     const nowIso = new Date().toISOString();
     const runId = `orch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    // 0. Automation Master Switch Check: For cron triggers, abort immediately if master switch is OFF
+    if (triggerType === 'cron') {
+      const schedConfig = await this.db
+        .prepare('SELECT enabled FROM pipeline_scheduler_config WHERE id = "default"')
+        .first<{ enabled: number }>();
+      if (!schedConfig || schedConfig.enabled !== 1) {
+        const deferMsg = 'Master automation scheduler is disabled (OFF). Cron execution skipped.';
+        return {
+          runId,
+          status: 'deferred',
+          resultStatus: 'deferred',
+          neuronsUsed: 0,
+          errorMessage: deferMsg,
+          durationMs: Date.now() - startTime,
+        };
+      }
+    }
+
+    // 0b. AI Background Execution Window Policy Check: Automated cron runs are restricted to 18:00–23:30 UTC
+    if (!isAiExecutionPermitted(triggerType)) {
+      const deferMsg = 'Outside AI background execution window (18:00–23:30 UTC). Job deferred until next evening window.';
+      await this.auditLogger.log({
+        eventType: 'ORCHESTRATOR_RUN_DEFERRED',
+        entityType: 'orchestrator_run',
+        entityId: runId,
+        actor: triggerType === 'manual' ? 'admin' : 'system',
+        details: { reason: deferMsg, window: '18:00-23:30 UTC' },
+      });
+
+      return {
+        runId,
+        status: 'deferred',
+        resultStatus: 'deferred',
+        neuronsUsed: 0,
+        errorMessage: deferMsg,
+        durationMs: Date.now() - startTime,
+      };
+    }
 
     // 1. Concurrency Protection: Check if an autonomous run is already in progress (started within last 5 mins)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -273,41 +313,53 @@ export class ContentOrchestrator {
         .first<{ total: number | null }>();
       const runNeuronsUsed = neuronsRes?.total ?? 0;
 
-      // 8. Internal Scheduling (If Post APPROVED)
+      // 8. Internal Scheduling (ONLY if Automatic Publishing is explicitly ON)
       let finalResultStatus:
-        'scheduled' | 'approved' | 'blocked' | 'rejected' | 'deferred' | 'failed' =
-        planResult.status === 'approved' ? 'scheduled' : planResult.status;
+        'scheduled' | 'approved' | 'blocked' | 'rejected' | 'deferred' | 'failed' = planResult.status;
 
       if (planResult.status === 'approved' && planResult.postId) {
-        const scheduleId = `sched-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const autoPublishSetting = await this.db
+          .prepare("SELECT value FROM content_settings WHERE key = 'auto_publish' OR key = 'automatic_publishing_enabled'")
+          .first<{ value: string }>();
 
-        // Schedule post for tomorrow 09:00 UTC
-        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        tomorrow.setUTCHours(9, 0, 0, 0);
-        const scheduledAtIso = tomorrow.toISOString();
+        const isAutoPublish =
+          autoPublishSetting &&
+          (autoPublishSetting.value.toLowerCase() === 'true' ||
+            autoPublishSetting.value.toLowerCase() === '1' ||
+            autoPublishSetting.value.toLowerCase() === 'enabled');
 
-        await this.db
-          .prepare(
-            `INSERT INTO schedules (id, post_id, scheduled_at, timezone, status, created_at, updated_at)
-             VALUES (?, ?, ?, 'UTC', 'pending', ?, ?)`,
-          )
-          .bind(scheduleId, planResult.postId, scheduledAtIso, nowIso, nowIso)
-          .run();
+        if (isAutoPublish) {
+          finalResultStatus = 'scheduled';
+          const scheduleId = `sched-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-        await this.db
-          .prepare("UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ?")
-          .bind(nowIso, planResult.postId)
-          .run();
+          // Schedule post for tomorrow 09:00 UTC
+          const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          tomorrow.setUTCHours(9, 0, 0, 0);
+          const scheduledAtIso = tomorrow.toISOString();
 
-        await this.auditLogger.log({
-          eventType: 'POST_SCHEDULED',
-          entityType: 'post',
-          entityId: planResult.postId,
-          actor: 'system',
-          details: { scheduleId, scheduledAt: scheduledAtIso },
-        });
+          await this.db
+            .prepare(
+              `INSERT INTO schedules (id, post_id, scheduled_at, timezone, status, created_at, updated_at)
+               VALUES (?, ?, ?, 'UTC', 'pending', ?, ?)`,
+            )
+            .bind(scheduleId, planResult.postId, scheduledAtIso, nowIso, nowIso)
+            .run();
 
-        finalResultStatus = 'scheduled';
+          await this.db
+            .prepare("UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ?")
+            .bind(nowIso, planResult.postId)
+            .run();
+
+          await this.auditLogger.log({
+            eventType: 'POST_SCHEDULED',
+            entityType: 'post',
+            entityId: planResult.postId,
+            actor: 'system',
+            details: { scheduledAt: scheduledAtIso },
+          });
+        } else {
+          finalResultStatus = 'approved';
+        }
       }
 
       await this.completeRun(runId, 'completed', finalResultStatus, {

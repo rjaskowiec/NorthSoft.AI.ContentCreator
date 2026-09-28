@@ -16,7 +16,10 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../../index';
 import { META_API } from '../../core/constants.js';
 import { getEnvironment } from '../../core/environment.js';
-import { sanitizeSecretTokens } from '../../publishing/facebook-publisher.js';
+import { sanitizeSecretTokens, FacebookPublisher } from '../../publishing/facebook-publisher.js';
+import { csrfProtection } from '../../core/auth/csrf.js';
+import { D1AuditLogger } from '../../core/audit.js';
+import { PublicationService } from '../../services/publishing/publication-service.js';
 
 export const facebookRouter = new Hono<AppEnv>();
 
@@ -180,4 +183,92 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       502,
     );
   }
+});
+
+/**
+ * POST /api/admin/facebook/sync
+ * Triggers bidirectional Facebook -> System synchronization check for published posts.
+ */
+facebookRouter.post('/facebook/sync', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const publisher = new FacebookPublisher(c.env);
+  const auditLogger = new D1AuditLogger(db);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+
+  const result = await pubService.syncFacebookPostsToSystem();
+
+  return c.json({
+    success: true,
+    result,
+  });
+});
+
+/**
+ * POST /api/admin/facebook/posts/:id/update
+ * Pushes local updates to an already published post to Facebook via Graph API.
+ */
+facebookRouter.post('/facebook/posts/:id/update', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  if (!id) {
+    return c.json({ success: false, error: 'Post ID is required.' }, 400);
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { content?: string };
+
+  const content = (body.content || '').trim();
+  if (!content) {
+    return c.json({ success: false, error: 'Content is required.' }, 400);
+  }
+
+  const publisher = new FacebookPublisher(c.env);
+  const auditLogger = new D1AuditLogger(db);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+
+  const result = await pubService.updatePublishedPostFromSystem(id, content, 'admin');
+
+  if (!result.success) {
+    if (result.conflict) {
+      return c.json(
+        {
+          success: false,
+          conflict: true,
+          error: result.error,
+          fbContent: result.fbContent,
+        },
+        409,
+      );
+    }
+    return c.json({ success: false, error: result.error || 'Update failed' }, 400);
+  }
+
+  return c.json({ success: true });
+});
+
+/**
+ * POST /api/admin/facebook/posts/:id/resolve-conflict
+ * Resolves a sync conflict by explicitly choosing 'use_local' or 'use_facebook'.
+ */
+facebookRouter.post('/facebook/posts/:id/resolve-conflict', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  if (!id) {
+    return c.json({ success: false, error: 'Post ID is required.' }, 400);
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { resolution?: 'use_local' | 'use_facebook' };
+
+  if (!body.resolution || (body.resolution !== 'use_local' && body.resolution !== 'use_facebook')) {
+    return c.json({ success: false, error: 'resolution must be either "use_local" or "use_facebook"' }, 400);
+  }
+
+  const publisher = new FacebookPublisher(c.env);
+  const auditLogger = new D1AuditLogger(db);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+
+  const result = await pubService.resolveSyncConflict(id, body.resolution, 'admin');
+
+  if (!result.success) {
+    return c.json({ success: false, error: result.error || 'Failed to resolve conflict' }, 400);
+  }
+
+  return c.json({ success: true, resolution: body.resolution });
 });

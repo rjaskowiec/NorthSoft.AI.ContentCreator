@@ -780,4 +780,365 @@ export class PublicationService {
       qualityGateStatus: r.quality_gate_status,
     };
   }
+
+  /**
+   * Simple deterministic content hash helper to detect changes without false positives.
+   */
+  public hashContent(text: string): string {
+    const str = (text || '').trim().replace(/\r?\n/g, '\n');
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return hash.toString(36);
+  }
+
+  /**
+   * Facebook -> System Sync:
+   * Periodically checks published Facebook posts to pull external edits into system.
+   */
+  public async syncFacebookPostsToSystem(): Promise<{ checked: number; updated: number; conflicts: number; errors: number }> {
+    let checked = 0;
+    let updated = 0;
+    let conflicts = 0;
+    let errors = 0;
+
+    try {
+      const pubRows = await this.db
+        .prepare(
+          `SELECT pub.id as publication_id, pub.post_id, pub.post_version_id, pub.facebook_post_id,
+                  pub.sync_status as pub_sync_status, pub.fb_content_hash, pub.pushed_content_hash,
+                  p.current_version, p.sync_status as post_sync_status, pv.content as local_content
+           FROM publications pub
+           JOIN posts p ON pub.post_id = p.id
+           JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+           WHERE pub.status = 'published' AND pub.facebook_post_id IS NOT NULL AND pub.facebook_post_id != ''`,
+        )
+        .all<{
+          publication_id: string;
+          post_id: string;
+          post_version_id: string;
+          facebook_post_id: string;
+          pub_sync_status: string;
+          fb_content_hash?: string;
+          pushed_content_hash?: string;
+          current_version: number;
+          post_sync_status: string;
+          local_content: string;
+        }>();
+
+      const items = pubRows.results || [];
+      const nowIso = new Date().toISOString();
+
+      for (const item of items) {
+        checked++;
+        const res = await this.publisher.getPost(item.facebook_post_id);
+
+        if (!res.success || !res.post) {
+          if (res.httpStatus === 404) {
+            // Deleted on FB
+            await this.db
+              .prepare(`UPDATE publications SET sync_status = 'SYNC_FAILED', fb_last_check_at = ? WHERE id = ?`)
+              .bind(nowIso, item.publication_id)
+              .run();
+          } else {
+            errors++;
+          }
+          continue;
+        }
+
+        const fbMsg = (res.post.message || '').trim();
+        const fbHash = this.hashContent(fbMsg);
+        const localHash = this.hashContent(item.local_content);
+
+        // Case 1: FB message matches local content or matches pushed content hash -> SYNCED (No-op)
+        if (fbHash === localHash || (item.pushed_content_hash && fbHash === item.pushed_content_hash)) {
+          await this.db
+            .prepare(
+              `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', fb_content_hash = ? WHERE id = ?`,
+            )
+            .bind(nowIso, nowIso, fbHash, item.publication_id)
+            .run();
+
+          await this.db
+            .prepare(`UPDATE posts SET sync_status = 'SYNCED', last_synced_at = ? WHERE id = ?`)
+            .bind(nowIso, item.post_id)
+            .run();
+
+          continue;
+        }
+
+        // Case 2: FB message differs from local content.
+        // Check if local post was edited locally since last sync (LOCAL_AHEAD or CONFLICT)
+        if (item.post_sync_status === 'LOCAL_AHEAD') {
+          // CONFLICT: both local and FB edited independently!
+          conflicts++;
+          await this.db
+            .prepare(`UPDATE publications SET sync_status = 'CONFLICT', fb_last_check_at = ?, fb_content_hash = ? WHERE id = ?`)
+            .bind(nowIso, fbHash, item.publication_id)
+            .run();
+
+          await this.db
+            .prepare(`UPDATE posts SET sync_status = 'CONFLICT' WHERE id = ?`)
+            .bind(item.post_id)
+            .run();
+
+          if (this.auditLogger) {
+            await this.auditLogger.log({
+              eventType: 'ADMIN_ACTION',
+              entityType: 'post',
+              entityId: item.post_id,
+              actor: 'system',
+              details: { action: 'sync_conflict_detected', facebookPostId: item.facebook_post_id },
+            });
+          }
+          continue;
+        }
+
+        // Case 3: FB message changed externally on FB -> System updates local version to match FB!
+        const newVersionNumber = item.current_version + 1;
+        const versionId = crypto.randomUUID();
+
+        await this.db.batch([
+          this.db
+            .prepare(
+              `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+               VALUES (?, ?, ?, ?, 'text', ?, 'facebook-graph-api', 'facebook', ?)`,
+            )
+            .bind(
+              versionId,
+              item.post_id,
+              newVersionNumber,
+              fbMsg,
+              JSON.stringify({ sync_source: 'facebook', updated_at: nowIso }),
+              nowIso,
+            ),
+          this.db
+            .prepare(
+              `UPDATE posts SET current_version = ?, sync_status = 'SYNCED', last_synced_at = ?, updated_at = ? WHERE id = ?`,
+            )
+            .bind(newVersionNumber, nowIso, nowIso, item.post_id),
+          this.db
+            .prepare(
+              `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', fb_content_hash = ?, sync_source = 'facebook' WHERE id = ?`,
+            )
+            .bind(nowIso, nowIso, fbHash, item.publication_id),
+        ]);
+
+        updated++;
+
+        if (this.auditLogger) {
+          await this.auditLogger.log({
+            eventType: 'ADMIN_ACTION',
+            entityType: 'post',
+            entityId: item.post_id,
+            actor: 'system',
+            details: { action: 'facebook_to_system_sync', versionNumber: newVersionNumber, facebookPostId: item.facebook_post_id },
+          });
+        }
+      }
+
+      return { checked, updated, conflicts, errors };
+    } catch {
+      return { checked, updated, conflicts, errors: errors + 1 };
+    }
+  }
+
+  /**
+   * System -> Facebook Sync:
+   * When user edits an already published post locally, push change to Facebook via Graph API.
+   * If Facebook was modified externally, flag CONFLICT instead of overwriting FB automatically.
+   */
+  public async updatePublishedPostFromSystem(
+    postId: string,
+    newContent: string,
+    actor: 'system' | 'admin' | 'ai' = 'admin',
+  ): Promise<{ success: boolean; conflict?: boolean; error?: string; fbContent?: string }> {
+    const nowIso = new Date().toISOString();
+    const newHash = this.hashContent(newContent);
+
+    // Fetch publication & current local version
+    const pub = await this.db
+      .prepare(
+        `SELECT pub.id as publication_id, pub.facebook_post_id, pub.fb_content_hash, pub.pushed_content_hash,
+                p.current_version, pv.content as current_local_content
+         FROM publications pub
+         JOIN posts p ON pub.post_id = p.id
+         JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+         WHERE pub.post_id = ? AND pub.status = 'published'`,
+      )
+      .bind(postId)
+      .first<{
+        publication_id: string;
+        facebook_post_id: string;
+        fb_content_hash?: string;
+        pushed_content_hash?: string;
+        current_version: number;
+        current_local_content: string;
+      }>();
+
+    if (!pub || !pub.facebook_post_id) {
+      return { success: false, error: 'Post is not currently published on Facebook.' };
+    }
+
+    // 1. Fetch current FB state before updating to check for external edits
+    const fbRes = await this.publisher.getPost(pub.facebook_post_id);
+    if (fbRes.success && fbRes.post) {
+      const fbMsg = (fbRes.post.message || '').trim();
+      const fbHash = this.hashContent(fbMsg);
+
+      // Check if FB was edited externally (FB hash does not match last known FB hash or pushed hash)
+      if (
+        pub.fb_content_hash &&
+        fbHash !== pub.fb_content_hash &&
+        pub.pushed_content_hash &&
+        fbHash !== pub.pushed_content_hash
+      ) {
+        // CONFLICT! Facebook was modified externally on FB since last sync!
+        await this.db
+          .prepare(`UPDATE posts SET sync_status = 'CONFLICT' WHERE id = ?`)
+          .bind(postId)
+          .run();
+
+        await this.db
+          .prepare(`UPDATE publications SET sync_status = 'CONFLICT', fb_content_hash = ? WHERE id = ?`)
+          .bind(fbHash, pub.publication_id)
+          .run();
+
+        return {
+          success: false,
+          conflict: true,
+          error: 'Conflict detected: The post on Facebook was modified directly on Facebook since last sync.',
+          fbContent: fbMsg,
+        };
+      }
+    }
+
+    // 2. Update post content on Facebook via Graph API
+    const updateRes = await this.publisher.updatePostMessage(pub.facebook_post_id, newContent);
+    if (!updateRes.success) {
+      await this.db
+        .prepare(`UPDATE publications SET sync_status = 'SYNC_FAILED' WHERE id = ?`)
+        .bind(pub.publication_id)
+        .run();
+
+      return { success: false, error: updateRes.error || 'Failed to update post on Facebook.' };
+    }
+
+    // 3. Persist local version & update sync status atomically
+    const newVersionNumber = pub.current_version + 1;
+    const versionId = crypto.randomUUID();
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+           VALUES (?, ?, ?, ?, 'text', ?, 'admin-user', 'local_user', ?)`,
+        )
+        .bind(
+          versionId,
+          postId,
+          newVersionNumber,
+          newContent,
+          JSON.stringify({ sync_source: 'local_user', updated_at: nowIso }),
+          nowIso,
+        ),
+      this.db
+        .prepare(
+          `UPDATE posts SET current_version = ?, sync_status = 'SYNCED', last_synced_at = ?, updated_at = ? WHERE id = ?`,
+        )
+        .bind(newVersionNumber, nowIso, nowIso, postId),
+      this.db
+        .prepare(
+          `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', pushed_content_hash = ?, fb_content_hash = ?, sync_source = 'local_user' WHERE id = ?`,
+        )
+        .bind(nowIso, nowIso, newHash, newHash, pub.publication_id),
+    ]);
+
+    if (this.auditLogger) {
+      await this.auditLogger.log({
+        eventType: 'ADMIN_ACTION',
+        entityType: 'post',
+        entityId: postId,
+        actor,
+        details: { action: 'system_to_facebook_sync', versionNumber: newVersionNumber, facebookPostId: pub.facebook_post_id },
+      });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Conflict Resolution:
+   * Explicitly resolves a sync conflict by choosing either 'use_local' or 'use_facebook'.
+   */
+  public async resolveSyncConflict(
+    postId: string,
+    resolution: 'use_local' | 'use_facebook',
+    actor: 'system' | 'admin' | 'ai' = 'admin',
+  ): Promise<{ success: boolean; error?: string }> {
+    const pub = await this.db
+      .prepare(`SELECT facebook_post_id FROM publications WHERE post_id = ? AND status = 'published'`)
+      .bind(postId)
+      .first<{ facebook_post_id: string }>();
+
+    if (!pub || !pub.facebook_post_id) {
+      return { success: false, error: 'No published Facebook post found.' };
+    }
+
+    if (resolution === 'use_local') {
+      const currentLocal = await this.db
+        .prepare(
+          `SELECT pv.content FROM posts p JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number WHERE p.id = ?`,
+        )
+        .bind(postId)
+        .first<{ content: string }>();
+
+      if (!currentLocal) return { success: false, error: 'Local post version not found.' };
+      return this.updatePublishedPostFromSystem(postId, currentLocal.content, actor);
+    } else {
+      // Use Facebook version -> fetch FB content and apply locally
+      const fbRes = await this.publisher.getPost(pub.facebook_post_id);
+      if (!fbRes.success || !fbRes.post) {
+        return { success: false, error: fbRes.error || 'Failed to fetch Facebook post.' };
+      }
+
+      const fbMsg = (fbRes.post.message || '').trim();
+      const fbHash = this.hashContent(fbMsg);
+      const nowIso = new Date().toISOString();
+
+      const postRow = await this.db
+        .prepare(`SELECT current_version FROM posts WHERE id = ?`)
+        .bind(postId)
+        .first<{ current_version: number }>();
+
+      const newVersion = (postRow?.current_version || 1) + 1;
+      const versionId = crypto.randomUUID();
+
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+             VALUES (?, ?, ?, ?, 'text', ?, 'facebook-graph-api', 'facebook', ?)`,
+          )
+          .bind(
+            versionId,
+            postId,
+            newVersion,
+            fbMsg,
+            JSON.stringify({ sync_source: 'facebook_conflict_resolved', updated_at: nowIso }),
+            nowIso,
+          ),
+        this.db
+          .prepare(`UPDATE posts SET current_version = ?, sync_status = 'SYNCED', last_synced_at = ? WHERE id = ?`)
+          .bind(newVersion, nowIso, postId),
+        this.db
+          .prepare(`UPDATE publications SET sync_status = 'SYNCED', fb_last_sync_at = ?, fb_content_hash = ? WHERE post_id = ?`)
+          .bind(nowIso, fbHash, postId),
+      ]);
+
+      return { success: true };
+    }
+  }
 }

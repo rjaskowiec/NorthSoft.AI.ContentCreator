@@ -13,8 +13,11 @@ export function parseAiJsonResponse<T = Record<string, unknown>>(rawText: string
 
   let cleaned = rawText.trim();
 
-  // 1. Strip Markdown Code Fences (```json ... ``` or ``` ... ```)
-  if (cleaned.startsWith('```')) {
+  // 1. Extract markdown code fence anywhere in text (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1] && codeBlockMatch[1].trim()) {
+    cleaned = codeBlockMatch[1].trim();
+  } else if (cleaned.startsWith('```')) {
     cleaned = cleaned
       .replace(/^```(?:json)?\s*\n?/i, '')
       .replace(/\n?\s*```$/i, '')
@@ -43,9 +46,12 @@ export function parseAiJsonResponse<T = Record<string, unknown>>(rawText: string
         return res as T;
       }
     } catch {
-      // 4. Heuristic fix for raw unescaped newlines inside strings
+      // 4. Sanitize raw unescaped newlines/tabs inside JSON string values
       try {
-        const sanitized = jsonSub.replace(/\r?\n/g, '\\n');
+        const sanitized = jsonSub.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (_match, group) => {
+          const cleanedString = group.replace(/\r?\n/g, '\\n').replace(/\t/g, '\\t');
+          return `"${cleanedString}"`;
+        });
         const res = JSON.parse(sanitized);
         if (res && typeof res === 'object' && !Array.isArray(res)) {
           return res as T;
