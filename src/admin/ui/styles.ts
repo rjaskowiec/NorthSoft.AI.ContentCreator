@@ -629,7 +629,7 @@ export function getAdminCss(): string {
 
     /* 3. RIGHT FACEBOOK LIVE PREVIEW RAIL */
     .facebook-rail {
-      width: 330px;
+      width: 400px;
       background: var(--bg-sidebar);
       border-left: 1px solid var(--border-color);
       display: flex;
@@ -858,7 +858,7 @@ export function getAdminCss(): string {
     /* RESPONSIVE BREAKPOINTS */
     @media (max-width: 1200px) {
       .facebook-rail {
-        width: 300px;
+        width: 340px;
       }
     }
 

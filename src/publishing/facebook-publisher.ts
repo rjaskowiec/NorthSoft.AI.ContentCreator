@@ -337,7 +337,7 @@ export class FacebookPublisher implements IMetaPublisher {
     }
 
     try {
-      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}?fields=id,message,created_time,updated_time,permalink_url,full_picture&access_token=${encodeURIComponent(this.accessToken)}`;
+      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}?fields=id,message,created_time,updated_time,permalink_url,full_picture,is_hidden&access_token=${encodeURIComponent(this.accessToken)}`;
       const res = await fetch(url, { method: 'GET' });
       const data = (await res.json()) as {
         id?: string;
@@ -346,6 +346,7 @@ export class FacebookPublisher implements IMetaPublisher {
         updated_time?: string;
         permalink_url?: string;
         full_picture?: string;
+        is_hidden?: boolean;
         error?: { message?: string };
       };
 
@@ -367,6 +368,7 @@ export class FacebookPublisher implements IMetaPublisher {
           updatedTime: data.updated_time,
           permalinkUrl: data.permalink_url,
           fullPicture: data.full_picture,
+          isHidden: data.is_hidden === true,
         },
       };
     } catch (err: unknown) {
@@ -405,6 +407,44 @@ export class FacebookPublisher implements IMetaPublisher {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: sanitizeSecretTokens(msg) };
+    }
+  }
+
+  public async updatePostHidden(facebookPostId: string, hidden: boolean): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+    if (!this.getConfigStatus().configured) {
+      return { success: false, error: 'Facebook publisher is disabled or not configured.', httpStatus: 400 };
+    }
+    try {
+      const body = new URLSearchParams({ is_hidden: hidden ? 'true' : 'false', access_token: this.accessToken });
+      const response = await fetch(`${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      const data = await response.json() as { success?: boolean; error?: { message?: string } };
+      if (!response.ok || data.error || data.success === false) {
+        return { success: false, httpStatus: response.status, error: sanitizeSecretTokens(data.error?.message || `Meta post visibility update failed (HTTP ${response.status}).`) };
+      }
+      return { success: true, httpStatus: response.status };
+    } catch (error: unknown) {
+      return { success: false, error: sanitizeSecretTokens(error instanceof Error ? error.message : String(error)) };
+    }
+  }
+
+  public async deletePost(facebookPostId: string): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+    if (!this.getConfigStatus().configured) {
+      return { success: false, error: 'Facebook publisher is disabled or not configured.', httpStatus: 400 };
+    }
+    try {
+      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}?access_token=${encodeURIComponent(this.accessToken)}`;
+      const response = await fetch(url, { method: 'DELETE' });
+      const data = await response.json() as { success?: boolean; error?: { message?: string } };
+      if (!response.ok || data.error || data.success === false) {
+        return { success: false, httpStatus: response.status, error: sanitizeSecretTokens(data.error?.message || `Meta post deletion failed (HTTP ${response.status}).`) };
+      }
+      return { success: true, httpStatus: response.status };
+    } catch (error: unknown) {
+      return { success: false, error: sanitizeSecretTokens(error instanceof Error ? error.message : String(error)) };
     }
   }
 
@@ -461,7 +501,7 @@ export class FacebookPublisher implements IMetaPublisher {
     }
 
     try {
-      let url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(this.pageId)}/published_posts?fields=id,message,created_time,updated_time,permalink_url,full_picture&limit=${limit}&access_token=${encodeURIComponent(this.accessToken)}`;
+      let url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(this.pageId)}/published_posts?fields=id,message,created_time,updated_time,permalink_url,full_picture,is_hidden&limit=${limit}&access_token=${encodeURIComponent(this.accessToken)}`;
       if (after) {
         url += `&after=${encodeURIComponent(after)}`;
       }
@@ -475,6 +515,7 @@ export class FacebookPublisher implements IMetaPublisher {
           updated_time?: string;
           permalink_url?: string;
           full_picture?: string;
+          is_hidden?: boolean;
         }>;
         paging?: { cursors?: { after?: string }; next?: string };
         error?: { message?: string };
@@ -495,6 +536,7 @@ export class FacebookPublisher implements IMetaPublisher {
         updatedTime: item.updated_time,
         permalinkUrl: item.permalink_url,
         fullPicture: item.full_picture,
+        isHidden: item.is_hidden === true,
       }));
 
       return {

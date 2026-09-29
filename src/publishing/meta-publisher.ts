@@ -100,6 +100,7 @@ export interface FacebookPostRecord {
   updatedTime?: string;
   permalinkUrl?: string;
   fullPicture?: string;
+  isHidden?: boolean;
 }
 
 export interface FacebookPagePostsResult {
@@ -149,6 +150,12 @@ export interface IMetaPublisher {
 
   /** Replace/remove a published Page post's photo using official Graph API media calls. */
   updatePostImage?(facebookPostId: string, imageUrl: string | null): Promise<{ success: boolean; error?: string; httpStatus?: number }>;
+
+  /** Hide or unhide a Page post. */
+  updatePostHidden?(facebookPostId: string, hidden: boolean): Promise<{ success: boolean; error?: string; httpStatus?: number }>;
+
+  /** Delete a Page post. */
+  deletePost?(facebookPostId: string): Promise<{ success: boolean; error?: string; httpStatus?: number }>;
 
   /**
    * Fetch recent published posts from the Facebook Page feed via Graph API.

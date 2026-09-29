@@ -11,6 +11,10 @@ export function getAdminScripts(): string {
     let cachedTopics = [];
     let cachedPosts = [];
     let cachedSchedules = [];
+    let facebookPublicationPosts = new Map();
+    let facebookPublicationCursor = null;
+    let facebookPublicationHasMore = false;
+    let facebookPublicationLoading = false;
     let pendingDeleteType = null;
     let pendingDeleteId = null;
 
@@ -234,7 +238,7 @@ export function getAdminScripts(): string {
         } else if (tabName === 'schedules') {
           await loadSchedulesData();
         } else if (tabName === 'publications') {
-          await loadPublicationsData();
+          await loadFacebookPublications(false);
         } else if (tabName === 'audit') {
           await loadAuditData();
         } else if (tabName === 'security') {
@@ -1402,6 +1406,239 @@ export function getAdminScripts(): string {
       }
     }
 
+    async function loadFacebookPublications(append) {
+      if (facebookPublicationLoading) return;
+      facebookPublicationLoading = true;
+      const isAppend = Boolean(append);
+      const body = document.getElementById('publications-table-body');
+      const more = document.getElementById('publications-load-more-wrap');
+      try {
+        if (!isAppend) {
+          facebookPublicationCursor = null;
+          facebookPublicationHasMore = false;
+          facebookPublicationPosts = new Map();
+          if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading Facebook posts...</td></tr>';
+          if (more) more.style.display = 'none';
+        }
+
+        const configResponse = await guardedFetch('/api/admin/meta/status');
+        if (configResponse.ok) {
+          const config = await configResponse.json();
+          const status = safeUpper(config.status, 'NOT_CONFIGURED');
+          const badgeClass = status === 'READY' ? 'status-healthy' : status === 'DEGRADED' ? 'status-alert' : status === 'DISABLED' ? 'status-active' : 'status-disabled';
+          const badge = document.getElementById('meta-config-badge');
+          if (badge) badge.innerHTML = '<span class="status-badge ' + badgeClass + '">' + escapeHtml(status.replace('_', ' ')) + '</span>';
+          const pageId = document.getElementById('meta-pageid-val');
+          if (pageId) pageId.textContent = config.pageConfigured ? 'Configured (Set)' : 'Missing';
+          const token = document.getElementById('meta-token-val');
+          if (token) token.textContent = config.accessTokenConfigured ? 'Configured (Set)' : 'Missing';
+          const version = document.getElementById('meta-version-val');
+          if (version) version.textContent = safeStr(config.graphApiVersion, 'v26.0');
+          const enabled = document.getElementById('meta-lock-val');
+          if (enabled) enabled.textContent = config.publishingEnabled ? 'ENABLED' : 'DISABLED';
+        }
+
+        let url = '/api/admin/facebook/page-posts?limit=5&includeStats=true';
+        if (isAppend && facebookPublicationCursor) url += '&after=' + encodeURIComponent(facebookPublicationCursor);
+        const response = await guardedFetch(url);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.error) throw new Error(safeStr(result.error, 'Unable to load Facebook posts (HTTP ' + response.status + ').'));
+
+        const posts = Array.isArray(result.posts) ? result.posts : [];
+        posts.forEach(post => { if (post && post.id) facebookPublicationPosts.set(safeStr(post.id), post); });
+        facebookPublicationCursor = safeStr(result.paging?.after) || null;
+        facebookPublicationHasMore = Boolean(result.paging?.hasMore && facebookPublicationCursor);
+        const rows = posts.map(post => {
+          if (!post || !post.id) return '';
+          const id = escapeHtml(safeStr(post.id));
+          const content = safeStr(post.message || post.story, 'Post without text').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ');
+          const snippet = content.length > 120 ? content.slice(0, 117) + '...' : content;
+          const metric = value => value == null ? '<span title="Metric unavailable from Meta">—</span>' : Number(value).toLocaleString();
+          const date = post.createdTime ? new Date(post.createdTime).toLocaleString() : '—';
+          return '<tr><td class="code-tag">' + escapeHtml(date) + '</td>' +
+            '<td style="max-width:420px;white-space:normal;">' + escapeHtml(snippet) + '</td>' +
+            '<td>' + metric(post.views) + (post.uniqueViews == null ? '' : '<small style="display:block;color:var(--text-muted);">' + metric(post.uniqueViews) + ' unique</small>') + (post.insightsError ? '<small title="' + escapeHtml(post.insightsError) + '" style="display:block;color:var(--text-muted);">not available</small>' : '') + '</td>' +
+            '<td>' + metric(post.reactions) + '</td><td>' + metric(post.comments) + '</td><td>' + metric(post.shares) + '</td>' +
+            '<td><span class="status-badge ' + (post.isHidden ? 'status-disabled' : 'status-healthy') + '">' + (post.isHidden ? 'Hidden' : 'Published') + '</span></td>' +
+            '<td><button class="btn-secondary" style="padding:0.3rem 0.55rem;font-size:0.78rem;" onclick="openFacebookPostDetails(&quot;' + id + '&quot;)">Details &amp; edit</button></td></tr>';
+        }).join('');
+        if (body) {
+          if (isAppend) body.insertAdjacentHTML('beforeend', rows);
+          else body.innerHTML = rows || '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">No published Facebook posts found.</td></tr>';
+        }
+        if (more) more.style.display = facebookPublicationHasMore ? 'block' : 'none';
+      } catch (error) {
+        console.error('Failed to load Facebook publications:', error);
+        if (body && !isAppend) body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--accent-rose);">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</td></tr>';
+      } finally {
+        facebookPublicationLoading = false;
+      }
+    }
+
+    function loadMoreFacebookPublications() {
+      if (facebookPublicationHasMore && facebookPublicationCursor) loadFacebookPublications(true);
+    }
+
+    function showPublicationAlert(message, success) {
+      const alert = document.getElementById('publication-alert');
+      if (!alert) return;
+      alert.textContent = message;
+      alert.className = success ? 'alert-success' : 'alert-error';
+      alert.style.display = 'block';
+    }
+
+    async function syncFacebookPublications() {
+      const button = document.getElementById('sync-facebook-publications');
+      if (button) { button.disabled = true; button.textContent = 'Syncing...'; }
+      try {
+        const response = await guardedFetch('/api/admin/facebook/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: '{}' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook sync failed.'));
+        const result = data.result || {};
+        showPublicationAlert('Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated, ' + safeStr(result.conflicts, '0') + ' conflicts, ' + safeStr(result.errors, '0') + ' errors.', result.errors === 0);
+        await loadFacebookPublications(false);
+      } catch (error) {
+        showPublicationAlert(error instanceof Error ? error.message : String(error), false);
+      } finally {
+        if (button) { button.disabled = false; button.textContent = 'Sync with Facebook'; }
+      }
+    }
+
+    function openFacebookPostDetails(facebookPostId) {
+      const post = facebookPublicationPosts.get(safeStr(facebookPostId));
+      if (!post) return;
+      const error = document.getElementById('fb-post-detail-error');
+      error.style.display = 'none';
+      document.getElementById('fb-post-detail-content').value = safeStr(post.message || post.story);
+      document.getElementById('fb-post-detail-content').dataset.facebookPostId = safeStr(post.id);
+      document.getElementById('fb-post-detail-meta').textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable');
+      const displayMetric = value => value == null ? 'Not available' : Number(value).toLocaleString();
+      document.getElementById('fb-post-detail-stats').innerHTML = '<div class="card"><div class="card-label">Views</div><div class="card-val">' + displayMetric(post.views) + '</div></div>' +
+        '<div class="card"><div class="card-label">Unique views</div><div class="card-val">' + displayMetric(post.uniqueViews) + '</div></div>' +
+        '<div class="card"><div class="card-label">Reactions</div><div class="card-val">' + displayMetric(post.reactions) + '</div></div>' +
+        '<div class="card"><div class="card-label">Comments</div><div class="card-val">' + displayMetric(post.comments) + '</div></div>' +
+        '<div class="card"><div class="card-label">Shares</div><div class="card-val">' + displayMetric(post.shares) + '</div></div>';
+      const imageWrap = document.getElementById('fb-post-detail-image-wrap');
+      const image = document.getElementById('fb-post-detail-image');
+      document.getElementById('fb-post-image-url').value = '';
+      document.getElementById('fb-post-image-file').value = '';
+      document.getElementById('fb-post-remove-image').checked = false;
+      document.getElementById('fb-post-detail-content').dataset.internalPostId = safeStr(post.internalPostId);
+      if (post.fullPicture) { image.src = safeStr(post.fullPicture); imageWrap.style.display = 'block'; }
+      else { image.removeAttribute('src'); imageWrap.style.display = 'none'; }
+      const link = document.getElementById('fb-post-detail-link');
+      if (post.permalinkUrl) { link.href = safeStr(post.permalinkUrl); link.style.display = 'inline-block'; }
+      else link.style.display = 'none';
+      const hideButton = document.getElementById('fb-post-hide-button');
+      hideButton.textContent = post.isHidden ? 'Unhide' : 'Hide';
+      hideButton.dataset.facebookPostId = safeStr(post.id);
+      openModal('facebook-post-modal');
+    }
+
+    async function saveFacebookPostEdit() {
+      const textarea = document.getElementById('fb-post-detail-content');
+      const id = safeStr(textarea.dataset.facebookPostId);
+      try {
+        const response = await guardedFetch('/api/admin/facebook/page-posts/' + encodeURIComponent(id) + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ content: textarea.value }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook rejected the update.'));
+        closeModal('facebook-post-modal');
+        showPublicationAlert('Post updated on Facebook and in local history.', true);
+        await loadFacebookPublications(false);
+      } catch (error) {
+        const element = document.getElementById('fb-post-detail-error');
+        element.textContent = error instanceof Error ? error.message : String(error);
+        element.style.display = 'block';
+      }
+    }
+
+    async function saveFacebookPostImage() {
+      const textarea = document.getElementById('fb-post-detail-content');
+      const facebookPostId = safeStr(textarea.dataset.facebookPostId);
+      const post = facebookPublicationPosts.get(facebookPostId);
+      const fileInput = document.getElementById('fb-post-image-file');
+      const urlInput = document.getElementById('fb-post-image-url');
+      const removeImage = document.getElementById('fb-post-remove-image').checked;
+      const file = fileInput.files && fileInput.files[0];
+      let internalPostId = safeStr(textarea.dataset.internalPostId);
+      try {
+        if (!removeImage && !file && !safeStr(urlInput.value).trim()) throw new Error('Choose an image file, enter an image URL, or select Remove image.');
+        if (!internalPostId) {
+          const syncResponse = await guardedFetch('/api/admin/facebook/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: '{}' });
+          const syncData = await syncResponse.json().catch(() => ({}));
+          if (!syncResponse.ok || !syncData.success) throw new Error(safeStr(syncData.error, 'Could not sync this Facebook post before changing its image.'));
+          await loadFacebookPublications(false);
+          const refreshed = facebookPublicationPosts.get(facebookPostId);
+          internalPostId = safeStr(refreshed?.internalPostId);
+          textarea.dataset.internalPostId = internalPostId;
+          if (!internalPostId) throw new Error('This post could not be linked to local history for image editing.');
+        }
+
+        let response;
+        if (removeImage) {
+          response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+        } else if (file) {
+          const form = new FormData();
+          form.append('file', file);
+          response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', { method: 'POST', headers: { 'x-csrf-token': csrfToken }, body: form });
+        } else {
+          response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ url: urlInput.value.trim() }) });
+        }
+        const imageResult = await response.json().catch(() => ({}));
+        if (!response.ok || !imageResult.success) throw new Error(safeStr(imageResult.error, 'Image could not be saved locally.'));
+
+        const facebookResponse = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(internalPostId) + '/update-image', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: '{}' });
+        const facebookResult = await facebookResponse.json().catch(() => ({}));
+        if (!facebookResponse.ok || !facebookResult.success) throw new Error(safeStr(facebookResult.error, 'The local image was saved, but Facebook did not accept the media update.'));
+        closeModal('facebook-post-modal');
+        showPublicationAlert('Post image updated on Facebook and in local history.', true);
+        await loadFacebookPublications(false);
+      } catch (error) {
+        const element = document.getElementById('fb-post-detail-error');
+        element.textContent = error instanceof Error ? error.message : String(error);
+        element.style.display = 'block';
+      }
+    }
+
+    async function toggleFacebookPostHidden() {
+      const button = document.getElementById('fb-post-hide-button');
+      const id = safeStr(button.dataset.facebookPostId);
+      const post = facebookPublicationPosts.get(id);
+      if (!post) return;
+      try {
+        const response = await guardedFetch('/api/admin/facebook/page-posts/' + encodeURIComponent(id) + '/visibility', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ hidden: !post.isHidden }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook rejected the visibility change.'));
+        post.isHidden = !post.isHidden;
+        closeModal('facebook-post-modal');
+        showPublicationAlert(post.isHidden ? 'Post hidden on Facebook.' : 'Post is visible on Facebook again.', true);
+        await loadFacebookPublications(false);
+      } catch (error) {
+        const element = document.getElementById('fb-post-detail-error');
+        element.textContent = error instanceof Error ? error.message : String(error);
+        element.style.display = 'block';
+      }
+    }
+
+    async function deleteFacebookPost() {
+      const textarea = document.getElementById('fb-post-detail-content');
+      const id = safeStr(textarea.dataset.facebookPostId);
+      if (!id || !window.confirm('Delete this post from Facebook? This cannot be undone.')) return;
+      try {
+        const response = await guardedFetch('/api/admin/facebook/page-posts/' + encodeURIComponent(id), { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook rejected the deletion.'));
+        facebookPublicationPosts.delete(id);
+        closeModal('facebook-post-modal');
+        showPublicationAlert('Post deleted from Facebook. Local publication history was retained.', true);
+        await loadFacebookPublications(false);
+      } catch (error) {
+        const element = document.getElementById('fb-post-detail-error');
+        element.textContent = error instanceof Error ? error.message : String(error);
+        element.style.display = 'block';
+      }
+    }
+
     async function publishNow(postId) {
       const alertEl = document.getElementById('publication-alert');
       if (alertEl) alertEl.style.display = 'none';
@@ -1434,7 +1671,7 @@ export function getAdminScripts(): string {
           alertEl.style.display = 'block';
         }
       } finally {
-        loadPublicationsData();
+        loadFacebookPublications(false);
       }
     }
 
@@ -1470,7 +1707,7 @@ export function getAdminScripts(): string {
           alertEl.style.display = 'block';
         }
       } finally {
-        loadPublicationsData();
+        loadFacebookPublications(false);
       }
     }
 
@@ -1512,7 +1749,7 @@ export function getAdminScripts(): string {
           if (loadMoreWrap) loadMoreWrap.style.display = 'none';
         }
 
-        let fetchUrl = '/api/admin/facebook/page-posts?limit=10';
+        let fetchUrl = '/api/admin/facebook/page-posts?limit=5';
         if (isAppend && fbNextCursor) {
           fetchUrl += '&after=' + encodeURIComponent(fbNextCursor);
         }
@@ -3131,7 +3368,7 @@ export function getAdminScripts(): string {
           closeModal('scheduled-post-detail-modal');
           loadSchedulesData();
           loadContentData();
-          loadPublicationsData();
+          loadFacebookPublications(false);
         }
       } catch (err) {
         console.error('Failed to resolve conflict:', err);
@@ -3279,7 +3516,7 @@ export function getAdminScripts(): string {
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
           }
-          loadPublicationsData();
+          loadFacebookPublications(false);
         }
       } catch (err) {
         console.error('Failed to delete publication record:', err);
@@ -3462,7 +3699,14 @@ export function getAdminScripts(): string {
     window.loadResearchData = loadResearchData;
     window.loadContentData = loadContentData;
     window.loadSchedulesData = loadSchedulesData;
-    window.loadPublicationsData = loadPublicationsData;
+    window.loadPublicationsData = loadFacebookPublications;
+    window.loadMoreFacebookPublications = loadMoreFacebookPublications;
+    window.syncFacebookPublications = syncFacebookPublications;
+    window.openFacebookPostDetails = openFacebookPostDetails;
+    window.saveFacebookPostEdit = saveFacebookPostEdit;
+    window.saveFacebookPostImage = saveFacebookPostImage;
+    window.toggleFacebookPostHidden = toggleFacebookPostHidden;
+    window.deleteFacebookPost = deleteFacebookPost;
     window.loadAuditData = loadAuditData;
     window.loadSecurityData = loadSecurityData;
     window.runDiscoveryNow = runDiscoveryNow;

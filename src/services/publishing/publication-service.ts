@@ -820,7 +820,7 @@ export class PublicationService {
            JOIN posts p ON pub.post_id = p.id
            JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
            LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
-           WHERE pub.status = 'published' AND pub.facebook_post_id IS NOT NULL AND pub.facebook_post_id != ''`,
+           WHERE pub.status = 'published' AND pub.facebook_post_id IS NOT NULL AND pub.facebook_post_id != '' AND pub.fb_deleted_at IS NULL`,
         )
         .all<{
           publication_id: string;
@@ -849,8 +849,8 @@ export class PublicationService {
           if (res.httpStatus === 404) {
             // Deleted on FB
             await this.db
-              .prepare(`UPDATE publications SET sync_status = 'SYNC_FAILED', fb_last_check_at = ? WHERE id = ?`)
-              .bind(nowIso, item.publication_id)
+              .prepare(`UPDATE publications SET sync_status = 'SYNC_FAILED', fb_deleted_at = ?, fb_last_check_at = ? WHERE id = ?`)
+              .bind(nowIso, nowIso, item.publication_id)
               .run();
           } else {
             errors++;
@@ -859,6 +859,8 @@ export class PublicationService {
         }
 
         const fbMsg = (res.post.message || '').trim();
+        await this.db.prepare('UPDATE publications SET fb_is_hidden = ?, fb_deleted_at = NULL WHERE id = ?')
+          .bind(res.post.isHidden ? 1 : 0, item.publication_id).run();
         const fbHash = this.hashContent(fbMsg);
         const localHash = this.hashContent(item.local_content);
 
@@ -1025,7 +1027,7 @@ export class PublicationService {
         for (const fbPost of feed.posts) {
           const content = (fbPost.message || '').trim();
           if (!fbPost.id || !content) continue;
-          const existing = await this.db.prepare('SELECT id FROM publications WHERE facebook_post_id = ? LIMIT 1')
+          const existing = await this.db.prepare('SELECT id FROM publications WHERE facebook_post_id = ? AND fb_deleted_at IS NULL LIMIT 1')
             .bind(fbPost.id).first<{ id: string }>();
           if (existing) continue;
 
@@ -1046,10 +1048,10 @@ export class PublicationService {
             this.db.prepare(
               `INSERT INTO publications (id, post_id, post_version_id, facebook_post_id, provider, status, attempt_count,
                  published_at, fb_last_check_at, fb_last_sync_at, sync_status, fb_content_hash, pushed_content_hash, sync_source,
-                 fb_image_url, pushed_image_url, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'facebook', 'published', 1, ?, ?, ?, 'SYNCED', ?, ?, 'facebook', ?, ?, ?, ?)`
+                 fb_image_url, pushed_image_url, fb_is_hidden, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'facebook', 'published', 1, ?, ?, ?, 'SYNCED', ?, ?, 'facebook', ?, ?, ?, ?, ?)`
             ).bind(publicationId, postId, versionId, fbPost.id, createdAt, nowIso, nowIso, hash, hash,
-              fbPost.fullPicture || null, fbPost.fullPicture || null, nowIso, nowIso),
+              fbPost.fullPicture || null, fbPost.fullPicture || null, fbPost.isHidden ? 1 : 0, nowIso, nowIso),
             ...(fbPost.fullPicture ? [this.db.prepare(
               `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
                VALUES (?, ?, 1, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`

@@ -600,31 +600,38 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
               <div>
                 <h1 class="page-title">Publications</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">History of published posts.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Published posts and current Facebook performance.</p>
               </div>
+              <button id="sync-facebook-publications" class="btn-secondary" onclick="syncFacebookPublications()">Sync with Facebook</button>
             </div>
 
             <div id="publication-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
 
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title">Facebook Publication Log</div>
+                <div class="panel-title">Facebook Posts</div>
               </div>
               <div class="table-container">
                 <table>
                   <thead>
                     <tr>
-                      <th>Published Date</th>
-                      <th>Post Snippet</th>
-                      <th>Platform</th>
+                      <th>Published</th>
+                      <th>Post</th>
+                      <th>Views</th>
+                      <th>Reactions</th>
+                      <th>Comments</th>
+                      <th>Shares</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="publications-table-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading publication history...</td></tr>
+                    <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading Facebook posts...</td></tr>
                   </tbody>
                 </table>
+              </div>
+              <div id="publications-load-more-wrap" style="display:none; padding:1rem; text-align:center;">
+                <button class="btn-secondary" onclick="loadMoreFacebookPublications()">Load more posts</button>
               </div>
             </div>
           </div>
@@ -967,6 +974,46 @@ export function renderAdminHtml(): string {
       <div class="modal-footer">
         <button type="button" class="btn-secondary" onclick="closeModal('publication-delete-modal')">Cancel</button>
         <button type="button" class="btn-logout" onclick="executePublicationDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Facebook post details and editing -->
+  <div id="facebook-post-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:760px;">
+      <div class="modal-header">
+        <div class="modal-title">Facebook post</div>
+        <button class="modal-close-btn" onclick="closeModal('facebook-post-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="fb-post-detail-meta" style="display:flex; flex-wrap:wrap; gap:0.6rem; margin-bottom:1rem; color:var(--text-muted); font-size:0.82rem;"></div>
+        <div id="fb-post-detail-stats" class="section-grid" style="margin-bottom:1rem;"></div>
+        <div class="form-group">
+          <label class="form-label" for="fb-post-detail-content">Post content</label>
+          <textarea id="fb-post-detail-content" class="form-input" style="min-height:180px; font-family:inherit;"></textarea>
+        </div>
+        <div id="fb-post-detail-image-wrap" style="display:none; margin-bottom:1rem;">
+          <img id="fb-post-detail-image" alt="Facebook post image" style="display:block; width:100%; max-height:420px; object-fit:contain; border-radius:8px; background:#18191a;" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fb-post-image-url">Post image</label>
+          <input type="url" id="fb-post-image-url" class="form-input" placeholder="https://… image URL" />
+          <input type="file" id="fb-post-image-file" class="form-input" accept="image/jpeg,image/png,image/webp" style="margin-top:0.5rem;" />
+          <label style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;"><input type="checkbox" id="fb-post-remove-image" /> Remove image</label>
+          <button type="button" class="btn-secondary" style="margin-top:0.5rem;" onclick="saveFacebookPostImage()">Save image</button>
+        </div>
+        <a id="fb-post-detail-link" href="#" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook →</a>
+        <div id="fb-post-detail-error" class="alert-error" style="display:none; margin-top:1rem;"></div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
+        <div style="display:flex; gap:0.5rem;">
+          <button id="fb-post-hide-button" type="button" class="btn-secondary" onclick="toggleFacebookPostHidden()">Hide</button>
+          <button type="button" class="btn-logout" onclick="deleteFacebookPost()">Delete from Facebook</button>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="button" class="btn-secondary" onclick="closeModal('facebook-post-modal')">Close</button>
+          <button type="button" class="btn-primary" onclick="saveFacebookPostEdit()">Save changes</button>
+        </div>
       </div>
     </div>
   </div>

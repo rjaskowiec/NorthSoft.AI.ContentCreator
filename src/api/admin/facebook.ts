@@ -30,7 +30,12 @@ interface MetaPagePost {
   created_time?: string;
   permalink_url?: string;
   full_picture?: string;
+  updated_time?: string;
   is_published?: boolean;
+  is_hidden?: boolean;
+  shares?: { count?: number };
+  comments?: { summary?: { total_count?: number } };
+  reactions?: { summary?: { total_count?: number } };
   type?: string;
   status_type?: string;
 }
@@ -88,8 +93,9 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
     });
   }
 
-  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '10', 10), 1), 25);
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '5', 10), 1), 25);
   const after = (c.req.query('after') || '').trim();
+  const includeStats = c.req.query('includeStats') === 'true';
 
   try {
     // 2. Fetch Page Info (name, category, picture) — GET only
@@ -119,7 +125,8 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
     }
 
     // 3. Fetch Latest Posts from Page Posts endpoint — GET only
-    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=id,message,story,created_time,permalink_url,full_picture,is_published&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
+    const fields = 'id,message,story,created_time,updated_time,permalink_url,full_picture,is_published,is_hidden,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)';
+    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/published_posts?fields=${encodeURIComponent(fields)}&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
     if (after) {
       postsUrl += `&after=${encodeURIComponent(after)}`;
     }
@@ -142,13 +149,60 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
     }
 
     // 4. Map & sanitize posts — NEVER include access tokens; fallback to story if message missing
-    const posts = (postsData.data || []).map((post) => ({
+    const facebookPostIds = (postsData.data || []).map((post) => post.id);
+    const localPostIds = new Map<string, string>();
+    if (facebookPostIds.length > 0) {
+      const placeholders = facebookPostIds.map(() => '?').join(',');
+      const linkedPosts = await c.env.DB.prepare(
+        `SELECT facebook_post_id, post_id FROM publications WHERE facebook_post_id IN (${placeholders}) AND fb_deleted_at IS NULL`,
+      ).bind(...facebookPostIds).all<{ facebook_post_id: string; post_id: string }>();
+      for (const linked of linkedPosts.results || []) localPostIds.set(linked.facebook_post_id, linked.post_id);
+    }
+
+    const posts = await Promise.all((postsData.data || []).map(async (post) => {
+      let views: number | null = null;
+      let uniqueViews: number | null = null;
+      let insightsError: string | null = null;
+      if (includeStats) {
+        try {
+          const metrics = 'post_media_view,post_total_media_view_unique';
+          const insightsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${encodeURIComponent(post.id)}/insights?metric=${metrics}&period=lifetime&access_token=${encodeURIComponent(accessToken)}`;
+          const insightsResponse = await fetch(insightsUrl, { method: 'GET' });
+          const insightsData = (await insightsResponse.json()) as {
+            data?: Array<{ name?: string; values?: Array<{ value?: number }> }>;
+            error?: { message?: string };
+          };
+          if (!insightsResponse.ok || insightsData.error) {
+            insightsError = sanitizeSecretTokens(insightsData.error?.message || `Insights unavailable (HTTP ${insightsResponse.status})`);
+          } else {
+            for (const metric of insightsData.data || []) {
+              const value = Number(metric.values?.[0]?.value);
+              if (!Number.isFinite(value)) continue;
+              if (metric.name === 'post_media_view') views = value;
+              if (metric.name === 'post_total_media_view_unique') uniqueViews = value;
+            }
+          }
+        } catch (error: unknown) {
+          insightsError = sanitizeSecretTokens(error instanceof Error ? error.message : String(error));
+        }
+      }
+      return {
       id: post.id,
+      internalPostId: localPostIds.get(post.id) || null,
       message: post.message || post.story || null,
       createdTime: post.created_time || null,
+      updatedTime: post.updated_time || null,
       permalinkUrl: post.permalink_url || null,
       fullPicture: post.full_picture || null,
       isPublished: post.is_published !== false,
+      isHidden: post.is_hidden === true,
+      comments: post.comments?.summary?.total_count ?? null,
+      reactions: post.reactions?.summary?.total_count ?? null,
+      shares: post.shares?.count ?? 0,
+      views,
+      uniqueViews,
+      insightsError,
+      };
     }));
 
     const hasMore = Boolean(postsData.paging?.next || postsData.paging?.cursors?.after);
@@ -201,6 +255,63 @@ facebookRouter.post('/facebook/sync', csrfProtection, async (c) => {
     success: result.errors === 0,
     result,
   });
+});
+
+/** Update the text of a Facebook post using the existing conflict-aware two-way sync. */
+facebookRouter.post('/facebook/page-posts/:facebookPostId/update', csrfProtection, async (c) => {
+  const facebookPostId = c.req.param('facebookPostId');
+  const body = await c.req.json().catch(() => ({})) as { content?: string };
+  const content = (body.content || '').trim();
+  if (!content) return c.json({ success: false, error: 'Post content is required.' }, 400);
+
+  const db = c.env.DB;
+  const publisher = new FacebookPublisher(c.env);
+  const auditLogger = new D1AuditLogger(db);
+  const pubService = new PublicationService(db, publisher, auditLogger);
+  let publication = await db.prepare("SELECT post_id FROM publications WHERE facebook_post_id = ? AND status = 'published' LIMIT 1")
+    .bind(facebookPostId).first<{ post_id: string }>();
+  if (!publication) {
+    await pubService.syncFacebookPostsToSystem();
+    publication = await db.prepare("SELECT post_id FROM publications WHERE facebook_post_id = ? AND status = 'published' LIMIT 1")
+      .bind(facebookPostId).first<{ post_id: string }>();
+  }
+  if (!publication) return c.json({ success: false, error: 'This Facebook post could not be synchronized to the local publication history.' }, 404);
+
+  const result = await pubService.updatePublishedPostFromSystem(publication.post_id, content, 'admin');
+  if (!result.success) return c.json({ success: false, conflict: result.conflict === true, error: result.error, facebookContent: result.fbContent }, result.conflict ? 409 : 400);
+  return c.json({ success: true });
+});
+
+/** Hide or unhide a Facebook post and record the resulting remote state locally. */
+facebookRouter.post('/facebook/page-posts/:facebookPostId/visibility', csrfProtection, async (c) => {
+  const facebookPostId = c.req.param('facebookPostId');
+  if (!facebookPostId) return c.json({ success: false, error: 'Facebook post ID is required.' }, 400);
+  const body = await c.req.json().catch(() => ({})) as { hidden?: boolean };
+  if (typeof body.hidden !== 'boolean') return c.json({ success: false, error: 'hidden must be a boolean.' }, 400);
+
+  const publisher = new FacebookPublisher(c.env);
+  if (!publisher.updatePostHidden) return c.json({ success: false, error: 'Facebook post visibility changes are not supported.' }, 501);
+  const result = await publisher.updatePostHidden(facebookPostId, body.hidden);
+  if (!result.success) return c.json({ success: false, error: result.error || 'Meta rejected the visibility change.' }, result.httpStatus && result.httpStatus >= 400 ? result.httpStatus as 400 : 502);
+
+  await c.env.DB.prepare('UPDATE publications SET fb_is_hidden = ?, fb_last_check_at = ?, fb_last_sync_at = ? WHERE facebook_post_id = ?')
+    .bind(body.hidden ? 1 : 0, new Date().toISOString(), new Date().toISOString(), facebookPostId).run();
+  return c.json({ success: true, hidden: body.hidden });
+});
+
+/** Delete a post from Facebook while retaining its local audit/history record. */
+facebookRouter.delete('/facebook/page-posts/:facebookPostId', csrfProtection, async (c) => {
+  const facebookPostId = c.req.param('facebookPostId');
+  if (!facebookPostId) return c.json({ success: false, error: 'Facebook post ID is required.' }, 400);
+  const publisher = new FacebookPublisher(c.env);
+  if (!publisher.deletePost) return c.json({ success: false, error: 'Facebook post deletion is not supported.' }, 501);
+  const result = await publisher.deletePost(facebookPostId);
+  if (!result.success) return c.json({ success: false, error: result.error || 'Meta rejected the delete request.' }, result.httpStatus && result.httpStatus >= 400 ? result.httpStatus as 400 : 502);
+
+  const deletedAt = new Date().toISOString();
+  await c.env.DB.prepare("UPDATE publications SET fb_deleted_at = ?, sync_status = 'SYNCED', fb_last_check_at = ?, fb_last_sync_at = ? WHERE facebook_post_id = ?")
+    .bind(deletedAt, deletedAt, deletedAt, facebookPostId).run();
+  return c.json({ success: true, deletedAt });
 });
 
 /**
