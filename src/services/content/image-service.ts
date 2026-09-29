@@ -136,12 +136,11 @@ Accept a clear visual representation or obvious metaphor (for example, a friendl
       });
 
       const responseText =
-        aiResponse !== null &&
-        typeof aiResponse === 'object' &&
-        'response' in aiResponse &&
-        typeof aiResponse.response === 'string'
-          ? aiResponse.response
-          : '';
+        aiResponse !== null && typeof aiResponse === 'object' && 'description' in aiResponse && typeof aiResponse.description === 'string'
+          ? aiResponse.description
+          : aiResponse !== null && typeof aiResponse === 'object' && 'response' in aiResponse && typeof aiResponse.response === 'string'
+            ? aiResponse.response
+            : '';
       const jsonStr = this.extractJson(responseText);
       const result = JSON.parse(jsonStr) as ImageVerificationResult;
 

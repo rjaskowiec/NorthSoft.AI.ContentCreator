@@ -535,7 +535,7 @@ export class ContentPlannerService {
                  updated_at = ?
              WHERE id = ?`,
           )
-          .bind(versionNumber, existingPost ? originalRegenerationCount + 1 : originalRegenerationCount, new Date().toISOString(), postId!)
+          .bind(versionNumber, finalScore, existingPost ? originalRegenerationCount + 1 : originalRegenerationCount, new Date().toISOString(), postId!)
           .run();
 
         // Update content_ideas status to used
