@@ -104,14 +104,14 @@ export class OpenverseImageService implements ImageService {
     return arrayBuffer;
   }
 
-  async verifyImageWithVision(imageBytes: ArrayBuffer, topicTitle: string, postBody: string): Promise<ImageVerificationResult> {
+  async verifyImageWithVision(imageBytes: ArrayBuffer, imageBrief: string, postBody: string): Promise<ImageVerificationResult> {
     try {
       const uint8Array = new Uint8Array(imageBytes);
 
       const prompt = `You are an expert content moderator and visual verification system.
 Your task is to analyze the provided image and determine if it perfectly matches the given topic and post content.
 
-Topic: "${topicTitle}"
+Visual brief: "${imageBrief}"
 Post Content: "${postBody}"
 
 Respond ONLY with a valid JSON object adhering to this schema:
@@ -125,7 +125,7 @@ Respond ONLY with a valid JSON object adhering to this schema:
   "reason": "detailed explanation of the decision"
 }
 
-Ensure that the image strictly relates to the topic. For example, if the topic is about "software development teams", a picture of developers collaborating is good, but a picture of a cat, a cabbage, or a random group of teenagers is BAD. If unsure, reject.`;
+Accept a clear visual representation or obvious metaphor (for example, a friendly robot beside a search window can represent AI-assisted online search). Reject images whose main subject is unrelated or contradicts the brief, including incidental cats, food, cars, or unrelated people. Base the decision on visible content, not the image title alone. If the match is weak or unclear, reject.`;
 
       if (!this.env.AI) {
         throw new Error('Cloudflare Workers AI binding is not configured.');

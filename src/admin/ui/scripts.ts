@@ -18,6 +18,55 @@ export function getAdminScripts(): string {
     let pendingDeleteType = null;
     let pendingDeleteId = null;
 
+    function renderWorkflowStages(item) {
+      const isTopic = item && item.post_count !== undefined;
+      const topicDone = isTopic || Boolean(item?.idea_id || item?.topicId || item?.topicTitle || item?.topic_title);
+      const postDone = isTopic
+        ? Number(item.post_count || 0) > 0
+        : Boolean(item?.internalPostId || item?.postId || item?.id);
+      const publishedDone = Boolean(item?.published_at || item?.publishedAt || item?.facebook_post_id || item?.isPublished);
+      const stages = [
+        ['Topic', topicDone],
+        ['Post', postDone],
+        ['Image', Boolean(item?.image_url || item?.imageUrl || (item?.latest_image_status && item.latest_image_status !== 'rejected') || (publishedDone && item?.hasImage === true))],
+        ['Scheduled', Boolean(item?.scheduled_at || item?.scheduledAt || item?.latest_scheduled_at || publishedDone)],
+        ['Published', publishedDone],
+      ];
+      const firstPending = stages.findIndex(stage => !stage[1]);
+      return '<div class="workflow-stage-track" aria-label="Publication progress">' + stages.map((stage, index) => {
+        const className = stage[1] ? 'is-done' : index === firstPending ? 'is-current' : 'is-pending';
+        const label = stage[1] ? stage[0] : stage[0] + ' pending';
+        return '<span class="workflow-stage ' + className + '" title="' + escapeHtml(label) + '">' + escapeHtml(stage[0]) + '</span>';
+      }).join('') + '</div>';
+    }
+
+    async function highlightWorkflowRow(idPrefix, itemId) {
+      const row = document.getElementById(idPrefix + safeStr(itemId));
+      if (!row) return false;
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('workflow-highlight');
+      window.setTimeout(() => row.classList.remove('workflow-highlight'), 2400);
+      return true;
+    }
+
+    async function openTopicFromPost(topicId) {
+      if (!topicId) return;
+      await switchTab('research');
+      if (!(await highlightWorkflowRow('topic-row-', topicId))) {
+        await loadResearchData(topicId);
+        await highlightWorkflowRow('topic-row-', topicId);
+      }
+    }
+
+    async function openPostFromTopic(postId) {
+      if (!postId) return;
+      await switchTab('content');
+      if (!(await highlightWorkflowRow('post-row-', postId))) {
+        await loadContentData(postId);
+        await highlightWorkflowRow('post-row-', postId);
+      }
+    }
+
     // Safe String & Utility Normalizers for API Resilience
     function safeStr(val, defaultVal = '') {
       if (val === null || val === undefined) return defaultVal;
@@ -960,14 +1009,15 @@ export function getAdminScripts(): string {
     window.toggleAuditDetail = toggleAuditDetail;
 
     // Load Research Tab Data
-    async function loadResearchData() {
+    async function loadResearchData(topicId) {
       try {
-        const res = await guardedFetch('/api/admin/research');
+        const researchUrl = '/api/admin/research' + (topicId ? '?topicId=' + encodeURIComponent(topicId) : '');
+        const res = await guardedFetch(researchUrl);
         if (!res.ok) {
           console.error('Failed to fetch research data:', res.status, res.statusText);
           const topicsBody = document.getElementById('topics-table-body');
           if (topicsBody) {
-            topicsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
+            topicsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1037,21 +1087,31 @@ export function getAdminScripts(): string {
               const statusUpper = safeUpper(t.status, 'QUEUED');
               const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered') ? 'status-active' : status === 'used' ? 'status-healthy' : 'status-disabled';
               const isChecked = selectedTopicIds.has(id) ? 'checked' : '';
+              const hasPost = Number(t.post_count || 0) > 0;
+              const sourceTitle = safeStr(t.source_title);
+              const sourceUrl = safeStr(t.source_url);
+              const sourceLink = sourceUrl && /^https?:\\/\\//i.test(sourceUrl)
+                ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle || 'Source article') + '</a>'
+                : escapeHtml(sourceTitle);
 
               return \`
-              <tr data-id="\${id}">
+              <tr data-id="\${id}" id="topic-row-\${id}">
                 <td style="text-align:center;">
                   <input type="checkbox" class="topic-select-checkbox" data-id="\${id}" \${isChecked} onchange="updateTopicSelectionState()" />
                 </td>
                 <td>
                   <strong>\${title}</strong>
+                </td>
+                <td>
                   \${desc ? \`<div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">\${desc}</div>\` : ''}
+                  \${sourceTitle ? \`<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>\${sourceLink}</div>\` : ''}
                 </td>
                 <td><span class="code-tag">\${category}</span></td>
+                <td>\${renderWorkflowStages(t)}\${hasPost && t.latest_post_id ? \`<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="openPostFromTopic('\${escapeHtml(safeStr(t.latest_post_id))}')">Open post</button>\` : ''}</td>
                 <td><span class="status-badge \${statusClass}">\${statusUpper}</span></td>
                 <td>
                   <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
-                    <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${id}')">⚡ Generate Post</button>
+                    <button class="btn-primary" title="\${hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic'}" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${id}')">\${hasPost ? 'Regenerate post' : 'Generate post'}</button>
                     <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditTopicModal('\${id}')">Edit</button>
                     <button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic('\${id}')">Delete</button>
                   </div>
@@ -1060,7 +1120,7 @@ export function getAdminScripts(): string {
             \`;
             }).join('');
           } else {
-            topicsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Topic</button></td></tr>';
+            topicsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Topic</button></td></tr>';
           }
           updateTopicSelectionState();
         }
@@ -1200,14 +1260,15 @@ export function getAdminScripts(): string {
     }
 
     // Load Content Tab Data
-    async function loadContentData() {
+    async function loadContentData(postId) {
       try {
-        const res = await guardedFetch('/api/admin/content/posts');
+        const contentUrl = '/api/admin/content/posts' + (postId ? '?postId=' + encodeURIComponent(postId) : '');
+        const res = await guardedFetch(contentUrl);
         if (!res.ok) {
           console.error('Failed to fetch content data:', res.status, res.statusText);
           const postsBody = document.getElementById('posts-table-body');
           if (postsBody) {
-            postsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1225,40 +1286,35 @@ export function getAdminScripts(): string {
               let statusClass = statusStr === 'PUBLISHED' ? 'status-healthy' : statusStr === 'SCHEDULED' ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
               if (syncStatus === 'CONFLICT') {
                 statusClass = 'status-alert';
+              } else if (syncStatus === 'LOCAL_AHEAD') {
+                statusClass = 'status-active';
               }
               
               const pId = safeStr(p.id);
               const pIdeaId = safeStr(p.idea_id);
               const pBody = safeStr(p.latest_body || p.body);
               const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
+              const topicLabel = escapeHtml(safeStr(p.topic_title, pIdeaId ? 'Linked topic' : 'No linked topic'));
+              const sourceTitle = safeStr(p.source_title);
+              const sourceUrl = safeStr(p.article_source_url);
+              const sourceLink = sourceTitle && sourceUrl && /^https?:\\/\\//i.test(sourceUrl)
+                ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle) + '</a>'
+                : escapeHtml(sourceTitle);
 
               return \`
-              <tr data-id="\${pId}">
+              <tr data-id="\${pId}" id="post-row-\${pId}">
                 <td style="text-align:center;">
                   <input type="checkbox" class="post-select-checkbox" data-id="\${pId}" \${isChecked} onchange="updatePostSelectionState()" />
                 </td>
                 <td>
-                  \${p.image_url ? \`
-                    <div style="margin-top:0.75rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem;">
-                      <a href="\${escapeHtml(p.source_url || p.image_url)}" target="_blank" rel="noopener noreferrer">
-                        <img src="\${escapeHtml(p.image_url)}" alt="Verified Post Image" style="width:100%; max-width:200px; border-radius:4px; display:block;"/>
-                      </a>
-                      <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem; line-height:1.4;">
-                        \${p.author ? \`<div><strong>Author:</strong> \${escapeHtml(p.author)}</div>\` : ''}
-                        \${p.license ? \`<div><strong>License:</strong> \${p.license_url ? \`<a href="\${escapeHtml(p.license_url)}" target="_blank" style="color:var(--accent-blue);">\${escapeHtml(p.license)}</a>\` : escapeHtml(p.license)}</div>\` : ''}
-                        \${p.source_url ? \`<div><strong>Source:</strong> <a href="\${escapeHtml(p.source_url)}" target="_blank" style="color:var(--accent-blue); word-break:break-all;">\${escapeHtml(p.source_url)}</a></div>\` : ''}
-                      </div>
-                    </div>
-                  \` : \`
-                    <div style="margin-top:0.75rem; padding:0.75rem; background:rgba(255,255,255,0.02); border:1px dashed var(--border-color); border-radius:6px; color:var(--text-muted); font-size:0.8rem; text-align:center;">
-                      No image attached. Use Edit to add one.
-                      <div><button class="btn-secondary" style="margin-top:0.5rem; padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="findImageForPost('\${pId}')">Find image</button></div>
-                    </div>
-                  \`}
+                  \${pIdeaId ? \`<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>\` : '<span>' + topicLabel + '</span>'}
+                  \${sourceTitle ? \`<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>\${sourceLink}</div>\` : ''}
                 </td>
                 <td>
-                  <div style="font-size:0.85rem; color:var(--text-main); max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
+                  <div style="font-size:0.85rem; color:var(--text-main); max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
+                  \${p.image_url ? \`<a href="\${escapeHtml(p.image_source_url || p.image_url)}" target="_blank" rel="noopener noreferrer" title="\${escapeHtml(p.license || 'Post image')}"><img src="\${escapeHtml(p.image_url)}" alt="Post image" style="width:56px;height:40px;object-fit:cover;border-radius:4px;margin-top:0.35rem;"/></a>\` : \`<button class="btn-secondary" style="padding:0.15rem 0.4rem;font-size:0.7rem;margin-top:0.3rem;" onclick="findImageForPost('\${pId}')">Add image</button>\`}
                 </td>
+                <td>\${renderWorkflowStages(p)}</td>
                 <td>
                   <span class="status-badge \${statusClass}">\${syncStatus === 'CONFLICT' ? 'SYNC CONFLICT' : escapeHtml(statusStr)}</span>
                 </td>
@@ -1266,7 +1322,7 @@ export function getAdminScripts(): string {
                 <td>
                   <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
                     <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditPostModal('\${pId}')">Edit</button>
-                    \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate</button>\` : ''}
+                    \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate post</button><button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openTopicFromPost('\${pIdeaId}')">View topic</button>\` : ''}
                     \${statusStr !== 'PUBLISHED' ? \`
                       <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}')">Publish Now</button>
                       <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openSchedulePostModal('\${pId}')">Schedule</button>
@@ -1282,7 +1338,7 @@ export function getAdminScripts(): string {
             \`;
             }).join('');
           } else {
-            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
           updatePostSelectionState();
         }
@@ -1395,7 +1451,7 @@ export function getAdminScripts(): string {
           console.error('Failed to fetch schedules:', res.status, res.statusText);
           const schedBody = document.getElementById('schedules-table-body');
           if (schedBody) {
-            schedBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load scheduled queue (HTTP ' + res.status + ').</td></tr>';
+            schedBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--accent-rose);">Failed to load scheduled queue (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1413,8 +1469,11 @@ export function getAdminScripts(): string {
               if (!sched) return '';
               const schedIdStr = safeStr(sched.id);
               const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
+              const topicTitle = safeStr(sched.topic_title);
+              const topicId = safeStr(sched.idea_id);
               return '<tr>' +
-                '<td>' + escapeHtml(postPreview) + '</td>' +
+                '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
+                '<td>' + renderWorkflowStages({ idea_id: topicId, id: sched.post_id || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
                 '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
                 '<td>' +
@@ -1424,7 +1483,7 @@ export function getAdminScripts(): string {
               '</tr>';
             }).join('');
           } else {
-            schedBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem;">Nothing scheduled.<br><button class="btn-primary" style="margin-top:0.75rem;" onclick="openSchedulePostModal()">+ Schedule Post</button></td></tr>';
+            schedBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Nothing scheduled.<br><button class="btn-primary" style="margin-top:0.75rem;" onclick="openSchedulePostModal()">+ Schedule Post</button></td></tr>';
           }
         }
       } catch (err) {
@@ -1532,7 +1591,7 @@ export function getAdminScripts(): string {
           facebookPublicationCursor = null;
           facebookPublicationHasMore = false;
           facebookPublicationPosts = new Map();
-          if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading Facebook posts...</td></tr>';
+          if (body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading Facebook posts...</td></tr>';
           if (more) more.style.display = 'none';
         }
 
@@ -1570,8 +1629,12 @@ export function getAdminScripts(): string {
           const snippet = content.length > 120 ? content.slice(0, 117) + '...' : content;
           const metric = value => value == null ? '<span title="Metric unavailable from Meta">—</span>' : Number(value).toLocaleString();
           const date = post.createdTime ? new Date(post.createdTime).toLocaleString() : '—';
+          const topicLink = post.topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);" onclick="openTopicFromPost(&quot;' + escapeHtml(safeStr(post.topicId)) + '&quot;)">' + escapeHtml(safeStr(post.topicTitle, 'View topic')) + '</button>' : '<span style="color:var(--text-muted);">No linked topic</span>';
+          const sourceLink = post.sourceTitle && (safeStr(post.sourceUrl).startsWith('https://') || safeStr(post.sourceUrl).startsWith('http://')) ? '<a href="' + escapeHtml(post.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(post.sourceTitle) + '</a>' : escapeHtml(safeStr(post.sourceTitle));
+          const workflow = renderWorkflowStages({ internalPostId: post.internalPostId, topicId: post.topicId, topicTitle: post.topicTitle, imageUrl: post.imageUrl || post.fullPicture, scheduledAt: post.scheduledAt, publishedAt: post.publishedAt, isPublished: post.isPublished });
           return '<tr><td data-sort-value="' + escapeHtml(safeStr(post.createdTime)) + '">' + escapeHtml(date) + '</td>' +
-            '<td style="max-width:420px;white-space:normal;">' + escapeHtml(snippet) + '</td>' +
+            '<td style="max-width:420px;white-space:normal;">' + escapeHtml(snippet) + '<div style="font-size:0.76rem;margin-top:0.3rem;">' + topicLink + (sourceLink ? '<span style="color:var(--text-muted);"> · Inspired by: </span>' + sourceLink : '') + '</div></td>' +
+            '<td>' + workflow + '</td>' +
             '<td data-sort-value="' + (post.views == null ? '' : String(post.views)) + '">' + metric(post.views) + (post.uniqueViews == null ? '' : '<small style="display:block;color:var(--text-muted);">' + metric(post.uniqueViews) + ' unique</small>') + (post.insightsError ? '<small title="' + escapeHtml(post.insightsError) + '" style="display:block;color:var(--text-muted);">not available</small>' : '') + '</td>' +
             '<td data-sort-value="' + (post.reactions == null ? '' : String(post.reactions)) + '">' + metric(post.reactions) + '</td><td data-sort-value="' + (post.comments == null ? '' : String(post.comments)) + '">' + metric(post.comments) + '</td><td data-sort-value="' + (post.shares == null ? '' : String(post.shares)) + '">' + metric(post.shares) + '</td>' +
             '<td><span class="status-badge ' + (post.isHidden ? 'status-disabled' : 'status-healthy') + '">' + (post.isHidden ? 'Hidden' : 'Published') + '</span></td>' +
@@ -1579,12 +1642,12 @@ export function getAdminScripts(): string {
         }).join('');
         if (body) {
           if (isAppend) body.insertAdjacentHTML('beforeend', rows);
-          else body.innerHTML = rows || '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">No published Facebook posts found.</td></tr>';
+          else body.innerHTML = rows || '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text-muted);">No published Facebook posts found.</td></tr>';
         }
         if (more) more.style.display = facebookPublicationHasMore ? 'block' : 'none';
       } catch (error) {
         console.error('Failed to load Facebook publications:', error);
-        if (body && !isAppend) body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--accent-rose);">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</td></tr>';
+        if (body && !isAppend) body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--accent-rose);">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</td></tr>';
       } finally {
         facebookPublicationLoading = false;
       }
@@ -1626,7 +1689,7 @@ export function getAdminScripts(): string {
       error.style.display = 'none';
       document.getElementById('fb-post-detail-content').value = safeStr(post.message || post.story);
       document.getElementById('fb-post-detail-content').dataset.facebookPostId = safeStr(post.id);
-      document.getElementById('fb-post-detail-meta').textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable');
+      document.getElementById('fb-post-detail-meta').textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable') + (post.topicTitle ? ' · Topic: ' + safeStr(post.topicTitle) : '');
       const displayMetric = value => value == null ? 'Not available' : Number(value).toLocaleString();
       document.getElementById('fb-post-detail-stats').innerHTML = '<div class="card"><div class="card-label">Views</div><div class="card-val">' + displayMetric(post.views) + '</div></div>' +
         '<div class="card"><div class="card-label">Unique views</div><div class="card-val">' + displayMetric(post.uniqueViews) + '</div></div>' +
@@ -2950,9 +3013,11 @@ export function getAdminScripts(): string {
 
     async function generatePostFromTopic(topicId) {
       if (!topicId) return;
+      const topic = cachedTopics.find(item => item && item.id === topicId);
+      const isRegeneration = Number(topic?.post_count || 0) > 0;
       const alertEl = document.getElementById('research-run-alert');
       if (alertEl) {
-        alertEl.textContent = 'Generating post draft...';
+        alertEl.textContent = isRegeneration ? 'Generating a new version of the existing post...' : 'Generating post draft...';
         alertEl.className = 'alert-info';
         alertEl.style.display = 'block';
       }
@@ -2972,10 +3037,13 @@ export function getAdminScripts(): string {
 
         if (res.ok && data.success) {
           if (alertEl) {
-            alertEl.textContent = 'Post draft generated successfully.';
+            const version = Number(data.result?.currentVersion || 0);
+            alertEl.textContent = isRegeneration
+              ? 'Existing post regenerated as version ' + version + '. The Facebook post was not published or updated automatically.'
+              : 'Post draft generated successfully.';
             alertEl.className = 'alert-success';
           }
-          switchTab('content');
+          await Promise.all([loadResearchData(), loadContentData()]);
         } else {
           const errMsg = extractApiErrorMessage(data, res.status);
           if (alertEl) {
@@ -3812,6 +3880,8 @@ export function getAdminScripts(): string {
     window.loadPipelineData = loadPipelineData;
     window.loadManualPublisherData = loadManualPublisherData;
     window.loadResearchData = loadResearchData;
+    window.openTopicFromPost = openTopicFromPost;
+    window.openPostFromTopic = openPostFromTopic;
     window.loadContentData = loadContentData;
     window.loadSchedulesData = loadSchedulesData;
     window.loadPublicationsData = loadFacebookPublications;

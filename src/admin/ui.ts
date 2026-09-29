@@ -454,14 +454,15 @@ export function renderAdminHtml(): string {
                         <input type="checkbox" id="topic-select-all" onclick="toggleSelectAllTopics(this)" title="Select all topics" />
                       </th>
                       <th>Topic</th>
-                      <th>Description</th>
+                      <th>Idea / source</th>
                       <th>Category</th>
+                      <th>Progress</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="topics-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -521,15 +522,16 @@ export function renderAdminHtml(): string {
                       <th style="width:36px; text-align:center;">
                         <input type="checkbox" id="post-select-all" onclick="toggleSelectAllPosts(this)" title="Select all drafts" />
                       </th>
-                      <th>Associated Topic</th>
-                      <th>Post Content Preview</th>
+                      <th>Topic</th>
+                      <th>Post</th>
+                      <th>Progress</th>
                       <th>Status</th>
                       <th>Created Date</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="posts-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -582,13 +584,14 @@ export function renderAdminHtml(): string {
                   <thead>
                     <tr>
                       <th>Post</th>
+                      <th>Progress</th>
                       <th>Scheduled Time (UTC)</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="schedules-table-body">
-                    <tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading scheduled posts...</td></tr>
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading scheduled posts...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -617,6 +620,7 @@ export function renderAdminHtml(): string {
                     <tr>
                       <th>Published</th>
                       <th>Post</th>
+                      <th>Progress</th>
                       <th>Views</th>
                       <th>Reactions</th>
                       <th>Comments</th>
@@ -626,7 +630,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="publications-table-body">
-                    <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading Facebook posts...</td></tr>
+                    <tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading Facebook posts...</td></tr>
                   </tbody>
                 </table>
               </div>

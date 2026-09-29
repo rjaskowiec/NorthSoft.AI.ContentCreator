@@ -34,19 +34,41 @@ researchRouter.get('/research', async (c) => {
     const topicsRes = await db
       .prepare(
         `SELECT id, title, description, short_description, content_angle, hook, category, content_pillar,
-                relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at
+                source_title, source_url, relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at,
+                (SELECT COUNT(*) FROM posts p WHERE p.idea_id = content_ideas.id) AS post_count,
+                (SELECT p.id FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_id,
+                (SELECT p.status FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_status,
+                (SELECT pi.visual_verification_status FROM posts p JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_image_status,
+                (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at DESC LIMIT 1) AS latest_scheduled_at,
+                (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
          FROM content_ideas
-         ORDER BY created_at DESC LIMIT 30`,
+         ORDER BY created_at DESC LIMIT 100`,
       )
       .all<Record<string, unknown>>();
     topics = topicsRes.results || [];
   } catch {
     const topicsRes = await db
       .prepare(
-        "SELECT id, title, description, category, priority, status, created_at FROM content_ideas WHERE source_type = 'research' ORDER BY created_at DESC LIMIT 20",
+         "SELECT id, title, description, category, priority, status, created_at, 0 AS post_count FROM content_ideas WHERE source_type = 'research' ORDER BY created_at DESC LIMIT 100",
       )
       .all<Record<string, unknown>>();
     topics = topicsRes.results || [];
+  }
+
+  const requestedTopicId = (c.req.query('topicId') || '').trim();
+  if (requestedTopicId && !topics.some((topic) => topic.id === requestedTopicId)) {
+    const requestedTopic = await db.prepare(
+      `SELECT id, title, description, short_description, content_angle, hook, category, content_pillar,
+              source_title, source_url, relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at,
+              (SELECT COUNT(*) FROM posts p WHERE p.idea_id = content_ideas.id) AS post_count,
+              (SELECT p.id FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_id,
+              (SELECT p.status FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_status,
+              (SELECT pi.visual_verification_status FROM posts p JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_image_status,
+              (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at DESC LIMIT 1) AS latest_scheduled_at,
+              (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
+       FROM content_ideas WHERE id = ?`,
+    ).bind(requestedTopicId).first<Record<string, unknown>>();
+    if (requestedTopic) topics.push(requestedTopic);
   }
 
   // 3. Fetch Recent Research Runs

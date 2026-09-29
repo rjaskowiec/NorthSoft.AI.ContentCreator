@@ -566,6 +566,48 @@ export function getAdminCss(): string {
       letter-spacing: 0;
     }
 
+    .workflow-stage-track {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      min-width: 190px;
+    }
+
+    .workflow-stage {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.4rem;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      line-height: 1.35;
+      white-space: nowrap;
+    }
+
+    .workflow-stage.is-done {
+      color: var(--accent-emerald);
+      border-color: rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .workflow-stage.is-current {
+      color: var(--accent-blue);
+      border-color: rgba(59, 130, 246, 0.45);
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .workflow-stage.is-pending {
+      opacity: 0.58;
+    }
+
+    .workflow-highlight {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: -2px;
+      background: rgba(34, 211, 238, 0.08);
+      transition: background 0.3s ease;
+    }
+
     td {
       padding: 0.85rem 0.9rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);

@@ -25,6 +25,7 @@ export interface PostDraft {
   claims: FactualClaim[];
   hashtags: string[];
   callToAction?: string;
+  imageSearchQuery?: string;
   generatedAt: string;
 }
 
@@ -77,25 +78,33 @@ export class WriterService {
     }
 
     const systemPrompt = `You are a Social Media Copywriter for NorthSoft AI.
-Your objective is to craft a short, engaging, highly practical social media post (Facebook/Instagram) for small business owners in clear, natural English.
+Your objective is to turn a research-inspired topic into a clear, useful social media post (Facebook/Instagram) that helps an Icelandic small-business owner recognize a practical opportunity and consider contacting NorthSoft.
 
 NorthSoft Brand Voice Guidelines:
 - Tone: Natural, friendly, human conversational English speaking directly to a small business owner.
 - Language: MUST be written strictly in English ("en").
-- Structure:
-  1. Scroll-stopping hook (first 1-2 lines).
-  2. Quick bite of useful value / practical tip (3-5 bullet points).
-  3. Engaging question to encourage comments & shares.
-  4. Subtle, natural bridge showing how NorthSoft can help.
-- Target post body length: 300 to 900 characters.
-- Hashtags: 2-3 relevant hashtags (#SmallBusiness #WebDev #AIAutomation).
+- Write in natural, fluent English only.
+- Start with a concise, specific hook. Explain one useful business implication in plain English and give practical next steps or a clear example. Use paragraphs; use a list only when a real list improves the post.
+- Keep the body around 350-900 characters. A shorter post is acceptable if it delivers a complete useful point.
+- Connect the idea to a relevant NorthSoft service only when the connection is genuine: websites, e-commerce, local SEO, online marketing, workflow automation, AI assistants, or email systems. Do not force the same service into every post.
+- End with a contextual, low-pressure invitation to ask NorthSoft for help or learn more. Avoid a generic engagement question unless it fits naturally.
+- Use 0-3 relevant hashtags only when they add value.
+
+TOPIC-TO-POST APPROACH:
+- The topic and article are an inspiration and factual anchor, not a brief to summarize or a rigid subject the entire post must explain.
+- Find the practical consequence for a business owner: how customers discover them, how the website supports enquiries or sales, or which repetitive task consumes their time.
+- Build a natural bridge from that consequence to a useful improvement NorthSoft could deliver. Example: changing search habits → a website needs clear, current, structured information → invite the owner to review whether their site is ready.
+- Keep the bridge honest and conditional. Do not claim that a particular owner's site is outdated, that all customers have changed behavior, or that NorthSoft guarantees results unless the source or verified business facts support it.
+- The post should read as complete social copy, not an article summary, an internal outline, or a set of instructions.
+- Also provide a concise, concrete English imageSearchQuery (2-8 words) describing a visually searchable scene or metaphor for the main post idea. Prefer recognizable objects/scenes (for example, "robot assistant with search window"), not abstract words or the full topic sentence.
 
 CRITICAL RULES:
 1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. The following buzzwords are FORBIDDEN:
    "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business",
    "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
 2. FACT PRESERVATION RULE: If the post uses specific numbers, percentages, or statistics from the source material, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not in the source material. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
-3. SUBSTANTIVE VALUE RULE: Do not return the topic title, angle, or source summary as the post. Add concrete explanation, useful context, or practical guidance supported by the sources. A teaser that promises to explain something without actually explaining it is not a finished post. Short posts are acceptable only when they contain a complete, useful insight.
+3. SUBSTANTIVE VALUE RULE: Do not return the topic title, angle, or source summary as the post. Add a useful business implication and practical context. A teaser that promises to explain something without doing so is not finished content.
+4. FACT BOUNDARY: Keep factual statements about the article accurate. Clearly frame broader business advice as practical guidance or a possibility, not as a statistic or a finding from the article.
 
 Return ONLY a valid JSON object matching this schema:
 {
@@ -106,7 +115,8 @@ Return ONLY a valid JSON object matching this schema:
   "claims": [
     { "text": "Key practical observation", "sourceIds": ["src-1"] }
   ],
-  "hashtags": ["#SmallBusiness", "#WebDev"],
+  "hashtags": ["#SmallBusiness"],
+  "imageSearchQuery": "robot assistant with search window",
   "callToAction": "Subtle call to action or engaging question at the end"
 }`;
 
@@ -189,6 +199,7 @@ Return ONLY a valid JSON object matching this schema:
         claims: claimsList,
         hashtags: hashtagsList,
         callToAction: typeof parsed.callToAction === 'string' ? parsed.callToAction : undefined,
+        imageSearchQuery: typeof parsed.imageSearchQuery === 'string' ? parsed.imageSearchQuery.trim().slice(0, 120) : undefined,
         generatedAt: new Date().toISOString(),
       };
 

@@ -62,19 +62,28 @@ contentRouter.post('/content/generate', csrfProtection, async (c) => {
  */
 contentRouter.get('/content/posts', async (c) => {
   const db = c.env.DB;
+  const requestedPostId = (c.req.query('postId') || '').trim();
   const postsRes = await db
     .prepare(
       `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at, p.sync_status,
+              ci.title as topic_title, ci.source_title, ci.source_url as article_source_url,
               v.content as latest_body, v.ai_provider, v.ai_model,
-              pi.url as image_url, pi.source_url, pi.source_id, pi.author, pi.author_url, pi.license, pi.license_url,
-              pi.alt_text, pi.verification_status, pi.visual_verification_reason,
-              (SELECT facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id
+              pi.url as image_url, pi.source_url as image_source_url, pi.source_id, pi.author, pi.author_url, pi.license, pi.license_url,
+              pi.alt_text, pi.verification_status, pi.visual_verification_status, pi.visual_verification_reason,
+              (SELECT s.id FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as schedule_id,
+              (SELECT s.scheduled_at FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as scheduled_at,
+              (SELECT s.status FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as schedule_status,
+              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
+              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as published_at
        FROM posts p
+       LEFT JOIN content_ideas ci ON ci.id = p.idea_id
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
        LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
+       WHERE (? = '' OR p.id = ?)
        ORDER BY p.created_at DESC
        LIMIT 20`,
     )
+    .bind(requestedPostId, requestedPostId)
     .all().catch((err) => {
       console.error("POSTS API SQL ERROR:", err);
       throw err;
@@ -89,15 +98,24 @@ contentRouter.get('/content/posts', async (c) => {
 contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) => {
   const postId = c.req.param('id');
   const row = await c.env.DB.prepare(
-    `SELECT p.title, p.current_version, pv.content FROM posts p
+    `SELECT p.title, p.current_version, pv.content, pv.metadata FROM posts p
      JOIN post_versions pv ON pv.post_id = p.id AND pv.version_number = p.current_version WHERE p.id = ?`,
-  ).bind(postId).first<{ title: string; current_version: number; content: string }>();
+  ).bind(postId).first<{ title: string; current_version: number; content: string; metadata?: string | null }>();
   if (!row) return c.json({ success: false, error: 'Post not found.' }, 404);
 
   const imageService = new OpenverseImageService(c.env);
+  let imageSearchQuery = `${row.title} ${row.content.slice(0, 180)}`;
+  try {
+    const metadata = JSON.parse(row.metadata || '{}') as { imageSearchQuery?: unknown };
+    if (typeof metadata.imageSearchQuery === 'string' && metadata.imageSearchQuery.trim()) {
+      imageSearchQuery = metadata.imageSearchQuery.trim();
+    }
+  } catch {
+    // Older versions may not have image search metadata.
+  }
   let candidates;
   try {
-    candidates = await imageService.searchImages(row.title, 5);
+    candidates = await imageService.searchImages(imageSearchQuery, 5);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[ContentImageSearch] Openverse search failed', message);
@@ -107,7 +125,7 @@ contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) 
   for (const candidate of candidates) {
     try {
       const bytes = await imageService.downloadImage(candidate.url);
-      const verification = await imageService.verifyImageWithVision(bytes, row.title, row.content);
+      const verification = await imageService.verifyImageWithVision(bytes, imageSearchQuery, row.content);
       if (verification.decision !== 'accept' || !verification.matches_content || verification.confidence < 0.7) continue;
       const now = new Date().toISOString();
       await c.env.DB.batch([

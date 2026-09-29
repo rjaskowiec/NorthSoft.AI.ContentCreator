@@ -136,9 +136,17 @@ export class ContentPlannerService {
       };
     }
 
-    let postId: string | undefined = undefined;
-    let postCreatedInDb = false;
-    let currentVersion = 0;
+    const existingPost = await this.db.prepare(
+      `SELECT p.id, p.current_version, p.regeneration_count,
+              COALESCE((SELECT MAX(pv.version_number) FROM post_versions pv WHERE pv.post_id = p.id), p.current_version) AS latest_version
+       FROM posts p WHERE p.idea_id = ? ORDER BY p.created_at DESC LIMIT 1`,
+    ).bind(topicId).first<{ id: string; current_version: number; regeneration_count: number; latest_version: number }>();
+    let postId: string | undefined = existingPost?.id;
+    let postExists = Boolean(existingPost);
+    const createdPostThisRun = !existingPost;
+    const baseVersion = existingPost?.latest_version || 0;
+    const originalRegenerationCount = existingPost?.regeneration_count || 0;
+    let currentVersion = existingPost?.current_version || 0;
     let finalDecision: 'PASS' | 'FAIL' | 'BLOCKED' = 'FAIL';
     let finalScore = 0;
     let lastDraft: PostDraft | undefined;
@@ -167,7 +175,8 @@ export class ContentPlannerService {
 
     // 4. Generation & Bounded Regeneration Loop (Max 3 attempts = 2 retries)
     for (let attempt = 1; attempt <= 3; attempt++) {
-      currentVersion = attempt;
+      const versionNumber = baseVersion + attempt;
+      currentVersion = versionNumber;
 
       if (attempt > 1) {
         // Quota check before regeneration
@@ -229,6 +238,7 @@ export class ContentPlannerService {
         claims: lastDraft.claims,
         hashtags: lastDraft.hashtags,
         cta: lastDraft.callToAction,
+        imageSearchQuery: lastDraft.imageSearchQuery,
       });
 
       // 4b. Find and Verify Real Image via Openverse & LLaVA
@@ -237,11 +247,12 @@ export class ContentPlannerService {
       let verificationResult: ImageVerificationResult | undefined;
 
       try {
-        const candidates = await imageService.searchImages(topicRow.title, 5);
+        const imageQuery = lastDraft.imageSearchQuery || `${topicRow.title} ${lastDraft.body.slice(0, 180)}`;
+        const candidates = await imageService.searchImages(imageQuery, 5);
         for (const candidate of candidates) {
           try {
             const imageBytes = await imageService.downloadImage(candidate.url);
-            const vRes = await imageService.verifyImageWithVision(imageBytes, topicRow.title, lastDraft.body);
+            const vRes = await imageService.verifyImageWithVision(imageBytes, imageQuery, lastDraft.body);
             if (vRes.decision === 'accept' && vRes.matches_content && vRes.confidence >= 0.7) {
               selectedImage = candidate;
               verificationResult = vRes;
@@ -259,7 +270,7 @@ export class ContentPlannerService {
       const versionId = crypto.randomUUID();
       const versionCreatedAt = new Date().toISOString();
 
-      if (!postCreatedInDb) {
+      if (!postExists) {
         postId = crypto.randomUUID();
 
         const statements = [
@@ -277,7 +288,7 @@ export class ContentPlannerService {
             .bind(
               versionId,
               postId,
-              attempt,
+              versionNumber,
               lastDraft.body,
               metadataJson,
               'llama-3.1-8b-instruct',
@@ -294,7 +305,7 @@ export class ContentPlannerService {
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               )
               .bind(
-                crypto.randomUUID(), postId, attempt, selectedImage.url, selectedImage.title || 'Verified Image',
+                crypto.randomUUID(), postId, versionNumber, selectedImage.url, selectedImage.title || 'Verified Image',
                 selectedImage.sourceUrl, selectedImage.id, selectedImage.author, selectedImage.authorUrl,
                 selectedImage.license, selectedImage.licenseUrl, versionCreatedAt,
                 'verified', 'accept', verificationResult.reason, verificationResult.confidence, versionCreatedAt
@@ -304,7 +315,7 @@ export class ContentPlannerService {
 
         await executeBatch(statements);
 
-        postCreatedInDb = true;
+        postExists = true;
 
         await this.auditLogger.log({
           eventType: 'POST_GENERATION_STARTED',
@@ -324,19 +335,21 @@ export class ContentPlannerService {
             .bind(
               versionId,
               postId!,
-              attempt,
+              versionNumber,
               lastDraft.body,
               metadataJson,
               'llama-3.1-8b-instruct',
               writerProvider.name,
               versionCreatedAt,
             ),
-          this.db
-            .prepare(
-              `UPDATE posts SET current_version = ?, regeneration_count = ?, updated_at = ? WHERE id = ?`,
-            )
-            .bind(attempt, attempt - 1, new Date().toISOString(), postId!),
         ];
+
+        if (createdPostThisRun) {
+          statements.push(
+            this.db.prepare('UPDATE posts SET current_version = ?, updated_at = ? WHERE id = ?')
+              .bind(versionNumber, new Date().toISOString(), postId!),
+          );
+        }
 
         if (selectedImage && verificationResult) {
           statements.push(
@@ -346,7 +359,7 @@ export class ContentPlannerService {
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               )
               .bind(
-                crypto.randomUUID(), postId!, attempt, selectedImage.url, selectedImage.title || 'Verified Image',
+                crypto.randomUUID(), postId!, versionNumber, selectedImage.url, selectedImage.title || 'Verified Image',
                 selectedImage.sourceUrl, selectedImage.id, selectedImage.author, selectedImage.authorUrl,
                 selectedImage.license, selectedImage.licenseUrl, versionCreatedAt,
                 'verified', 'accept', verificationResult.reason, verificationResult.confidence, versionCreatedAt
@@ -362,7 +375,7 @@ export class ContentPlannerService {
         entityType: 'post_version',
         entityId: versionId,
         actor: 'ai',
-        details: { versionNumber: attempt, bodyLength: lastDraft.body.length },
+        details: { versionNumber, bodyLength: lastDraft.body.length },
       });
 
       // 4c. Static Validation
@@ -467,7 +480,7 @@ export class ContentPlannerService {
           checkId,
           postId!,
           versionId,
-          attempt,
+          versionNumber,
           qaReview.verdict,
           qaReview.score,
           JSON.stringify({
@@ -516,10 +529,13 @@ export class ContentPlannerService {
         await this.db
           .prepare(
             `UPDATE posts
-             SET status = 'approved', current_version = ?, quality_score = ?, quality_decision = 'PASS', updated_at = ?
+             SET status = 'approved', current_version = ?, quality_score = ?, quality_decision = 'PASS',
+                 regeneration_count = ?,
+                 sync_status = CASE WHEN EXISTS (SELECT 1 FROM publications pub WHERE pub.post_id = posts.id AND pub.status = 'published') THEN 'LOCAL_AHEAD' ELSE sync_status END,
+                 updated_at = ?
              WHERE id = ?`,
           )
-          .bind(attempt, finalScore, new Date().toISOString(), postId!)
+          .bind(versionNumber, existingPost ? originalRegenerationCount + 1 : originalRegenerationCount, new Date().toISOString(), postId!)
           .run();
 
         // Update content_ideas status to used
@@ -540,7 +556,7 @@ export class ContentPlannerService {
           postId: postId!,
           topicId,
           status: 'approved',
-          currentVersion: attempt,
+          currentVersion: versionNumber,
           qualityScore: finalScore,
           qualityDecision: 'PASS',
           durationMs: Date.now() - startTime,
@@ -554,7 +570,7 @@ export class ContentPlannerService {
     }
 
     // 5. Handle Case Where Generation Failed — Clean up any created D1 rows so NO incomplete post remains
-    if (postCreatedInDb && postId) {
+    if (createdPostThisRun && postId) {
       await executeBatch([
         this.db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(postId),
         this.db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(postId),

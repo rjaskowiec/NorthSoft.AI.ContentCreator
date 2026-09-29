@@ -150,13 +150,47 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
 
     // 4. Map & sanitize posts — NEVER include access tokens; fallback to story if message missing
     const facebookPostIds = (postsData.data || []).map((post) => post.id);
-    const localPostIds = new Map<string, string>();
+    const localPostIds = new Map<string, {
+      postId: string;
+      topicId: string | null;
+      topicTitle: string | null;
+      sourceTitle: string | null;
+      sourceUrl: string | null;
+      imageUrl: string | null;
+      scheduledAt: string | null;
+      publishedAt: string | null;
+    }>();
     if (facebookPostIds.length > 0) {
       const placeholders = facebookPostIds.map(() => '?').join(',');
       const linkedPosts = await c.env.DB.prepare(
-        `SELECT facebook_post_id, post_id FROM publications WHERE facebook_post_id IN (${placeholders}) AND fb_deleted_at IS NULL`,
-      ).bind(...facebookPostIds).all<{ facebook_post_id: string; post_id: string }>();
-      for (const linked of linkedPosts.results || []) localPostIds.set(linked.facebook_post_id, linked.post_id);
+        `SELECT pub.facebook_post_id, p.id as post_id, p.idea_id, ci.title as topic_title, ci.source_title, ci.source_url,
+                pi.url as image_url,
+                (SELECT s.scheduled_at FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as scheduled_at,
+                (SELECT latest_pub.published_at FROM publications latest_pub WHERE latest_pub.post_id = p.id AND latest_pub.status = 'published' ORDER BY latest_pub.created_at DESC LIMIT 1) as published_at
+         FROM publications pub JOIN posts p ON p.id = pub.post_id
+         LEFT JOIN content_ideas ci ON ci.id = p.idea_id
+         LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
+         WHERE pub.facebook_post_id IN (${placeholders}) AND pub.fb_deleted_at IS NULL
+         ORDER BY pub.updated_at DESC`,
+      ).bind(...facebookPostIds).all<{
+        facebook_post_id: string; post_id: string; idea_id: string | null; topic_title: string | null;
+        source_title: string | null; source_url: string | null; image_url: string | null;
+        scheduled_at: string | null; published_at: string | null;
+      }>();
+      for (const linked of linkedPosts.results || []) {
+        if (!localPostIds.has(linked.facebook_post_id)) {
+          localPostIds.set(linked.facebook_post_id, {
+            postId: linked.post_id,
+            topicId: linked.idea_id,
+            topicTitle: linked.topic_title,
+            sourceTitle: linked.source_title,
+            sourceUrl: linked.source_url,
+            imageUrl: linked.image_url,
+            scheduledAt: linked.scheduled_at,
+            publishedAt: linked.published_at,
+          });
+        }
+      }
     }
 
     const posts = await Promise.all((postsData.data || []).map(async (post) => {
@@ -188,7 +222,14 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       }
       return {
       id: post.id,
-      internalPostId: localPostIds.get(post.id) || null,
+      internalPostId: localPostIds.get(post.id)?.postId || null,
+      topicId: localPostIds.get(post.id)?.topicId || null,
+      topicTitle: localPostIds.get(post.id)?.topicTitle || null,
+      sourceTitle: localPostIds.get(post.id)?.sourceTitle || null,
+      sourceUrl: localPostIds.get(post.id)?.sourceUrl || null,
+      imageUrl: localPostIds.get(post.id)?.imageUrl || null,
+      scheduledAt: localPostIds.get(post.id)?.scheduledAt || null,
+      publishedAt: localPostIds.get(post.id)?.publishedAt || null,
       message: post.message || post.story || null,
       createdTime: post.created_time || null,
       updatedTime: post.updated_time || null,
