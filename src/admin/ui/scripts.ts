@@ -57,6 +57,121 @@ export function getAdminScripts(): string {
       return safeStr(val, defaultVal).toLowerCase();
     }
 
+    const tableSortStates = new WeakMap();
+    const observedSortableTables = new WeakSet();
+
+    function getTableCellSortValue(cell) {
+      if (!cell) return '';
+      const explicitValue = cell.getAttribute('data-sort-value');
+      return explicitValue !== null ? explicitValue : safeStr(cell.innerText || cell.textContent).trim();
+    }
+
+    function sortTableRows(table, columnIndex, direction) {
+      const body = table.tBodies && table.tBodies[0];
+      if (!body) return;
+      const rows = Array.from(body.rows).filter(row => row.cells.length > columnIndex && !row.querySelector('[colspan]'));
+      if (rows.length < 2) return;
+      const header = table.tHead && table.tHead.rows[0] && table.tHead.rows[0].cells[columnIndex];
+      const heading = safeLower(header ? header.textContent.replace(/[▲▼↕]/g, '') : '');
+      const isDate = /date|time|published|timestamp|created|scheduled|checked|started/.test(heading);
+      const isNumeric = /views|reactions|comments|shares|count|items|topics|duration|number|total|priority/.test(heading);
+      const keyedRows = rows.map((row, index) => {
+        const value = getTableCellSortValue(row.cells[columnIndex]);
+        const trimmed = value.trim();
+        let key = trimmed.toLocaleLowerCase();
+        let empty = !trimmed || trimmed === '—' || trimmed === '-';
+        if (isDate && !empty) {
+          const parsed = Date.parse(trimmed);
+          if (Number.isFinite(parsed)) key = parsed;
+          else empty = true;
+        } else if (isNumeric && !empty) {
+          const parsed = Number(trimmed.replace(/[^\\d.-]/g, ''));
+          if (Number.isFinite(parsed)) key = parsed;
+        } else if (!empty && /^-?\\d+(?:[.,]\\d+)?$/.test(trimmed)) {
+          key = Number(trimmed.replace(',', '.'));
+        }
+        return { row, key, empty, index };
+      });
+      keyedRows.sort((a, b) => {
+        if (a.empty !== b.empty) return a.empty ? 1 : -1;
+        let comparison = typeof a.key === 'number' && typeof b.key === 'number'
+          ? a.key - b.key
+          : String(a.key).localeCompare(String(b.key), undefined, { numeric: true, sensitivity: 'base' });
+        if (direction === 'desc') comparison *= -1;
+        return comparison || a.index - b.index;
+      });
+      const currentRows = Array.from(body.rows);
+      const sortedRows = keyedRows.map(item => item.row);
+      if (sortedRows.length !== currentRows.length || sortedRows.some((row, index) => row !== currentRows[index])) {
+        sortedRows.forEach(row => body.appendChild(row));
+      }
+    }
+
+    function setupSortableTable(table) {
+      if (observedSortableTables.has(table)) return;
+      observedSortableTables.add(table);
+      const headerRow = table.tHead && table.tHead.rows[0];
+      if (!headerRow) return;
+      Array.from(headerRow.cells).forEach((header, index) => {
+        const label = safeLower(header.textContent.replace(/[▲▼↕]/g, '').trim());
+        if (!label || /^(actions?|select|checkbox)$/.test(label) || header.querySelector('input[type="checkbox"]')) return;
+        header.classList.add('sortable-header');
+        header.setAttribute('tabindex', '0');
+        header.setAttribute('aria-label', 'Sort by ' + header.textContent.trim());
+        if (!header.querySelector('.table-sort-indicator')) {
+          const indicator = document.createElement('span');
+          indicator.className = 'table-sort-indicator';
+          indicator.setAttribute('aria-hidden', 'true');
+          indicator.textContent = '↕';
+          header.appendChild(indicator);
+        }
+        header.dataset.sortColumn = String(index);
+      });
+      const body = table.tBodies && table.tBodies[0];
+      if (body) {
+        new MutationObserver(() => {
+          const state = tableSortStates.get(table);
+          if (state) sortTableRows(table, state.column, state.direction);
+        }).observe(body, { childList: true });
+      }
+    }
+
+    function initializeSortableTables() {
+      document.querySelectorAll('table').forEach(setupSortableTable);
+    }
+
+    function activateTableSort(header) {
+      const table = header.closest('table');
+      const column = Number(header.dataset.sortColumn);
+      if (!table || !Number.isInteger(column)) return;
+      const previous = tableSortStates.get(table);
+      const direction = previous && previous.column === column && previous.direction === 'asc' ? 'desc' : 'asc';
+      tableSortStates.set(table, { column, direction });
+      Array.from(table.tHead.rows[0].cells).forEach(cell => {
+        cell.removeAttribute('aria-sort');
+        const indicator = cell.querySelector('.table-sort-indicator');
+        if (indicator) indicator.textContent = '↕';
+      });
+      header.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending');
+      const indicator = header.querySelector('.table-sort-indicator');
+      if (indicator) indicator.textContent = direction === 'asc' ? '▲' : '▼';
+      sortTableRows(table, column, direction);
+    }
+
+    document.addEventListener('click', event => {
+      const header = event.target && event.target.closest ? event.target.closest('th.sortable-header') : null;
+      if (header) activateTableSort(header);
+    });
+    document.addEventListener('keydown', event => {
+      const header = event.target && event.target.closest ? event.target.closest('th.sortable-header') : null;
+      if (header && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        activateTableSort(header);
+      }
+    });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeSortableTables, { once: true });
+    else initializeSortableTables();
+
     let isCheckingSession = false;
     let initialSessionLoaded = false;
     const activeInFlightRequests = new Map();
@@ -961,7 +1076,7 @@ export function getAdminScripts(): string {
               <td><span class="code-tag">\${escapeHtml(safeStr(s.category, 'rss'))}</span></td>
               <td style="font-size:0.8rem; font-family:monospace;">\${escapeHtml(safeStr(s.url))}</td>
               <td><span class="status-badge \${s.enabled ? 'status-healthy' : 'status-disabled'}">\${s.enabled ? 'ACTIVE' : 'DISABLED'}</span></td>
-              <td class="code-tag">\${s.last_checked_at ? formatDateSafe(s.last_checked_at) : 'Never'}</td>
+              <td data-sort-value="\${escapeHtml(safeStr(s.last_checked_at))}">\${s.last_checked_at ? formatDateSafe(s.last_checked_at) : 'Never'}</td>
             </tr>
           \`;
           }).join('');
@@ -979,7 +1094,7 @@ export function getAdminScripts(): string {
 
             return \`
               <tr>
-                <td class="code-tag">\${formatDateSafe(r.started_at)}</td>
+                <td data-sort-value="\${escapeHtml(safeStr(r.started_at))}">\${formatDateSafe(r.started_at)}</td>
                 <td><span class="code-tag">\${escapeHtml(safeStr(r.trigger_type, 'cron'))}</span></td>
                 <td><span class="status-badge \${st === 'COMPLETED' ? 'status-healthy' : 'status-alert'}">\${escapeHtml(st)}</span></td>
                 <td>\${r.items_discovered || r.items_found || 0}</td>
@@ -1147,7 +1262,7 @@ export function getAdminScripts(): string {
                 <td>
                   <span class="status-badge \${statusClass}">\${syncStatus === 'CONFLICT' ? 'SYNC CONFLICT' : escapeHtml(statusStr)}</span>
                 </td>
-                <td class="code-tag">\${formatDateOnlySafe(p.created_at)}</td>
+                <td data-sort-value="\${escapeHtml(safeStr(p.created_at))}">\${formatDateOnlySafe(p.created_at)}</td>
                 <td>
                   <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
                     <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditPostModal('\${pId}')">Edit</button>
@@ -1300,7 +1415,7 @@ export function getAdminScripts(): string {
               const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
               return '<tr>' +
                 '<td>' + escapeHtml(postPreview) + '</td>' +
-                '<td class="code-tag">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
+                '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
                 '<td>' +
                   '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openSchedulePostModal(&quot;' + schedIdStr + '&quot;)">Edit</button>' +
@@ -1383,7 +1498,7 @@ export function getAdminScripts(): string {
                     \${errCategory ? \`<div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">\${escapeHtml(errCategory)}</div>\` : ''}
                   </td>
                   <td class="code-tag">\${escapeHtml(safeStr(pub.facebookPostId, '—'))}</td>
-                  <td class="code-tag">\${formatDateSafe(pub.publishedAt)}</td>
+                  <td data-sort-value="\${escapeHtml(safeStr(pub.publishedAt))}">\${formatDateSafe(pub.publishedAt)}</td>
                   <td>
                     \${isApproved && pubStatus !== 'PUBLISHED' && pubStatus !== 'PUBLISHING' ? \`
                       <button class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="publishNow('\${postIdStr}')">Publish Now</button>
@@ -1455,10 +1570,10 @@ export function getAdminScripts(): string {
           const snippet = content.length > 120 ? content.slice(0, 117) + '...' : content;
           const metric = value => value == null ? '<span title="Metric unavailable from Meta">—</span>' : Number(value).toLocaleString();
           const date = post.createdTime ? new Date(post.createdTime).toLocaleString() : '—';
-          return '<tr><td class="code-tag">' + escapeHtml(date) + '</td>' +
+          return '<tr><td data-sort-value="' + escapeHtml(safeStr(post.createdTime)) + '">' + escapeHtml(date) + '</td>' +
             '<td style="max-width:420px;white-space:normal;">' + escapeHtml(snippet) + '</td>' +
-            '<td>' + metric(post.views) + (post.uniqueViews == null ? '' : '<small style="display:block;color:var(--text-muted);">' + metric(post.uniqueViews) + ' unique</small>') + (post.insightsError ? '<small title="' + escapeHtml(post.insightsError) + '" style="display:block;color:var(--text-muted);">not available</small>' : '') + '</td>' +
-            '<td>' + metric(post.reactions) + '</td><td>' + metric(post.comments) + '</td><td>' + metric(post.shares) + '</td>' +
+            '<td data-sort-value="' + (post.views == null ? '' : String(post.views)) + '">' + metric(post.views) + (post.uniqueViews == null ? '' : '<small style="display:block;color:var(--text-muted);">' + metric(post.uniqueViews) + ' unique</small>') + (post.insightsError ? '<small title="' + escapeHtml(post.insightsError) + '" style="display:block;color:var(--text-muted);">not available</small>' : '') + '</td>' +
+            '<td data-sort-value="' + (post.reactions == null ? '' : String(post.reactions)) + '">' + metric(post.reactions) + '</td><td data-sort-value="' + (post.comments == null ? '' : String(post.comments)) + '">' + metric(post.comments) + '</td><td data-sort-value="' + (post.shares == null ? '' : String(post.shares)) + '">' + metric(post.shares) + '</td>' +
             '<td><span class="status-badge ' + (post.isHidden ? 'status-disabled' : 'status-healthy') + '">' + (post.isHidden ? 'Hidden' : 'Published') + '</span></td>' +
             '<td><button class="btn-secondary" style="padding:0.3rem 0.55rem;font-size:0.78rem;" onclick="openFacebookPostDetails(&quot;' + id + '&quot;)">Details &amp; edit</button></td></tr>';
         }).join('');

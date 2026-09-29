@@ -548,6 +548,24 @@ export function getAdminCss(): string {
       white-space: nowrap;
     }
 
+    th.sortable-header {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    th.sortable-header:hover {
+      color: var(--text-main);
+    }
+
+    .table-sort-indicator {
+      display: inline-block;
+      min-width: 0.8em;
+      margin-left: 0.35rem;
+      color: var(--accent-cyan);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
     td {
       padding: 0.85rem 0.9rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
