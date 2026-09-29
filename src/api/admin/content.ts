@@ -26,12 +26,12 @@ contentRouter.post('/content/generate', csrfProtection, async (c) => {
   const planner = new ContentPlannerService(db, c.env);
   const result = await planner.generatePostFromTopic(body.topicId, 'admin');
 
-  if (result.status === 'failed' && !result.postId) {
+  if ((result.status === 'failed' || result.status === 'deferred') && !result.postId) {
     return c.json(
       {
         success: false,
         error: {
-          code: 'AI_GENERATION_FAILED',
+          code: result.status === 'deferred' ? 'AI_QUOTA_DEFERRED' : 'AI_GENERATION_FAILED',
           message: result.errorMessage || 'Post generation failed. Please try again.',
           retryable: true,
         },

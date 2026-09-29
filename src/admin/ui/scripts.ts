@@ -25,6 +25,26 @@ export function getAdminScripts(): string {
       return String(val);
     }
 
+    function extractApiErrorMessage(data, httpStatus) {
+      if (data && typeof data === 'object') {
+        if (data.error) {
+          if (typeof data.error === 'string' && data.error) return data.error;
+          if (typeof data.error.message === 'string' && data.error.message) return data.error.message;
+        }
+        if (data.result && typeof data.result.errorMessage === 'string' && data.result.errorMessage) {
+          return data.result.errorMessage;
+        }
+        if (typeof data.message === 'string' && data.message) return data.message;
+      }
+      if (httpStatus === 422) {
+        return 'Post generation failed. The AI model or Quality Gate was unable to process this topic.';
+      }
+      if (httpStatus) {
+        return 'Server returned HTTP ' + httpStatus;
+      }
+      return 'Post generation failed. Please try again.';
+    }
+
     function safeUpper(val, defaultVal = '') {
       return safeStr(val, defaultVal).toUpperCase();
     }
@@ -2533,7 +2553,13 @@ export function getAdminScripts(): string {
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
           body: JSON.stringify({ topicId })
         });
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (_) {
+          data = {};
+        }
+
         if (res.ok && data.success) {
           if (alertEl) {
             alertEl.textContent = 'Post draft generated successfully.';
@@ -2541,13 +2567,18 @@ export function getAdminScripts(): string {
           }
           switchTab('content');
         } else {
+          const errMsg = extractApiErrorMessage(data, res.status);
           if (alertEl) {
-            alertEl.textContent = 'Post generation failed: ' + safeStr(data.error || data.result?.errorMessage, 'Unknown error');
+            alertEl.textContent = 'Post generation failed: ' + errMsg;
             alertEl.className = 'alert-error';
           }
         }
       } catch (err) {
         console.error('Failed to generate post from topic:', err);
+        if (alertEl) {
+          alertEl.textContent = 'Post generation failed: ' + safeStr(err?.message, 'Network or server error');
+          alertEl.className = 'alert-error';
+        }
       }
     }
 
@@ -3002,7 +3033,12 @@ export function getAdminScripts(): string {
             headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
             body: JSON.stringify({ topicId: t.id })
           });
-          const data = await res.json();
+          let data = {};
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = {};
+          }
 
           if (itemEl) {
             const icon = itemEl.querySelector('.batch-status-icon');
@@ -3011,8 +3047,9 @@ export function getAdminScripts(): string {
               if (icon) { icon.className = 'batch-status-icon batch-status-completed'; icon.textContent = '✓'; }
               if (msg) { msg.textContent = 'Completed successfully'; msg.style.color = 'var(--accent-emerald)'; }
             } else {
+              const errMsg = extractApiErrorMessage(data, res.status);
               if (icon) { icon.className = 'batch-status-icon batch-status-failed'; icon.textContent = '✗'; }
-              if (msg) { msg.textContent = safeStr(data.error || data.result?.errorMessage, 'Failed'); msg.style.color = 'var(--accent-rose)'; }
+              if (msg) { msg.textContent = errMsg; msg.style.color = 'var(--accent-rose)'; }
             }
           }
         } catch (err) {
