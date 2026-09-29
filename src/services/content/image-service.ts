@@ -125,7 +125,7 @@ Respond ONLY with a valid JSON object adhering to this schema:
 
 Ensure that the image strictly relates to the topic. For example, if the topic is about "software development teams", a picture of developers collaborating is good, but a picture of a cat, a cabbage, or a random group of teenagers is BAD. If unsure, reject.`;
 
-      // @ts-ignore - Cloudflare Workers AI Binding is used directly
+      // @ts-expect-error - Cloudflare Workers AI Binding is used directly
       const aiResponse = await this.env.AI.run('@cf/llava-1.5-7b-hf', {
         messages: [
           { role: 'user', content: prompt }

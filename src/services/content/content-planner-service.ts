@@ -82,7 +82,7 @@ export class ContentPlannerService {
     }
 
     // 2. Fetch Supporting Research Sources
-    let sources: ResearchSourceItem[] = [];
+    const sources: ResearchSourceItem[] = [];
     if (topicRow.source_url) {
       const sourceRow = await this.db
         .prepare('SELECT id, title, url, content_summary as summary FROM research_items WHERE url = ? AND status = "ANALYZED"')
@@ -384,7 +384,11 @@ export class ContentPlannerService {
       }
 
       // 4c-2. Content Quality Gate (Semantic Substance & Anti-Filler Check)
-      const contentQualityResult = this.contentQualityGate.evaluate(lastDraft, topicRow.title);
+      const contentQualityResult = this.contentQualityGate.evaluate(lastDraft, topicRow.title, [
+        topicRow.description,
+        topicRow.content_angle,
+        ...sources.map((source) => source.summary),
+      ].filter((text): text is string => Boolean(text)));
       if (!contentQualityResult.passed) {
         await this.auditLogger.log({
           eventType: 'CONTENT_QUALITY_GATE_FAILED',

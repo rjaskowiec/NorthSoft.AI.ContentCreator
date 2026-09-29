@@ -95,6 +95,7 @@ CRITICAL RULES:
    "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business",
    "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
 2. FACT PRESERVATION RULE: If the post uses specific numbers, percentages, or statistics from the source material, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not in the source material. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
+3. SUBSTANTIVE VALUE RULE: Do not return the topic title, angle, or source summary as the post. Add concrete explanation, useful context, or practical guidance supported by the sources. A teaser that promises to explain something without actually explaining it is not a finished post. Short posts are acceptable only when they contain a complete, useful insight.
 
 Return ONLY a valid JSON object matching this schema:
 {

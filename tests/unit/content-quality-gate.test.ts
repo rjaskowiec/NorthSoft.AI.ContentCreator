@@ -255,5 +255,34 @@ Follow us for more tips!`,
       expect(result.noEmptyAdvice).toBe(false);
       expect(result.ctaQuality).toBe(false);
     });
+
+    it('8. MUST FAIL a post that only repeats the topic/source teaser', () => {
+      const teaser = "AEO costs vary widely, from DIY monitoring tools to full-service agency programs. We'll break down the options and what you need to know.";
+      const draft = makeDraft({
+        title: 'AEO costs',
+        body: teaser,
+      });
+
+      const result = qualityGate.evaluate(draft, 'AEO costs', [teaser]);
+
+      expect(result.passed).toBe(false);
+      expect(result.substantiveValue).toBe(false);
+      expect(result.reasons).toContain(
+        'Post mostly repeats the topic or source summary without adding useful information.',
+      );
+    });
+
+    it('9. should not reject a useful post that expands on the topic/source teaser', () => {
+      const teaser = 'AEO costs vary widely, from DIY monitoring tools to full-service agency programs.';
+      const draft = makeDraft({
+        title: 'Comparing AEO costs',
+        body: 'AEO costs vary widely because providers bundle different work. DIY tools can help monitor AI answers and citations, while agencies may add content audits, technical changes, reporting and ongoing optimization. Compare the scope and frequency of deliverables before weighing monthly fees. Which tasks do you need help with first?',
+      });
+
+      const result = qualityGate.evaluate(draft, 'Comparing AEO costs', [teaser]);
+
+      expect(result.passed).toBe(true);
+      expect(result.substantiveValue).toBe(true);
+    });
   });
 });
