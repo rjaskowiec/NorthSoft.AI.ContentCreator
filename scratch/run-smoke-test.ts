@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import http from 'node:http';
 import { chromium } from 'playwright';
 import { app } from '../src/index';
@@ -11,7 +12,13 @@ interface ScenarioResult {
 }
 
 // In-Memory D1 Mock Database with Full CRUD State & Invariant Checks
-function createSmokeTestDb() {
+type SmokeTestDatabase = D1Database & {
+  topicsMap: Map<string, Record<string, unknown>>;
+  postsMap: Map<string, Record<string, unknown>>;
+  publicationsMap: Map<string, Record<string, unknown>>;
+};
+
+function createSmokeTestDb(): SmokeTestDatabase {
   const topicsMap = new Map<string, Record<string, unknown>>();
   const postsMap = new Map<string, Record<string, unknown>>();
   const publicationsMap = new Map<string, Record<string, unknown>>();
@@ -275,7 +282,7 @@ async function runRealBrowserSmokeTest() {
       new Request(url, {
         method: req.method,
         headers,
-        body: body && body.length > 0 ? body : undefined,
+        body: body && body.length > 0 ? new Uint8Array(body) : undefined,
       }),
       mockEnv,
     );
@@ -331,7 +338,7 @@ async function runRealBrowserSmokeTest() {
     // 1a. Topic Edit
     requests.length = 0;
     const topicToEditId = Array.from(mockDb.topicsMap.keys())[0]!;
-    await page.evaluate((id) => (window as unknown as { openEditTopicModal: (i: string) => void }).openEditTopicModal(id), topicToEditId);
+    await page.evaluate((id: string) => (window as unknown as { openEditTopicModal: (i: string) => void }).openEditTopicModal(id), topicToEditId);
     await page.fill('#topic-input-title', 'Optimizing Edge Compute Infrastructure - Updated');
     await page.click('#save-topic-btn');
     await page.waitForTimeout(500);
@@ -353,7 +360,7 @@ async function runRealBrowserSmokeTest() {
     // 1b. Topic Single Delete
     requests.length = 0;
     const topicToDeleteId = topicToEditId;
-    await page.evaluate((id) => (window as unknown as { confirmDeleteTopic: (i: string) => void }).confirmDeleteTopic(id), topicToDeleteId);
+    await page.evaluate((id: string) => (window as unknown as { confirmDeleteTopic: (i: string) => void }).confirmDeleteTopic(id), topicToDeleteId);
     await page.click('#execute-delete-btn');
     await page.waitForTimeout(500);
 
@@ -437,7 +444,7 @@ async function runRealBrowserSmokeTest() {
     // 2a. Post Generation (Single topic, Batch topics, Manual post)
     requests.length = 0;
     const genTopicId = Array.from(mockDb.topicsMap.keys())[0]!;
-    await page.evaluate((id) => (window as unknown as { generatePostFromTopic: (i: string) => void }).generatePostFromTopic(id), genTopicId);
+    await page.evaluate((id: string) => (window as unknown as { generatePostFromTopic: (i: string) => void }).generatePostFromTopic(id), genTopicId);
     await page.waitForTimeout(500);
 
     // Also create a manual post draft via Add Post modal
@@ -466,7 +473,7 @@ async function runRealBrowserSmokeTest() {
     // 2b. Post Edit
     requests.length = 0;
     const postToEditId = Array.from(mockDb.postsMap.keys())[0]!;
-    await page.evaluate((id) => (window as unknown as { openEditPostModal: (i: string) => void }).openEditPostModal(id), postToEditId);
+    await page.evaluate((id: string) => (window as unknown as { openEditPostModal: (i: string) => void }).openEditPostModal(id), postToEditId);
     await page.fill('#post-input-topic', 'Updated Post Headline Title');
     await page.fill('#post-input-content', 'Updated body content text in English.');
     await page.click('#save-post-btn');
@@ -489,7 +496,7 @@ async function runRealBrowserSmokeTest() {
     // 2c. Post Single Delete
     requests.length = 0;
     const postDelId = postToEditId;
-    await page.evaluate((id) => (window as unknown as { confirmDeletePost: (i: string) => void }).confirmDeletePost(id), postDelId);
+    await page.evaluate((id: string) => (window as unknown as { confirmDeletePost: (i: string) => void }).confirmDeletePost(id), postDelId);
     await page.click('#execute-delete-btn');
     await page.waitForTimeout(500);
 
@@ -603,7 +610,7 @@ async function runRealBrowserSmokeTest() {
 
     requests.length = 0;
     const pubIdToDelete = 'pub-init-301';
-    await page.evaluate((id) => (window as unknown as { openDeletePublicationModal: (i: string) => void }).openDeletePublicationModal(id), pubIdToDelete);
+    await page.evaluate((id: string) => (window as unknown as { openDeletePublicationModal: (i: string) => void }).openDeletePublicationModal(id), pubIdToDelete);
     await page.click('#publication-delete-modal .btn-logout');
     await page.waitForTimeout(500);
 

@@ -9,8 +9,10 @@
 
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import { evaluatePipelineGate } from '../../core/quality-gate';
-import { getAIProvider } from '../../ai/factory';
 import { ContentQualityGate } from './content-quality-gate';
+import { getAIProvider } from '../../ai/factory';
+import { OpenverseImageService } from './image-service';
+import type { ImageCandidate, ImageVerificationResult } from './image-service.interface';
 import { PolicyReviewService } from './policy-service';
 import { QualityReviewerService } from './qa-service';
 import { StaticValidator } from './static-validator';
@@ -31,7 +33,7 @@ export interface GenerationResultSummary {
   qualityScore?: number;
   qualityDecision?: string;
   errorMessage?: string;
-  durationMs: number;
+  durationMs?: number;
 }
 
 export class ContentPlannerService {
@@ -229,16 +231,38 @@ export class ContentPlannerService {
         cta: lastDraft.callToAction,
       });
 
-      // 4b. Persist Post & Version in D1 atomically
+      // 4b. Find and Verify Real Image via Openverse & LLaVA
+      const imageService = new OpenverseImageService(this.env);
+      let selectedImage: ImageCandidate | undefined;
+      let verificationResult: ImageVerificationResult | undefined;
+
+      try {
+        const candidates = await imageService.searchImages(topicRow.title, 5);
+        for (const candidate of candidates) {
+          try {
+            const imageBytes = await imageService.downloadImage(candidate.url);
+            const vRes = await imageService.verifyImageWithVision(imageBytes, topicRow.title, lastDraft.body);
+            if (vRes.decision === 'accept') {
+              selectedImage = candidate;
+              verificationResult = vRes;
+              break;
+            }
+          } catch (imgErr) {
+            console.warn(`[ContentPlanner] Image verification failed for ${candidate.url}`, imgErr);
+          }
+        }
+      } catch (searchErr) {
+        console.warn('[ContentPlanner] Image search failed', searchErr);
+      }
+
+      // Persist Post & Version in D1 atomically
       const versionId = crypto.randomUUID();
       const versionCreatedAt = new Date().toISOString();
-      const imageId = crypto.randomUUID();
-      const imageUrl = `https://picsum.photos/seed/${encodeURIComponent(topicRow.title)}/800/600`;
 
       if (!postCreatedInDb) {
         postId = crypto.randomUUID();
 
-        await executeBatch([
+        const statements = [
           this.db
             .prepare(
               `INSERT INTO posts (id, idea_id, title, status, current_version, regeneration_count, created_at, updated_at)
@@ -259,14 +283,25 @@ export class ContentPlannerService {
               'llama-3.1-8b-instruct',
               writerProvider.name,
               versionCreatedAt,
-            ),
-          this.db
-            .prepare(
-              `INSERT INTO post_images (id, post_id, version_number, url, alt_text, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)`
             )
-            .bind(imageId, postId, attempt, imageUrl, 'Auto-generated image for ' + topicRow.title, versionCreatedAt)
-        ]);
+        ];
+
+        if (selectedImage && verificationResult) {
+          statements.push(
+            this.db
+              .prepare(
+                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verified_at, verification_status, visual_verification_status, visual_verification_confidence, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              )
+              .bind(
+                crypto.randomUUID(), postId, attempt, selectedImage.url, selectedImage.title || 'Verified Image',
+                selectedImage.sourceUrl, selectedImage.author, selectedImage.license, versionCreatedAt,
+                'verified', 'accept', verificationResult.confidence, versionCreatedAt
+              )
+          );
+        }
+
+        await executeBatch(statements);
 
         postCreatedInDb = true;
 
@@ -279,7 +314,7 @@ export class ContentPlannerService {
         });
       } else {
         // Subsequent regeneration attempt
-        await executeBatch([
+        const statements = [
           this.db
             .prepare(
               `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
@@ -297,16 +332,27 @@ export class ContentPlannerService {
             ),
           this.db
             .prepare(
-              `INSERT INTO post_images (id, post_id, version_number, url, alt_text, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)`
-            )
-            .bind(imageId, postId!, attempt, imageUrl, 'Auto-generated image for ' + topicRow.title, versionCreatedAt),
-          this.db
-            .prepare(
               `UPDATE posts SET current_version = ?, regeneration_count = ?, updated_at = ? WHERE id = ?`,
             )
             .bind(attempt, attempt - 1, new Date().toISOString(), postId!),
-        ]);
+        ];
+
+        if (selectedImage && verificationResult) {
+          statements.push(
+            this.db
+              .prepare(
+                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verified_at, verification_status, visual_verification_status, visual_verification_confidence, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              )
+              .bind(
+                crypto.randomUUID(), postId!, attempt, selectedImage.url, selectedImage.title || 'Verified Image',
+                selectedImage.sourceUrl, selectedImage.author, selectedImage.license, versionCreatedAt,
+                'verified', 'accept', verificationResult.confidence, versionCreatedAt
+              )
+          );
+        }
+
+        await executeBatch(statements);
       }
 
       await this.auditLogger.log({

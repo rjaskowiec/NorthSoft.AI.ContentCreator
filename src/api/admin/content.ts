@@ -65,10 +65,11 @@ contentRouter.get('/content/posts', async (c) => {
     .prepare(
       `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at, p.sync_status,
               v.content as latest_body, v.ai_provider, v.ai_model,
-              (SELECT url FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version LIMIT 1) as image_url,
+              pi.url as image_url, pi.source_url, pi.author, pi.license, pi.license_url,
               (SELECT facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id
        FROM posts p
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
+       LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
        ORDER BY p.created_at DESC
        LIMIT 20`,
     )

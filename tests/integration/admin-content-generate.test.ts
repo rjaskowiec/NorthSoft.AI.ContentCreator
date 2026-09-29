@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 
-function createMockDb(failGeneration: boolean) {
+function createMockDb() {
   const topicsMap = new Map<string, Record<string, unknown>>();
 
   // Create a topic so it can be 'found' by ContentPlannerService
@@ -90,7 +90,7 @@ const authHeaders = {
 
 describe('Admin Content Generate API Integration', () => {
   it('POST /api/admin/content/generate returns 422 Unprocessable Content when AI generation fails', async () => {
-    const mockDb = createMockDb(true);
+    const mockDb = createMockDb();
     
     const mockEnv = {
       DB: mockDb,

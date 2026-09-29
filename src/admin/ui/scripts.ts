@@ -1121,7 +1121,22 @@ export function getAdminScripts(): string {
                 </td>
                 <td>
                   <strong>Topic:</strong> \${escapeHtml(pTitle)}
-                  \${p.image_url ? \`<br><img src="\${escapeHtml(p.image_url)}" alt="Post image" style="max-width:120px; border-radius:4px; margin-top:0.5rem; display:block; border:1px solid var(--border-color);"/>\` : ''}
+                  \${p.image_url ? \`
+                    <div style="margin-top:0.75rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem;">
+                      <a href="\${escapeHtml(p.source_url || p.image_url)}" target="_blank" rel="noopener noreferrer">
+                        <img src="\${escapeHtml(p.image_url)}" alt="Verified Post Image" style="width:100%; max-width:200px; border-radius:4px; display:block;"/>
+                      </a>
+                      <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem; line-height:1.4;">
+                        \${p.author ? \`<div><strong>Author:</strong> \${escapeHtml(p.author)}</div>\` : ''}
+                        \${p.license ? \`<div><strong>License:</strong> \${p.license_url ? \`<a href="\${escapeHtml(p.license_url)}" target="_blank" style="color:var(--accent-blue);">\${escapeHtml(p.license)}</a>\` : escapeHtml(p.license)}</div>\` : ''}
+                        \${p.source_url ? \`<div><strong>Source:</strong> <a href="\${escapeHtml(p.source_url)}" target="_blank" style="color:var(--accent-blue); word-break:break-all;">\${escapeHtml(p.source_url)}</a></div>\` : ''}
+                      </div>
+                    </div>
+                  \` : \`
+                    <div style="margin-top:0.75rem; padding:0.75rem; background:rgba(255,255,255,0.02); border:1px dashed var(--border-color); border-radius:6px; color:var(--text-muted); font-size:0.8rem; text-align:center;">
+                      No verified image found.
+                    </div>
+                  \`}
                 </td>
                 <td>
                   <div style="font-size:0.85rem; color:var(--text-main); max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
