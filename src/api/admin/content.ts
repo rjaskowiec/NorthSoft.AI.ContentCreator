@@ -24,7 +24,13 @@ contentRouter.post('/content/generate', csrfProtection, async (c) => {
   }
 
   const planner = new ContentPlannerService(db, c.env);
-  const result = await planner.generatePostFromTopic(body.topicId, 'admin');
+  let result;
+  try {
+    result = await planner.generatePostFromTopic(body.topicId, 'admin');
+  } catch (err) {
+    console.error("GENERATE API ERROR:", err);
+    throw err;
+  }
 
   if ((result.status === 'failed' || result.status === 'deferred') && !result.postId) {
     return c.json(
@@ -66,7 +72,10 @@ contentRouter.get('/content/posts', async (c) => {
        ORDER BY p.created_at DESC
        LIMIT 20`,
     )
-    .all();
+    .all().catch((err) => {
+      console.error("POSTS API SQL ERROR:", err);
+      throw err;
+    });
 
   return c.json({
     posts: postsRes.results || [],
