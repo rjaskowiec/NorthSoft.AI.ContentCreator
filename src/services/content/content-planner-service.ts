@@ -16,6 +16,7 @@ import { QualityReviewerService } from './qa-service';
 import { StaticValidator } from './static-validator';
 import {
   WriterService,
+  isInstructionJsonOrInvalidPost,
   type PostDraft,
   type ResearchSourceItem,
   type ResearchTopicItem,
@@ -188,6 +189,18 @@ export class ContentPlannerService {
       }
       if (!genRes.draft) {
         runErrorMessage = genRes.error || 'Writer service failed to produce valid draft.';
+        await this.auditLogger.log({
+          eventType: 'POST_GENERATION_STARTED',
+          entityType: 'content_idea',
+          entityId: topicId,
+          actor: 'ai',
+          details: { attemptNumber: attempt, error: runErrorMessage },
+        });
+        continue;
+      }
+
+      if (isInstructionJsonOrInvalidPost(genRes.draft.body)) {
+        runErrorMessage = 'Writer produced AI instruction JSON instead of valid post text.';
         await this.auditLogger.log({
           eventType: 'POST_GENERATION_STARTED',
           entityType: 'content_idea',

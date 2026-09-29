@@ -10,6 +10,7 @@ export function getAdminScripts(): string {
     let selectedPostIds = new Set();
     let cachedTopics = [];
     let cachedPosts = [];
+    let cachedSchedules = [];
     let pendingDeleteType = null;
     let pendingDeleteId = null;
 
@@ -23,7 +24,6 @@ export function getAdminScripts(): string {
       }
       return String(val);
     }
-
 
     function safeUpper(val, defaultVal = '') {
       return safeStr(val, defaultVal).toUpperCase();
@@ -42,7 +42,7 @@ export function getAdminScripts(): string {
       const key = method + ':' + url;
 
       if (method === 'GET' && activeInFlightRequests.has(key)) {
-        return activeInFlightRequests.get(key).then(res => res.clone());
+        return activeInFlightRequests.get(key);
       }
 
       const fetchPromise = (async () => {
@@ -1096,7 +1096,6 @@ export function getAdminScripts(): string {
                 </td>
                 <td>
                   <strong>Topic:</strong> \${escapeHtml(pTitle)}
-                  <div style="font-size:0.75rem; color:var(--accent-cyan); margin-top:2px;">1 Topic = 1 Post</div>
                 </td>
                 <td>
                   <div style="font-size:0.85rem; color:var(--text-main); max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
@@ -1212,6 +1211,7 @@ export function getAdminScripts(): string {
         const data = await res.json();
         const schedBody = document.getElementById('schedules-table-body');
         const schedules = Array.isArray(data.schedules) ? data.schedules : [];
+        cachedSchedules = schedules;
 
         renderCalendarGrid(schedules);
 

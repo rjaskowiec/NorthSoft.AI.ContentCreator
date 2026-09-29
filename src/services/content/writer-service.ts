@@ -157,8 +157,12 @@ Return ONLY a valid JSON object matching this schema:
       }
 
       const bodyText = typeof parsed.body === 'string' ? parsed.body.trim() : '';
-      if (!bodyText) {
+      if (!bodyText || bodyText.length < 20) {
         return { error: 'Writer produced empty post body text.' };
+      }
+
+      if (isInstructionJsonOrInvalidPost(bodyText)) {
+        return { error: 'Writer produced AI instruction JSON instead of social media post content.' };
       }
 
       const claimsList: FactualClaim[] = Array.isArray(parsed.claims)
@@ -193,4 +197,42 @@ Return ONLY a valid JSON object matching this schema:
       return { error: msg };
     }
   }
+}
+
+export function isInstructionJsonOrInvalidPost(bodyText: string): boolean {
+  if (!bodyText || typeof bodyText !== 'string') return true;
+  const trimmed = bodyText.trim();
+  if (trimmed.length < 20) return true;
+
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj === 'object') {
+        if (
+          obj.instructions ||
+          obj.requirements ||
+          obj.steps ||
+          obj.write_about ||
+          obj.topic ||
+          obj.role ||
+          obj.system_prompt
+        ) {
+          return true;
+        }
+      }
+    } catch {
+      // Ignore parse failure
+    }
+  }
+
+  if (
+    trimmed.includes('"instructions":') ||
+    trimmed.includes('"requirements":') ||
+    trimmed.includes('"system_prompt":') ||
+    trimmed.includes('"write_about":')
+  ) {
+    return true;
+  }
+
+  return false;
 }
