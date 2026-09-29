@@ -14,11 +14,28 @@ describe('CloudflareWorkersAIProvider structured output', () => {
     });
 
     expect(run).toHaveBeenCalledWith(
-      '@cf/meta/llama-3.1-8b-instruct',
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
       expect.objectContaining({ response_format: { type: 'json_object' } }),
     );
     expect(JSON.parse(result.content)).toEqual(structuredResponse);
-    expect(result.model).toBe('@cf/meta/llama-3.1-8b-instruct');
+    expect(result.model).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  });
+
+  it('maps the retired production model alias to an active Cloudflare model', async () => {
+    const run = vi.fn().mockResolvedValue({ response: 'Generated post' });
+    const provider = new CloudflareWorkersAIProvider({
+      aiBinding: { run },
+      defaultModel: '@cf/meta/infire-llama-3.1-8b-instruct',
+    });
+
+    const result = await provider.complete({
+      role: 'writer',
+      messages: [{ role: 'user', content: 'Write a post.' }],
+      responseFormat: 'text',
+    });
+
+    expect(run).toHaveBeenCalledWith('@cf/meta/llama-3.1-8b-instruct-fp8', expect.any(Object));
+    expect(result.model).toBe('@cf/meta/llama-3.1-8b-instruct-fp8');
   });
 
   it('keeps plain-text requests out of JSON mode', async () => {

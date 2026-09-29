@@ -34,7 +34,13 @@ export function getAIProvider(env: Env, role: AIRole = 'researcher'): IAIProvide
   // Primary free provider: Cloudflare Workers AI binding
   if (providerName === 'cloudflare-workers-ai') {
     if (env.AI) {
-      const model = env.AI_RESEARCH_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8';
+      const modelByRole: Record<AIRole, string | undefined> = {
+        researcher: env.AI_RESEARCH_MODEL,
+        writer: env.AI_WRITER_MODEL || env.AI_MODEL_WRITER,
+        qa: env.AI_QA_MODEL || env.AI_MODEL_QA,
+        policy: env.AI_POLICY_MODEL,
+      };
+      const model = modelByRole[role] || env.AI_RESEARCH_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8';
       return new CloudflareWorkersAIProvider({
         aiBinding: env.AI,
         defaultModel: model,

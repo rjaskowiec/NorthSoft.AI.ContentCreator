@@ -198,7 +198,7 @@ facebookRouter.post('/facebook/sync', csrfProtection, async (c) => {
   const result = await pubService.syncFacebookPostsToSystem();
 
   return c.json({
-    success: true,
+    success: result.errors === 0,
     result,
   });
 });
@@ -242,6 +242,63 @@ facebookRouter.post('/facebook/posts/:id/update', csrfProtection, async (c) => {
   }
 
   return c.json({ success: true });
+});
+
+/** Push the locally selected image to the linked published Facebook post. */
+facebookRouter.post('/facebook/posts/:id/update-image', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const postId = c.req.param('id');
+  const publication = await db.prepare(
+    `SELECT id, facebook_post_id, fb_image_url FROM publications
+     WHERE post_id = ? AND status = 'published' AND facebook_post_id IS NOT NULL
+     ORDER BY created_at DESC LIMIT 1`,
+  ).bind(postId).first<{ id: string; facebook_post_id: string; fb_image_url?: string | null }>();
+  if (!publication) return c.json({ success: false, error: 'No linked Facebook publication was found.' }, 404);
+
+  const image = await db.prepare(
+    `SELECT url FROM post_images pi JOIN posts p ON p.id = pi.post_id AND p.current_version = pi.version_number WHERE pi.post_id = ? LIMIT 1`,
+  ).bind(postId).first<{ url: string }>();
+  const publisher = new FacebookPublisher(c.env);
+  const currentFacebookPost = await publisher.getPost(publication.facebook_post_id);
+  if (!currentFacebookPost.success || !currentFacebookPost.post) {
+    return c.json({ success: false, error: currentFacebookPost.error || 'Could not read the current Facebook post.' }, currentFacebookPost.httpStatus === 404 ? 404 : 502);
+  }
+
+  const remoteImage = currentFacebookPost.post.fullPicture || null;
+  if (publication.fb_image_url && remoteImage !== publication.fb_image_url) {
+    await db.batch([
+      db.prepare("UPDATE publications SET sync_status = 'CONFLICT', fb_image_url = ? WHERE id = ?").bind(remoteImage, publication.id),
+      db.prepare("UPDATE posts SET sync_status = 'CONFLICT' WHERE id = ?").bind(postId),
+    ]);
+    return c.json({ success: false, conflict: true, error: 'The Facebook image changed since the last sync. Resolve the conflict before replacing it.' }, 409);
+  }
+
+  if (!publication.fb_image_url) {
+    await db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = ? WHERE id = ?')
+      .bind(remoteImage, image?.url || null, publication.id).run();
+  }
+
+  if (!publisher.updatePostImage) return c.json({ success: false, error: 'Image updates are not supported by this publisher.' }, 501);
+  const update = await publisher.updatePostImage(publication.facebook_post_id, image?.url || null);
+  if (!update.success) {
+    await db.batch([
+      db.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(publication.id),
+      db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(postId),
+    ]);
+    return c.json({ success: false, error: update.error || 'Meta rejected the image update.' }, update.httpStatus && update.httpStatus >= 400 ? update.httpStatus as 400 : 502);
+  }
+
+  const refreshed = await publisher.getPost(publication.facebook_post_id);
+  if (!refreshed.success || !refreshed.post) {
+    return c.json({ success: false, error: refreshed.error || 'Meta accepted the change, but the post could not be re-read to verify it.' }, 502);
+  }
+  const syncedAt = new Date().toISOString();
+  await db.batch([
+    db.prepare("UPDATE publications SET sync_status = 'SYNCED', fb_image_url = ?, pushed_image_url = ?, fb_last_check_at = ?, fb_last_sync_at = ? WHERE id = ?")
+      .bind(refreshed.post.fullPicture || null, image?.url || null, syncedAt, syncedAt, publication.id),
+    db.prepare("UPDATE posts SET sync_status = 'SYNCED', last_synced_at = ? WHERE id = ?").bind(syncedAt, postId),
+  ]);
+  return c.json({ success: true, verified: true });
 });
 
 /**

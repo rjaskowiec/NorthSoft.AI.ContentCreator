@@ -15,14 +15,24 @@ export interface CloudflareWorkersAIConfig {
 
 const JSON_MODE_SUPPORTED_MODELS = new Set([
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-  '@cf/meta/llama-3-8b-instruct',
-  '@cf/meta/llama-3.1-8b-instruct',
   '@hf/nousresearch/hermes-2-pro-mistral-7b',
   '@hf/thebloke/deepseek-coder-6.7b-instruct-awq',
   '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
 ]);
 
-const JSON_MODE_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+// The previous 3.1 model alias was retired by Cloudflare. This model is listed
+// by Cloudflare as supporting JSON mode and remains available in the catalog.
+const JSON_MODE_FALLBACK_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+
+const DEPRECATED_MODEL_ALIASES = new Map([
+  ['@cf/meta/infire-llama-3.1-8b-instruct', '@cf/meta/llama-3.1-8b-instruct-fp8'],
+  ['@cf/meta/llama-3.1-8b-instruct', '@cf/meta/llama-3.1-8b-instruct-fp8'],
+]);
+
+export function resolveWorkersAIModel(model: string): string {
+  const normalized = model.trim();
+  return DEPRECATED_MODEL_ALIASES.get(normalized) || normalized;
+}
 
 export class CloudflareWorkersAIProvider implements IAIProvider {
   readonly name = 'cloudflare-workers-ai';
@@ -31,7 +41,7 @@ export class CloudflareWorkersAIProvider implements IAIProvider {
 
   constructor(config?: CloudflareWorkersAIConfig) {
     this.aiBinding = config?.aiBinding;
-    this.defaultModel = config?.defaultModel || '@cf/meta/llama-3.1-8b-instruct-fp8';
+    this.defaultModel = resolveWorkersAIModel(config?.defaultModel || '@cf/meta/llama-3.1-8b-instruct-fp8');
   }
 
   async complete(request: AICompletionRequest): Promise<AICompletionResult> {

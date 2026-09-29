@@ -58,9 +58,11 @@ export class OpenverseImageService implements ImageService {
       throw new AppError('Only HTTPS URLs are allowed for image download', 400, 'SECURITY_VIOLATION');
     }
 
-    const hostname = targetUrl.hostname;
+    const hostname = targetUrl.hostname.toLowerCase().replace(/^\[|\]$/g, '');
     const blockedHosts = ['localhost', '127.0.0.1', '169.254.169.254', '::1'];
-    if (blockedHosts.includes(hostname) || hostname.endsWith('.local')) {
+    const privateIpv4 = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+    const privateIpv6 = /^(fc|fd|fe80:)/i.test(hostname);
+    if (blockedHosts.includes(hostname) || privateIpv4 || privateIpv6 || hostname.endsWith('.local')) {
       throw new AppError('Blocked private IP or localhost access', 403, 'SECURITY_VIOLATION');
     }
 
@@ -68,7 +70,7 @@ export class OpenverseImageService implements ImageService {
     // We can set redirect: 'follow'
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
-      redirect: 'follow',
+      redirect: 'error',
       headers: {
         'User-Agent': 'NorthSoft.AI.ContentCreator/0.1.0',
         'Accept': 'image/jpeg, image/png, image/webp',
@@ -83,7 +85,7 @@ export class OpenverseImageService implements ImageService {
     }
 
     const contentType = response.headers.get('content-type') || '';
-    if (!contentType.startsWith('image/')) {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType.split(';')[0]!.trim().toLowerCase())) {
       throw new AppError(`Invalid content type: ${contentType}`, 400, 'INVALID_IMAGE_TYPE');
     }
 
@@ -125,12 +127,12 @@ Respond ONLY with a valid JSON object adhering to this schema:
 
 Ensure that the image strictly relates to the topic. For example, if the topic is about "software development teams", a picture of developers collaborating is good, but a picture of a cat, a cabbage, or a random group of teenagers is BAD. If unsure, reject.`;
 
-      // @ts-expect-error - Cloudflare Workers AI Binding is used directly
-      const aiResponse = await this.env.AI.run('@cf/llava-1.5-7b-hf', {
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-        image: [...uint8Array] // Llava in Cloudflare AI accepts a number array for image
+      if (!this.env.AI) {
+        throw new Error('Cloudflare Workers AI binding is not configured.');
+      }
+      const aiResponse = await this.env.AI.run('@cf/llava-hf/llava-1.5-7b-hf', {
+        prompt,
+        image: [...uint8Array],
       });
 
       const responseText =
@@ -144,7 +146,13 @@ Ensure that the image strictly relates to the topic. For example, if the topic i
       const result = JSON.parse(jsonStr) as ImageVerificationResult;
 
       // Ensure required fields
-      if (result.decision !== 'accept' && result.decision !== 'reject') {
+      if (
+        (result.decision !== 'accept' && result.decision !== 'reject') ||
+        typeof result.matches_content !== 'boolean' ||
+        typeof result.confidence !== 'number' ||
+        !Array.isArray(result.mismatches) ||
+        (result.decision === 'accept' && !result.matches_content)
+      ) {
         throw new Error('Invalid decision format');
       }
 

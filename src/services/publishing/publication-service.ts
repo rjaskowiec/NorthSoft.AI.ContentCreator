@@ -801,9 +801,10 @@ export class PublicationService {
    * Facebook -> System Sync:
    * Periodically checks published Facebook posts to pull external edits into system.
    */
-  public async syncFacebookPostsToSystem(): Promise<{ checked: number; updated: number; conflicts: number; errors: number }> {
+  public async syncFacebookPostsToSystem(): Promise<{ checked: number; updated: number; imported: number; conflicts: number; errors: number }> {
     let checked = 0;
     let updated = 0;
+    let imported = 0;
     let conflicts = 0;
     let errors = 0;
 
@@ -812,10 +813,13 @@ export class PublicationService {
         .prepare(
           `SELECT pub.id as publication_id, pub.post_id, pub.post_version_id, pub.facebook_post_id,
                   pub.sync_status as pub_sync_status, pub.fb_content_hash, pub.pushed_content_hash,
-                  p.current_version, p.sync_status as post_sync_status, pv.content as local_content
+                  pub.fb_image_url, pub.pushed_image_url,
+                  p.current_version, p.sync_status as post_sync_status, pv.content as local_content,
+                  pi.url as local_image_url
            FROM publications pub
            JOIN posts p ON pub.post_id = p.id
            JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+           LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
            WHERE pub.status = 'published' AND pub.facebook_post_id IS NOT NULL AND pub.facebook_post_id != ''`,
         )
         .all<{
@@ -826,9 +830,12 @@ export class PublicationService {
           pub_sync_status: string;
           fb_content_hash?: string;
           pushed_content_hash?: string;
+          fb_image_url?: string | null;
+          pushed_image_url?: string | null;
           current_version: number;
           post_sync_status: string;
           local_content: string;
+          local_image_url?: string | null;
         }>();
 
       const items = pubRows.results || [];
@@ -854,6 +861,56 @@ export class PublicationService {
         const fbMsg = (res.post.message || '').trim();
         const fbHash = this.hashContent(fbMsg);
         const localHash = this.hashContent(item.local_content);
+
+        // Backfill photos from Facebook for posts created before local image storage existed.
+        // Never replace an image explicitly selected in the app.
+        if (res.post.fullPicture && !item.local_image_url) {
+          await this.db.prepare(
+            `INSERT OR IGNORE INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
+             VALUES (?, ?, ?, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
+          ).bind(
+            crypto.randomUUID(), item.post_id, item.current_version, res.post.fullPicture,
+            res.post.permalinkUrl || res.post.fullPicture, nowIso,
+          ).run();
+        }
+
+        if (!item.fb_image_url) {
+          await this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = ? WHERE id = ?')
+            .bind(res.post.fullPicture || null, item.local_image_url || res.post.fullPicture || null, item.publication_id).run();
+        } else {
+          const facebookImageChanged = (res.post.fullPicture || null) !== item.fb_image_url;
+          const localImageChanged = (item.local_image_url || null) !== (item.pushed_image_url || null);
+          if (facebookImageChanged && localImageChanged) {
+            conflicts++;
+            await this.db.batch([
+              this.db.prepare("UPDATE publications SET sync_status = 'CONFLICT', fb_last_check_at = ?, fb_image_url = ? WHERE id = ?")
+                .bind(nowIso, res.post.fullPicture || null, item.publication_id),
+              this.db.prepare("UPDATE posts SET sync_status = 'CONFLICT' WHERE id = ?").bind(item.post_id),
+            ]);
+            continue;
+          }
+          if (localImageChanged) {
+            await this.db.batch([
+              this.db.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD', fb_last_check_at = ? WHERE id = ?").bind(nowIso, item.publication_id),
+              this.db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(item.post_id),
+            ]);
+            continue;
+          }
+          if (facebookImageChanged) {
+            const imageStatements = [
+              this.db.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(item.post_id, item.current_version),
+            ];
+            if (res.post.fullPicture) {
+              imageStatements.push(this.db.prepare(
+                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
+                 VALUES (?, ?, ?, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
+              ).bind(crypto.randomUUID(), item.post_id, item.current_version, res.post.fullPicture, res.post.permalinkUrl || res.post.fullPicture, nowIso));
+            }
+            imageStatements.push(this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = ? WHERE id = ?')
+              .bind(res.post.fullPicture || null, res.post.fullPicture || null, item.publication_id));
+            await this.db.batch(imageStatements);
+          }
+        }
 
         // Case 1: FB message matches local content or matches pushed content hash -> SYNCED (No-op)
         if (fbHash === localHash || (item.pushed_content_hash && fbHash === item.pushed_content_hash)) {
@@ -927,7 +984,21 @@ export class PublicationService {
               `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', fb_content_hash = ?, sync_source = 'facebook' WHERE id = ?`,
             )
             .bind(nowIso, nowIso, fbHash, item.publication_id),
+          ...(res.post.fullPicture && !item.local_image_url ? [
+            this.db.prepare(
+              `INSERT OR IGNORE INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
+               VALUES (?, ?, ?, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
+            ).bind(crypto.randomUUID(), item.post_id, newVersionNumber, res.post.fullPicture, res.post.permalinkUrl || res.post.fullPicture, nowIso),
+          ] : []),
         ]);
+
+        await this.db.prepare(
+          `INSERT INTO post_images (id, post_id, version_number, url, alt_text, created_at, source_url, source_id, author, author_url,
+            license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence)
+           SELECT ?, post_id, ?, url, alt_text, created_at, source_url, source_id, author, author_url,
+            license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence
+           FROM post_images WHERE post_id = ? AND version_number = ? LIMIT 1`,
+        ).bind(crypto.randomUUID(), newVersionNumber, item.post_id, item.current_version).run();
 
         updated++;
 
@@ -942,9 +1013,57 @@ export class PublicationService {
         }
       }
 
-      return { checked, updated, conflicts, errors };
+      // Import recent Facebook Page posts that were created outside this application.
+      // The external Facebook ID is the stable deduplication key.
+      let after: string | undefined;
+      for (let page = 0; page < 5; page++) {
+        const feed = await this.publisher.fetchPagePosts(100, after);
+        if (!feed.success) {
+          errors++;
+          break;
+        }
+        for (const fbPost of feed.posts) {
+          const content = (fbPost.message || '').trim();
+          if (!fbPost.id || !content) continue;
+          const existing = await this.db.prepare('SELECT id FROM publications WHERE facebook_post_id = ? LIMIT 1')
+            .bind(fbPost.id).first<{ id: string }>();
+          if (existing) continue;
+
+          const postId = crypto.randomUUID();
+          const versionId = crypto.randomUUID();
+          const publicationId = crypto.randomUUID();
+          const createdAt = fbPost.createdTime || nowIso;
+          const hash = this.hashContent(content);
+          await this.db.batch([
+            this.db.prepare(
+              `INSERT INTO posts (id, title, status, current_version, quality_decision, sync_status, last_synced_at, created_at, updated_at)
+               VALUES (?, 'Imported Facebook post', 'published', 1, 'IMPORTED', 'SYNCED', ?, ?, ?)`
+            ).bind(postId, nowIso, createdAt, nowIso),
+            this.db.prepare(
+              `INSERT INTO post_versions (id, post_id, version_number, content, content_type, metadata, ai_model, ai_provider, created_at)
+               VALUES (?, ?, 1, ?, 'text', ?, 'facebook-graph-api', 'facebook', ?)`
+            ).bind(versionId, postId, content, JSON.stringify({ sync_source: 'facebook_import', facebook_post_id: fbPost.id }), createdAt),
+            this.db.prepare(
+              `INSERT INTO publications (id, post_id, post_version_id, facebook_post_id, provider, status, attempt_count,
+                 published_at, fb_last_check_at, fb_last_sync_at, sync_status, fb_content_hash, pushed_content_hash, sync_source,
+                 fb_image_url, pushed_image_url, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'facebook', 'published', 1, ?, ?, ?, 'SYNCED', ?, ?, 'facebook', ?, ?, ?, ?)`
+            ).bind(publicationId, postId, versionId, fbPost.id, createdAt, nowIso, nowIso, hash, hash,
+              fbPost.fullPicture || null, fbPost.fullPicture || null, nowIso, nowIso),
+            ...(fbPost.fullPicture ? [this.db.prepare(
+              `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
+               VALUES (?, ?, 1, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
+            ).bind(crypto.randomUUID(), postId, fbPost.fullPicture, fbPost.permalinkUrl || fbPost.fullPicture, createdAt)] : []),
+          ]);
+          imported++;
+        }
+        after = feed.paging?.after;
+        if (!after || feed.posts.length < 100) break;
+      }
+
+      return { checked, updated, imported, conflicts, errors };
     } catch {
-      return { checked, updated, conflicts, errors: errors + 1 };
+      return { checked, updated, imported, conflicts, errors: errors + 1 };
     }
   }
 
@@ -1057,6 +1176,13 @@ export class PublicationService {
           `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', pushed_content_hash = ?, fb_content_hash = ?, sync_source = 'local_user' WHERE id = ?`,
         )
         .bind(nowIso, nowIso, newHash, newHash, pub.publication_id),
+      this.db.prepare(
+        `INSERT INTO post_images (id, post_id, version_number, url, alt_text, created_at, source_url, source_id, author, author_url,
+          license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence)
+         SELECT ?, post_id, ?, url, alt_text, created_at, source_url, source_id, author, author_url,
+          license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence
+         FROM post_images WHERE post_id = ? AND version_number = ? LIMIT 1`,
+      ).bind(crypto.randomUUID(), newVersionNumber, postId, pub.current_version),
     ]);
 
     if (this.auditLogger) {
@@ -1099,7 +1225,26 @@ export class PublicationService {
         .first<{ content: string }>();
 
       if (!currentLocal) return { success: false, error: 'Local post version not found.' };
-      return this.updatePublishedPostFromSystem(postId, currentLocal.content, actor);
+      const contentResult = await this.updatePublishedPostFromSystem(postId, currentLocal.content, actor);
+      if (!contentResult.success) return { success: false, error: contentResult.error || 'Could not synchronize local post content.' };
+
+      const localImage = await this.db.prepare(
+        `SELECT pi.url FROM post_images pi JOIN posts p ON p.id = pi.post_id AND p.current_version = pi.version_number WHERE pi.post_id = ? LIMIT 1`,
+      ).bind(postId).first<{ url: string }>();
+      if (!this.publisher.updatePostImage) return { success: false, error: 'The Facebook publisher does not support image updates.' };
+      const imageResult = await this.publisher.updatePostImage(pub.facebook_post_id, localImage?.url || null);
+      if (!imageResult.success) {
+        await this.db.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD' WHERE post_id = ?").bind(postId).run();
+        await this.db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(postId).run();
+        return { success: false, error: imageResult.error || 'Could not synchronize local post image.' };
+      }
+      const remotePost = await this.publisher.getPost(pub.facebook_post_id);
+      const syncedAt = new Date().toISOString();
+      await this.db.prepare(
+        `UPDATE publications SET fb_image_url = ?, pushed_image_url = ?, sync_status = 'SYNCED', fb_last_sync_at = ? WHERE post_id = ?`,
+      ).bind(remotePost.post?.fullPicture || null, localImage?.url || null, syncedAt, postId).run();
+      await this.db.prepare("UPDATE posts SET sync_status = 'SYNCED', last_synced_at = ? WHERE id = ?").bind(syncedAt, postId).run();
+      return { success: true };
     } else {
       // Use Facebook version -> fetch FB content and apply locally
       const fbRes = await this.publisher.getPost(pub.facebook_post_id);
@@ -1139,6 +1284,13 @@ export class PublicationService {
         this.db
           .prepare(`UPDATE publications SET sync_status = 'SYNCED', fb_last_sync_at = ?, fb_content_hash = ? WHERE post_id = ?`)
           .bind(nowIso, fbHash, postId),
+        ...(fbRes.post.fullPicture ? [this.db.prepare(
+          `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license,
+            verification_status, visual_verification_status, created_at)
+           VALUES (?, ?, ?, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
+        ).bind(crypto.randomUUID(), postId, newVersion, fbRes.post.fullPicture, fbRes.post.permalinkUrl || fbRes.post.fullPicture, nowIso)] : []),
+        this.db.prepare("UPDATE publications SET fb_image_url = ?, pushed_image_url = ? WHERE post_id = ?")
+          .bind(fbRes.post.fullPicture || null, fbRes.post.fullPicture || null, postId),
       ]);
 
       return { success: true };

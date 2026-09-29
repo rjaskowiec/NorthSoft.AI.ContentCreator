@@ -7,6 +7,7 @@ import type { AppEnv } from '../../index';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ContentPlannerService } from '../../services/content/content-planner-service';
 import { D1AuditLogger } from '../../core/audit';
+import { OpenverseImageService } from '../../services/content/image-service';
 
 export const contentRouter = new Hono<AppEnv>();
 
@@ -65,7 +66,8 @@ contentRouter.get('/content/posts', async (c) => {
     .prepare(
       `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at, p.sync_status,
               v.content as latest_body, v.ai_provider, v.ai_model,
-              pi.url as image_url, pi.source_url, pi.author, pi.license, pi.license_url,
+              pi.url as image_url, pi.source_url, pi.source_id, pi.author, pi.author_url, pi.license, pi.license_url,
+              pi.alt_text, pi.verification_status, pi.visual_verification_reason,
               (SELECT facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id
        FROM posts p
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
@@ -81,6 +83,139 @@ contentRouter.get('/content/posts', async (c) => {
   return c.json({
     posts: postsRes.results || [],
   });
+});
+
+/** Search and visually verify an image for an existing post that has none. */
+contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) => {
+  const postId = c.req.param('id');
+  const row = await c.env.DB.prepare(
+    `SELECT p.title, p.current_version, pv.content FROM posts p
+     JOIN post_versions pv ON pv.post_id = p.id AND pv.version_number = p.current_version WHERE p.id = ?`,
+  ).bind(postId).first<{ title: string; current_version: number; content: string }>();
+  if (!row) return c.json({ success: false, error: 'Post not found.' }, 404);
+
+  const imageService = new OpenverseImageService(c.env);
+  let candidates;
+  try {
+    candidates = await imageService.searchImages(row.title, 5);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[ContentImageSearch] Openverse search failed', message);
+    return c.json({ success: false, error: 'Image search failed. Check the Worker logs for the provider response.' }, 502);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const bytes = await imageService.downloadImage(candidate.url);
+      const verification = await imageService.verifyImageWithVision(bytes, row.title, row.content);
+      if (verification.decision !== 'accept' || !verification.matches_content || verification.confidence < 0.7) continue;
+      const now = new Date().toISOString();
+      await c.env.DB.batch([
+        c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, row.current_version),
+        c.env.DB.prepare(
+          `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url,
+            license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason,
+            visual_verification_confidence, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, ?, ?)`
+        ).bind(
+          crypto.randomUUID(), postId, row.current_version, candidate.url, candidate.title, candidate.sourceUrl,
+          candidate.id, candidate.author, candidate.authorUrl || null, candidate.license, candidate.licenseUrl,
+          now, verification.reason, verification.confidence, now,
+        ),
+      ]);
+      return c.json({ success: true, imageUrl: candidate.url, author: candidate.author, license: candidate.license });
+    } catch (err) {
+      console.warn(`[ContentImageSearch] Candidate rejected for post ${postId}`, err);
+    }
+  }
+
+  return c.json({ success: false, error: 'No matching free image passed visual verification. Add one by URL or upload a file.' }, 422);
+});
+
+/** Add or replace the current version's primary image using an HTTPS URL or a file upload. */
+contentRouter.post('/content/posts/:id/image', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const postId = c.req.param('id');
+  const post = await db.prepare('SELECT current_version FROM posts WHERE id = ?').bind(postId).first<{ current_version: number }>();
+  if (!post) return c.json({ success: false, error: 'Post not found.' }, 404);
+  if (!c.env.IMAGE_BUCKET) return c.json({ success: false, error: 'Image storage is not configured.' }, 503);
+
+  let bytes: ArrayBuffer;
+  let contentType: string;
+  const provenance: { sourceUrl: string | null; author: string | null; license: string | null; licenseUrl: string | null } = {
+    sourceUrl: null, author: null, license: null, licenseUrl: null,
+  };
+
+  try {
+    if ((c.req.header('content-type') || '').includes('multipart/form-data')) {
+      const form = await c.req.formData();
+      const file = form.get('file');
+      if (!(file instanceof File)) return c.json({ success: false, error: 'Choose an image file.' }, 400);
+      if (file.size < 1 || file.size > 10 * 1024 * 1024) return c.json({ success: false, error: 'Image must be smaller than 10 MB.' }, 413);
+      bytes = await file.arrayBuffer();
+    } else {
+      const body = await c.req.json().catch(() => ({})) as { url?: string };
+      const sourceUrl = (body.url || '').trim();
+      if (!sourceUrl) return c.json({ success: false, error: 'Image URL is required.' }, 400);
+      const parsed = new URL(sourceUrl);
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+        return c.json({ success: false, error: 'Use a public HTTPS image URL.' }, 400);
+      }
+      bytes = await new OpenverseImageService(c.env).downloadImage(sourceUrl);
+      provenance.sourceUrl = sourceUrl;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Image could not be read.';
+    return c.json({ success: false, error: message }, 400);
+  }
+
+  const data = new Uint8Array(bytes);
+  if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) contentType = 'image/jpeg';
+  else if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) contentType = 'image/png';
+  else if (data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) contentType = 'image/webp';
+  else return c.json({ success: false, error: 'Only valid JPEG, PNG, and WebP images are supported.' }, 400);
+
+  const ext = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/png' ? 'png' : 'webp';
+  const key = `${crypto.randomUUID()}.${ext}`;
+  const now = new Date().toISOString();
+  await c.env.IMAGE_BUCKET.put(`images/${key}`, bytes, {
+    httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
+  });
+  const imageUrl = `${new URL(c.req.url).origin}/media/${key}`;
+  await db.batch([
+    db.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, post.current_version),
+    db.prepare(`INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, license_url, verification_status, visual_verification_status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'not_checked', ?)`).bind(
+      crypto.randomUUID(), postId, post.current_version, imageUrl, 'Post image', provenance.sourceUrl,
+      provenance.author, provenance.license, provenance.licenseUrl, now,
+    ),
+  ]);
+  const publication = await db.prepare("SELECT id FROM publications WHERE post_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 1")
+    .bind(postId).first<{ id: string }>();
+  if (publication) {
+    await db.batch([
+      db.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(publication.id),
+      db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(postId),
+    ]);
+  }
+  return c.json({ success: true, imageUrl, message: 'Image saved.' });
+});
+
+/** Remove the current version's primary image. */
+contentRouter.delete('/content/posts/:id/image', csrfProtection, async (c) => {
+  const postId = c.req.param('id');
+  const post = await c.env.DB.prepare('SELECT current_version FROM posts WHERE id = ?').bind(postId).first<{ current_version: number }>();
+  if (!post) return c.json({ success: false, error: 'Post not found.' }, 404);
+  await c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, post.current_version).run();
+  const publication = await c.env.DB.prepare("SELECT id FROM publications WHERE post_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 1")
+    .bind(postId).first<{ id: string }>();
+  if (publication) {
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(publication.id),
+      c.env.DB.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(postId),
+    ]);
+  }
+  return c.json({ success: true, message: 'Image removed from the current local version.' });
 });
 
 /**

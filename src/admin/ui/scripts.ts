@@ -1110,7 +1110,6 @@ export function getAdminScripts(): string {
               
               const pId = safeStr(p.id);
               const pIdeaId = safeStr(p.idea_id);
-              const pTitle = safeStr(p.title, 'Untitled Post');
               const pBody = safeStr(p.latest_body || p.body);
               const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
 
@@ -1120,7 +1119,6 @@ export function getAdminScripts(): string {
                   <input type="checkbox" class="post-select-checkbox" data-id="\${pId}" \${isChecked} onchange="updatePostSelectionState()" />
                 </td>
                 <td>
-                  <strong>Topic:</strong> \${escapeHtml(pTitle)}
                   \${p.image_url ? \`
                     <div style="margin-top:0.75rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem;">
                       <a href="\${escapeHtml(p.source_url || p.image_url)}" target="_blank" rel="noopener noreferrer">
@@ -1134,7 +1132,8 @@ export function getAdminScripts(): string {
                     </div>
                   \` : \`
                     <div style="margin-top:0.75rem; padding:0.75rem; background:rgba(255,255,255,0.02); border:1px dashed var(--border-color); border-radius:6px; color:var(--text-muted); font-size:0.8rem; text-align:center;">
-                      No verified image found.
+                      No image attached. Use Edit to add one.
+                      <div><button class="btn-secondary" style="margin-top:0.5rem; padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="findImageForPost('\${pId}')">Find image</button></div>
                     </div>
                   \`}
                 </td>
@@ -1150,7 +1149,7 @@ export function getAdminScripts(): string {
                     <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditPostModal('\${pId}')">Edit</button>
                     \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate</button>\` : ''}
                     \${statusStr !== 'PUBLISHED' ? \`
-                      <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}', '\${escapeHtml(pTitle)}')">Publish Now</button>
+                      <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}')">Publish Now</button>
                       <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openSchedulePostModal('\${pId}')">Schedule</button>
                     \` : syncStatus === 'CONFLICT' ? \`
                       <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem; background:var(--accent-rose);" onclick="resolveConflict('\${pId}')">Resolve Conflict</button>
@@ -1173,12 +1172,41 @@ export function getAdminScripts(): string {
       }
     }
 
-    function openInstantPublishModal(postId, text) {
+    function openInstantPublishModal(postId) {
       const modalPostId = document.getElementById('publish-modal-post-id');
       const modalText = document.getElementById('publish-modal-content-text');
+      const post = cachedPosts.find(item => item && item.id === postId);
       if (modalPostId) modalPostId.value = safeStr(postId);
-      if (modalText) modalText.value = safeStr(text);
+      if (modalText) modalText.value = safeStr(post?.latest_body || post?.body);
       openModal('publish-modal');
+    }
+
+    async function findImageForPost(postId) {
+      try {
+        const response = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image/search', {
+          method: 'POST', headers: { 'x-csrf-token': csrfToken }
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+          alert(safeStr(result.error, 'No matching image was found.'));
+          return;
+        }
+
+        const post = cachedPosts.find(item => item && item.id === postId);
+        if (post && (post.status === 'published' || post.facebook_post_id)) {
+          const sync = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update-image', {
+            method: 'POST', headers: { 'x-csrf-token': csrfToken }
+          });
+          if (!sync.ok) {
+            const syncResult = await sync.json().catch(() => ({}));
+            alert('Image found and saved, but Facebook did not confirm it: ' + safeStr(syncResult.error, 'Unknown Meta API error.'));
+          }
+        }
+        await loadContentData();
+      } catch (err) {
+        console.error('Failed to find an image for post:', err);
+        alert(err instanceof Error ? err.message : 'Image search failed.');
+      }
     }
 
     async function executeInstantPublication() {
@@ -1265,8 +1293,9 @@ export function getAdminScripts(): string {
             schedBody.innerHTML = schedules.map(sched => {
               if (!sched) return '';
               const schedIdStr = safeStr(sched.id);
+              const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
               return '<tr>' +
-                '<td><strong>' + escapeHtml(safeStr(sched.post_title, 'Untitled Post')) + '</strong></td>' +
+                '<td>' + escapeHtml(postPreview) + '</td>' +
                 '<td class="code-tag">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
                 '<td>' +
@@ -1340,7 +1369,6 @@ export function getAdminScripts(): string {
               return \`
                 <tr>
                   <td>
-                    <strong>\${escapeHtml(safeStr(pub.postTitle, 'Untitled Post'))}</strong>
                     <div style="font-size:0.8rem; color:var(--text-muted); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(safeStr(pub.postBody))}</div>
                     \${pub.errorMessage ? \`<div style="font-size:0.75rem; color:var(--accent-rose); margin-top:2px;">\${escapeHtml(safeStr(pub.errorMessage))}</div>\` : ''}
                   </td>
@@ -2672,16 +2700,24 @@ export function getAdminScripts(): string {
 
     function openAddPostModal() {
       const idInput = document.getElementById('post-edit-id');
-      const topicInput = document.getElementById('post-input-topic');
       const contentInput = document.getElementById('post-input-content');
       const statusInput = document.getElementById('post-input-status');
       const modalTitle = document.getElementById('post-modal-title');
+      const imageUrl = document.getElementById('post-input-image-url');
+      const imageFile = document.getElementById('post-input-image-file');
+      const removeImage = document.getElementById('post-remove-image');
+      const imagePreview = document.getElementById('post-image-preview');
+      const syncNote = document.getElementById('post-image-sync-note');
 
       if (idInput) idInput.value = '';
-      if (topicInput) topicInput.value = '';
       if (contentInput) contentInput.value = '';
       if (statusInput) statusInput.value = 'draft';
-      if (modalTitle) modalTitle.textContent = 'Add Post Draft';
+      if (imageUrl) imageUrl.value = '';
+      if (imageFile) imageFile.value = '';
+      if (removeImage) removeImage.checked = false;
+      if (imagePreview) { imagePreview.src = ''; imagePreview.style.display = 'none'; }
+      if (syncNote) syncNote.style.display = 'none';
+      if (modalTitle) modalTitle.textContent = 'Add Post';
 
       openModal('post-modal');
     }
@@ -2691,16 +2727,27 @@ export function getAdminScripts(): string {
       if (!p) return;
 
       const idInput = document.getElementById('post-edit-id');
-      const topicInput = document.getElementById('post-input-topic');
       const contentInput = document.getElementById('post-input-content');
       const statusInput = document.getElementById('post-input-status');
       const modalTitle = document.getElementById('post-modal-title');
+      const imageUrl = document.getElementById('post-input-image-url');
+      const imageFile = document.getElementById('post-input-image-file');
+      const removeImage = document.getElementById('post-remove-image');
+      const imagePreview = document.getElementById('post-image-preview');
+      const syncNote = document.getElementById('post-image-sync-note');
 
       if (idInput) idInput.value = safeStr(p.id);
-      if (topicInput) topicInput.value = safeStr(p.title);
       if (contentInput) contentInput.value = safeStr(p.latest_body || p.body);
       if (statusInput) statusInput.value = safeStr(p.status || 'draft').toLowerCase();
-      if (modalTitle) modalTitle.textContent = 'Edit Post Draft';
+      if (imageUrl) imageUrl.value = '';
+      if (imageFile) imageFile.value = '';
+      if (removeImage) removeImage.checked = false;
+      if (imagePreview) {
+        imagePreview.src = safeStr(p.image_url);
+        imagePreview.style.display = p.image_url ? 'block' : 'none';
+      }
+      if (syncNote) syncNote.style.display = (p.status === 'published' || p.facebook_post_id) ? 'block' : 'none';
+      if (modalTitle) modalTitle.textContent = 'Edit Post';
 
       openModal('post-modal');
     }
@@ -2708,15 +2755,17 @@ export function getAdminScripts(): string {
     async function handleSavePost(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
       const id = safeStr(document.getElementById('post-edit-id')?.value).trim();
-      const topic = safeStr(document.getElementById('post-input-topic')?.value).trim();
       const content = safeStr(document.getElementById('post-input-content')?.value).trim();
       const status = safeStr(document.getElementById('post-input-status')?.value, 'draft');
+      const imageUrl = safeStr(document.getElementById('post-input-image-url')?.value).trim();
+      const imageFile = document.getElementById('post-input-image-file')?.files?.[0];
+      const removeImage = Boolean(document.getElementById('post-remove-image')?.checked);
 
       if (!content) return;
 
       const url = id ? '/api/admin/content/posts/' + encodeURIComponent(id) : '/api/admin/content/manual-post';
       const method = id ? 'PATCH' : 'POST';
-      const payload = id ? { title: topic, body: content, status } : { topicTitle: topic, content, status };
+      const payload = id ? { body: content, status } : { content, status };
 
       try {
         const res = await fetch(url, {
@@ -2725,6 +2774,31 @@ export function getAdminScripts(): string {
           body: JSON.stringify(payload)
         });
         if (res.ok) {
+          const saved = await res.json().catch(() => ({}));
+          const postId = id || saved.postId;
+          let imageWasEdited = false;
+          if (postId && imageFile) {
+            const imageForm = new FormData();
+            imageForm.append('file', imageFile);
+            const imageRes = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
+              method: 'POST', headers: { 'x-csrf-token': csrfToken }, body: imageForm
+            });
+            if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image upload failed.'));
+            imageWasEdited = true;
+          } else if (postId && imageUrl) {
+            const imageRes = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+              body: JSON.stringify({ url: imageUrl })
+            });
+            if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image save failed.'));
+            imageWasEdited = true;
+          } else if (postId && removeImage) {
+            const imageRes = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
+              method: 'DELETE', headers: { 'x-csrf-token': csrfToken }
+            });
+            if (!imageRes.ok) throw new Error('Image removal failed.');
+            imageWasEdited = true;
+          }
           const p = cachedPosts.find(item => item && item.id === id);
           if (p && (p.status === 'published' || p.facebook_post_id)) {
             // Push to Facebook immediately
@@ -2745,11 +2819,21 @@ export function getAdminScripts(): string {
               }
             }
           }
+          if (imageWasEdited && p && (p.status === 'published' || p.facebook_post_id)) {
+            const imageSync = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update-image', {
+              method: 'POST', headers: { 'x-csrf-token': csrfToken }
+            });
+            if (!imageSync.ok) {
+              const syncData = await imageSync.json().catch(() => ({}));
+              alert('Image saved in the app, but Facebook did not confirm the image update: ' + safeStr(syncData.error, 'Unknown Meta API error.'));
+            }
+          }
           closeModal('post-modal');
           loadContentData();
         }
       } catch (err) {
-        console.error('Failed to save post draft:', err);
+        console.error('Failed to save post:', err);
+        alert(err instanceof Error ? err.message : 'Failed to save post.');
       }
     }
 
@@ -2760,7 +2844,7 @@ export function getAdminScripts(): string {
       const title = document.getElementById('delete-confirm-title');
       const msg = document.getElementById('delete-confirm-message');
       if (title) title.textContent = 'Delete Post Draft';
-      if (msg) msg.textContent = 'Are you sure you want to delete draft "' + safeStr(p?.title, id) + '"? This action cannot be undone.';
+      if (msg) msg.textContent = 'Are you sure you want to delete this post? This action cannot be undone.';
       openModal('delete-confirm-modal');
     }
 
@@ -2883,7 +2967,8 @@ export function getAdminScripts(): string {
         selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.filter(p => p && p.status !== 'published' && p.status !== 'publishing').map(p => {
           if (!p) return '';
           const selectedAttr = (postId && p.id === postId) ? 'selected' : '';
-          return '<option value="' + safeStr(p.id) + '" ' + selectedAttr + '>' + escapeHtml(safeStr(p.title)) + '</option>';
+          const preview = safeStr(p.latest_body || p.body || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
+          return '<option value="' + safeStr(p.id) + '" ' + selectedAttr + '>' + escapeHtml(preview) + '</option>';
         }).join('');
       }
 
@@ -2934,7 +3019,6 @@ export function getAdminScripts(): string {
     function openScheduledPostDetailModal(scheduleId, postId) {
       const idInput = document.getElementById('sched-detail-schedule-id');
       const postInput = document.getElementById('sched-detail-post-id');
-      const titleInput = document.getElementById('sched-detail-post-title');
       const bodyInput = document.getElementById('sched-detail-post-body');
       const statusBadge = document.getElementById('sched-detail-status-badge');
       const timeSpan = document.getElementById('sched-detail-time');
@@ -2945,7 +3029,6 @@ export function getAdminScripts(): string {
 
       if (idInput) idInput.value = safeStr(scheduleId);
       if (postInput) postInput.value = safeStr(postId);
-      if (titleInput) titleInput.value = safeStr(post?.title || sched?.post_title, 'Scheduled Post');
       if (bodyInput) bodyInput.value = safeStr(post?.latest_body || post?.body || sched?.post_body, '');
 
       if (statusBadge) {
@@ -3347,11 +3430,11 @@ export function getAdminScripts(): string {
 
         dayItems.forEach(item => {
           const timeStr = item.scheduled_at ? new Date(item.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00';
-          const title = escapeHtml(safeStr(item.post_title, 'Post'));
+          const preview = escapeHtml(safeStr(item.post_body, 'Post').slice(0, 90));
           const schedIdStr = safeStr(item.id);
           const postIdStr = safeStr(item.post_id);
-          html += '<div class="calendar-item-chip" style="cursor:pointer;" title="' + title + '" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">';
-          html += '<span class="calendar-item-time">' + timeStr + '</span>' + title;
+          html += '<div class="calendar-item-chip" style="cursor:pointer;" title="' + preview + '" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">';
+          html += '<span class="calendar-item-time">' + timeStr + '</span>' + preview;
           html += '</div>';
         });
 
@@ -3408,6 +3491,7 @@ export function getAdminScripts(): string {
     window.openEditTopicModal = openEditTopicModal;
     window.openAddPostModal = openAddPostModal;
     window.openEditPostModal = openEditPostModal;
+    window.findImageForPost = findImageForPost;
     window.resolveConflict = resolveConflict;
     window.openSchedulePostModal = openSchedulePostModal;
     window.handleSaveTopic = handleSaveTopic;

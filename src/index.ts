@@ -30,6 +30,22 @@ export type AppEnv = {
 
 const app = new Hono<AppEnv>();
 
+// Images are public by design so Facebook can fetch them when publishing.
+// Object keys are random and uploads remain protected by the admin API.
+app.get('/media/:key', async (c) => {
+  const key = c.req.param('key');
+  if (!/^[0-9a-f-]{36}\.(?:jpg|png|webp)$/.test(key)) {
+    return c.notFound();
+  }
+  const object = await c.env.IMAGE_BUCKET.get(`images/${key}`);
+  if (!object) return c.notFound();
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  headers.set('ETag', object.httpEtag);
+  return new Response(object.body, { headers });
+});
+
 // --- Global Middleware ---
 app.use(
   '*',
@@ -39,7 +55,7 @@ app.use(
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      imgSrc: ["'self'", 'data:', 'https://*.fbcdn.net', 'https://*.facebook.com', 'https://*.fbsbx.com'],
+      imgSrc: ["'self'", 'data:', 'https://*.fbcdn.net', 'https://*.facebook.com', 'https://*.fbsbx.com', 'https:'],
       connectSrc: ["'self'"],
       frameAncestors: ["'none'"],
     },

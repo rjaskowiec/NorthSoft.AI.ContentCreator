@@ -147,6 +147,9 @@ export interface IMetaPublisher {
    */
   updatePostMessage(facebookPostId: string, message: string): Promise<{ success: boolean; error?: string; httpStatus?: number }>;
 
+  /** Replace/remove a published Page post's photo using official Graph API media calls. */
+  updatePostImage?(facebookPostId: string, imageUrl: string | null): Promise<{ success: boolean; error?: string; httpStatus?: number }>;
+
   /**
    * Fetch recent published posts from the Facebook Page feed via Graph API.
    */

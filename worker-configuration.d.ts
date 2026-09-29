@@ -9,6 +9,7 @@
 interface Env {
   // --- Cloudflare D1 Database ---
   DB: D1Database;
+  IMAGE_BUCKET: R2Bucket;
 
   // --- Cloudflare Workers AI Binding ---
   AI?: { run(model: string, inputs: unknown): Promise<unknown> };

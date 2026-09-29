@@ -242,7 +242,7 @@ export class ContentPlannerService {
           try {
             const imageBytes = await imageService.downloadImage(candidate.url);
             const vRes = await imageService.verifyImageWithVision(imageBytes, topicRow.title, lastDraft.body);
-            if (vRes.decision === 'accept') {
+            if (vRes.decision === 'accept' && vRes.matches_content && vRes.confidence >= 0.7) {
               selectedImage = candidate;
               verificationResult = vRes;
               break;
@@ -290,13 +290,14 @@ export class ContentPlannerService {
           statements.push(
             this.db
               .prepare(
-                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verified_at, verification_status, visual_verification_status, visual_verification_confidence, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url, license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               )
               .bind(
                 crypto.randomUUID(), postId, attempt, selectedImage.url, selectedImage.title || 'Verified Image',
-                selectedImage.sourceUrl, selectedImage.author, selectedImage.license, versionCreatedAt,
-                'verified', 'accept', verificationResult.confidence, versionCreatedAt
+                selectedImage.sourceUrl, selectedImage.id, selectedImage.author, selectedImage.authorUrl,
+                selectedImage.license, selectedImage.licenseUrl, versionCreatedAt,
+                'verified', 'accept', verificationResult.reason, verificationResult.confidence, versionCreatedAt
               )
           );
         }
@@ -341,13 +342,14 @@ export class ContentPlannerService {
           statements.push(
             this.db
               .prepare(
-                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verified_at, verification_status, visual_verification_status, visual_verification_confidence, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url, license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               )
               .bind(
                 crypto.randomUUID(), postId!, attempt, selectedImage.url, selectedImage.title || 'Verified Image',
-                selectedImage.sourceUrl, selectedImage.author, selectedImage.license, versionCreatedAt,
-                'verified', 'accept', verificationResult.confidence, versionCreatedAt
+                selectedImage.sourceUrl, selectedImage.id, selectedImage.author, selectedImage.authorUrl,
+                selectedImage.license, selectedImage.licenseUrl, versionCreatedAt,
+                'verified', 'accept', verificationResult.reason, verificationResult.confidence, versionCreatedAt
               )
           );
         }

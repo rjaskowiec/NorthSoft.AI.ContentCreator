@@ -23,6 +23,9 @@
   "ai": {
     "binding": "AI"
   },
+  "r2_buckets": [
+    { "binding": "IMAGE_BUCKET", "bucket_name": "northsoft-ai-content-images-dev" }
+  ],
 
   // Worker Previews (for Cloudflare Workers preview deployments)
   "previews": {
@@ -38,6 +41,9 @@
         "database_id": "960c64cd-c450-47bc-a0e6-58552aa0d824",
         "migrations_dir": "migrations"
       }
+    ],
+    "r2_buckets": [
+      { "binding": "IMAGE_BUCKET", "bucket_name": "northsoft-ai-content-images-staging" }
     ],
     "ai": {
       "binding": "AI"
@@ -55,6 +61,9 @@
           "database_id": "960c64cd-c450-47bc-a0e6-58552aa0d824",
           "migrations_dir": "migrations"
         }
+      ],
+      "r2_buckets": [
+        { "binding": "IMAGE_BUCKET", "bucket_name": "northsoft-ai-content-images-staging" }
       ],
       "ai": {
         "binding": "AI"
@@ -80,6 +89,9 @@
           "database_id": "902bbe67-adda-4797-af9a-a09ec57d5538",
           "migrations_dir": "migrations"
         }
+      ],
+      "r2_buckets": [
+        { "binding": "IMAGE_BUCKET", "bucket_name": "northsoft-ai-content-images" }
       ],
       "ai": {
         "binding": "AI"

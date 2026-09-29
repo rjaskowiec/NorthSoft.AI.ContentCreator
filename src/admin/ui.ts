@@ -453,7 +453,7 @@ export function renderAdminHtml(): string {
                       <th style="width:36px; text-align:center;">
                         <input type="checkbox" id="topic-select-all" onclick="toggleSelectAllTopics(this)" title="Select all topics" />
                       </th>
-                      <th>Topic Title</th>
+                      <th>Topic</th>
                       <th>Description</th>
                       <th>Category</th>
                       <th>Status</th>
@@ -581,7 +581,7 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
-                      <th>Post Title</th>
+                      <th>Post</th>
                       <th>Scheduled Time (UTC)</th>
                       <th>Status</th>
                       <th>Actions</th>
@@ -843,12 +843,16 @@ export function renderAdminHtml(): string {
         <form id="post-form" onsubmit="handleSavePost(event)">
           <input type="hidden" id="post-edit-id" value="" />
           <div class="form-group">
-            <label class="form-label" for="post-input-topic">Topic</label>
-            <input type="text" id="post-input-topic" class="form-input" required placeholder="e.g. Automated Booking Guide for Small Businesses" />
+            <label class="form-label" for="post-input-content">Post</label>
+            <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write post content..."></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label" for="post-input-content">Content</label>
-            <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write post content..."></textarea>
+            <label class="form-label">Image</label>
+            <img id="post-image-preview" alt="Post image preview" style="display:none; width:100%; max-height:220px; object-fit:contain; margin-bottom:0.5rem; border-radius:6px;" />
+            <input type="url" id="post-input-image-url" class="form-input" placeholder="https://… image URL" />
+            <input type="file" id="post-input-image-file" class="form-input" accept="image/jpeg,image/png,image/webp" style="margin-top:0.5rem;" />
+            <label style="display:flex; gap:0.5rem; align-items:center; margin-top:0.5rem;"><input type="checkbox" id="post-remove-image" /> Remove image</label>
+            <div id="post-image-sync-note" style="display:none; color:var(--text-muted); font-size:0.8rem; margin-top:0.4rem;">Image changes are sent to Facebook. Meta may reject media edits on an existing post.</div>
           </div>
           <div class="form-group">
             <label class="form-label" for="post-input-status">Status</label>
@@ -1030,12 +1034,7 @@ export function renderAdminHtml(): string {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Title</label>
-          <input type="text" id="sched-detail-post-title" class="form-input" readonly />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Content</label>
+          <label class="form-label">Post</label>
           <textarea id="sched-detail-post-body" class="form-input" rows="6"></textarea>
         </div>
       </div>

@@ -408,6 +408,52 @@ export class FacebookPublisher implements IMetaPublisher {
     }
   }
 
+  public async updatePostImage(facebookPostId: string, imageUrl: string | null): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+    if (!this.getConfigStatus().configured) {
+      return { success: false, error: 'Facebook publisher is disabled or not configured.', httpStatus: 400 };
+    }
+
+    try {
+      let mediaId: string | undefined;
+      if (imageUrl) {
+        // Upload an unpublished Page photo first; the post update below attaches its media ID.
+        const uploadBody = new URLSearchParams({
+          url: imageUrl,
+          published: 'false',
+          access_token: this.accessToken,
+        });
+        const uploadResponse = await fetch(`${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(this.pageId)}/photos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: uploadBody,
+        });
+        const uploadData = await uploadResponse.json() as { id?: string; error?: { message?: string } };
+        if (!uploadResponse.ok || uploadData.error || !uploadData.id) {
+          return { success: false, httpStatus: uploadResponse.status, error: sanitizeSecretTokens(uploadData.error?.message || `Meta photo upload failed (HTTP ${uploadResponse.status}).`) };
+        }
+        mediaId = uploadData.id;
+      }
+
+      const updateBody = new URLSearchParams({
+        attached_media: JSON.stringify(mediaId ? [{ media_fbid: mediaId }] : []),
+        access_token: this.accessToken,
+      });
+      const response = await fetch(`${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: updateBody,
+      });
+      const data = await response.json() as { success?: boolean; error?: { message?: string } };
+      if (!response.ok || data.error || data.success === false) {
+        return { success: false, httpStatus: response.status, error: sanitizeSecretTokens(data.error?.message || `Meta post image update failed (HTTP ${response.status}).`) };
+      }
+      return { success: true, httpStatus: response.status };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: sanitizeSecretTokens(`Network error updating Facebook post image: ${message}`) };
+    }
+  }
+
   public async fetchPagePosts(limit = 10, after?: string): Promise<import('./meta-publisher.js').FacebookPagePostsResult> {
     const config = this.getConfigStatus();
     if (!config.tokenConfigured || !config.pageIdConfigured) {
