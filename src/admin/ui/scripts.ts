@@ -62,13 +62,13 @@ export function getAdminScripts(): string {
       const key = method + ':' + url;
 
       if (method === 'GET' && activeInFlightRequests.has(key)) {
-        return activeInFlightRequests.get(key);
+        return activeInFlightRequests.get(key).then(res => typeof res.clone === 'function' ? res.clone() : res);
       }
 
       const fetchPromise = (async () => {
         try {
           const res = await fetch(url, options);
-          return res;
+          return typeof res.clone === 'function' ? res.clone() : res;
         } finally {
           activeInFlightRequests.delete(key);
         }
@@ -1102,7 +1102,12 @@ export function getAdminScripts(): string {
             postsBody.innerHTML = cachedPosts.map(p => {
               if (!p) return '';
               const statusStr = safeUpper(p.status, 'DRAFT');
-              const statusClass = statusStr === 'PUBLISHED' ? 'status-healthy' : statusStr === 'SCHEDULED' ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
+              const syncStatus = safeUpper(p.sync_status, 'SYNCED');
+              let statusClass = statusStr === 'PUBLISHED' ? 'status-healthy' : statusStr === 'SCHEDULED' ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
+              if (syncStatus === 'CONFLICT') {
+                statusClass = 'status-alert';
+              }
+              
               const pId = safeStr(p.id);
               const pIdeaId = safeStr(p.idea_id);
               const pTitle = safeStr(p.title, 'Untitled Post');
@@ -1116,11 +1121,14 @@ export function getAdminScripts(): string {
                 </td>
                 <td>
                   <strong>Topic:</strong> \${escapeHtml(pTitle)}
+                  \${p.image_url ? \`<br><img src="\${escapeHtml(p.image_url)}" alt="Post image" style="max-width:120px; border-radius:4px; margin-top:0.5rem; display:block; border:1px solid var(--border-color);"/>\` : ''}
                 </td>
                 <td>
                   <div style="font-size:0.85rem; color:var(--text-main); max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
                 </td>
-                <td><span class="status-badge \${statusClass}">\${escapeHtml(statusStr)}</span></td>
+                <td>
+                  <span class="status-badge \${statusClass}">\${syncStatus === 'CONFLICT' ? 'SYNC CONFLICT' : escapeHtml(statusStr)}</span>
+                </td>
                 <td class="code-tag">\${formatDateOnlySafe(p.created_at)}</td>
                 <td>
                   <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
@@ -1129,6 +1137,8 @@ export function getAdminScripts(): string {
                     \${statusStr !== 'PUBLISHED' ? \`
                       <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}', '\${escapeHtml(pTitle)}')">Publish Now</button>
                       <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openSchedulePostModal('\${pId}')">Schedule</button>
+                    \` : syncStatus === 'CONFLICT' ? \`
+                      <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem; background:var(--accent-rose);" onclick="resolveConflict('\${pId}')">Resolve Conflict</button>
                     \` : \`
                       <span style="color:var(--accent-emerald); font-weight:600; font-size:0.8rem;">Live on Facebook</span>
                     \`}
@@ -1429,8 +1439,12 @@ export function getAdminScripts(): string {
     let fbNextCursor = null;
     let fbHasMore = false;
     let loadedFbPostIds = new Set();
+    let fbPostsLoading = false;
 
     async function loadFacebookPagePosts(append) {
+      if (fbPostsLoading && !append) return;
+      fbPostsLoading = true;
+
       const railContainer = document.getElementById('fb-rail-posts-container');
       const pageContainer = document.getElementById('fb-posts-container');
       const railBadge = document.getElementById('fb-rail-status-badge');
@@ -1439,28 +1453,27 @@ export function getAdminScripts(): string {
       const fbReadCard = document.getElementById('val-fb-read');
       const fbConfigCard = document.getElementById('val-fb-config');
       const loadMoreWrap = document.getElementById('fb-rail-load-more-wrap');
-
       const isAppend = Boolean(append);
 
-      if (!isAppend) {
-        fbNextCursor = null;
-        fbHasMore = false;
-        loadedFbPostIds = new Set();
-        if (railContainer) {
-          railContainer.innerHTML = '<div style="text-align:center; padding:2rem 0; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.825rem;">Loading Facebook posts...</div></div>';
-        }
-        if (pageContainer) {
-          pageContainer.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts...</div></div>';
-        }
-        if (loadMoreWrap) loadMoreWrap.style.display = 'none';
-      }
-
-      let fetchUrl = '/api/admin/facebook/page-posts?limit=10';
-      if (isAppend && fbNextCursor) {
-        fetchUrl += '&after=' + encodeURIComponent(fbNextCursor);
-      }
-
       try {
+        if (!isAppend) {
+          fbNextCursor = null;
+          fbHasMore = false;
+          loadedFbPostIds = new Set();
+          if (railContainer) {
+            railContainer.innerHTML = '<div style="text-align:center; padding:2rem 0; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.825rem;">Loading Facebook posts...</div></div>';
+          }
+          if (pageContainer) {
+            pageContainer.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><div class="fb-post-loading-spinner"></div><div style="margin-top:0.75rem; font-size:0.85rem;">Fetching posts...</div></div>';
+          }
+          if (loadMoreWrap) loadMoreWrap.style.display = 'none';
+        }
+
+        let fetchUrl = '/api/admin/facebook/page-posts?limit=10';
+        if (isAppend && fbNextCursor) {
+          fetchUrl += '&after=' + encodeURIComponent(fbNextCursor);
+        }
+
         const res = await guardedFetch(fetchUrl);
         if (!res.ok) {
           console.error('Failed to fetch Facebook page posts:', res.status);
@@ -1603,6 +1616,8 @@ export function getAdminScripts(): string {
         if (railBadge) railBadge.innerHTML = '<span class="status-badge status-alert">ERROR</span>';
         const errHtml = '<div style="text-align:center; padding:1.5rem 0.5rem; color:var(--accent-rose); font-size:0.825rem;">Connection error loading feed</div>';
         if (railContainer && !isAppend) railContainer.innerHTML = errHtml;
+      } finally {
+        fbPostsLoading = false;
       }
     }
 
@@ -2695,6 +2710,26 @@ export function getAdminScripts(): string {
           body: JSON.stringify(payload)
         });
         if (res.ok) {
+          const p = cachedPosts.find(item => item && item.id === id);
+          if (p && (p.status === 'published' || p.facebook_post_id)) {
+            // Push to Facebook immediately
+            const fbRes = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+              body: JSON.stringify({ content })
+            });
+            
+            if (fbRes.ok) {
+              alert('Saved locally and pushed to Facebook successfully.');
+            } else {
+              const fbData = await fbRes.json();
+              if (fbData.conflict) {
+                alert('Saved locally, but a CONFLICT was detected with Facebook! Please resolve it using the "Resolve Conflict" button.');
+              } else {
+                alert('Saved locally, but failed to push to Facebook: ' + safeStr(fbData.error));
+              }
+            }
+          }
           closeModal('post-modal');
           loadContentData();
         }
@@ -2712,6 +2747,44 @@ export function getAdminScripts(): string {
       if (title) title.textContent = 'Delete Post Draft';
       if (msg) msg.textContent = 'Are you sure you want to delete draft "' + safeStr(p?.title, id) + '"? This action cannot be undone.';
       openModal('delete-confirm-modal');
+    }
+
+    async function resolveConflict(id) {
+      if (!confirm('A sync conflict was detected for this post.\\n\\nDo you want to overwrite Facebook with the Local version? (Click OK for Local, Cancel for Facebook)')) {
+        // User wants to use Facebook version
+        try {
+          const res = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/resolve-conflict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ resolution: 'use_facebook' })
+          });
+          if (res.ok) {
+            alert('Conflict resolved using Facebook version.');
+            loadContentData();
+          } else {
+            alert('Failed to resolve conflict.');
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        // User wants to use Local version
+        try {
+          const res = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/resolve-conflict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ resolution: 'use_local' })
+          });
+          if (res.ok) {
+            alert('Conflict resolved using Local version. Content was pushed to Facebook.');
+            loadContentData();
+          } else {
+            alert('Failed to resolve conflict.');
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
     }
 
     function openGenerateSingleTopicModal() {
@@ -2763,6 +2836,15 @@ export function getAdminScripts(): string {
     }
 
     function openSchedulePostModal(postId) {
+      if (postId) {
+        const p = cachedPosts.find(item => item && item.id === postId);
+        if (p && (p.status === 'published' || p.status === 'publishing')) {
+          // Redirect to edit modal if already published
+          openEditPostModal(postId);
+          return;
+        }
+      }
+
       const idInput = document.getElementById('schedule-edit-id');
       const dateInput = document.getElementById('schedule-date');
       const timeInput = document.getElementById('schedule-time');
@@ -2783,7 +2865,7 @@ export function getAdminScripts(): string {
       }
 
       if (selectEl) {
-        selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.map(p => {
+        selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.filter(p => p && p.status !== 'published' && p.status !== 'publishing').map(p => {
           if (!p) return '';
           const selectedAttr = (postId && p.id === postId) ? 'selected' : '';
           return '<option value="' + safeStr(p.id) + '" ' + selectedAttr + '>' + escapeHtml(safeStr(p.title)) + '</option>';
@@ -3311,6 +3393,7 @@ export function getAdminScripts(): string {
     window.openEditTopicModal = openEditTopicModal;
     window.openAddPostModal = openAddPostModal;
     window.openEditPostModal = openEditPostModal;
+    window.resolveConflict = resolveConflict;
     window.openSchedulePostModal = openSchedulePostModal;
     window.handleSaveTopic = handleSaveTopic;
     window.handleSavePost = handleSavePost;

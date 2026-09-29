@@ -65,9 +65,9 @@ export class ContentPlannerService {
 
     // 1. Fetch Candidate Topic
     const topicRow = await this.db
-      .prepare('SELECT id, title, description, category FROM content_ideas WHERE id = ?')
+      .prepare('SELECT id, title, description, category, source_url, source_title, content_angle FROM content_ideas WHERE id = ?')
       .bind(topicId)
-      .first<ResearchTopicItem>();
+      .first<ResearchTopicItem & { source_url?: string; source_title?: string; content_angle?: string }>();
 
     if (!topicRow) {
       return {
@@ -80,20 +80,31 @@ export class ContentPlannerService {
     }
 
     // 2. Fetch Supporting Research Sources
-    const sourcesRes = await this.db
-      .prepare(
-        'SELECT id, title, url, content_summary as summary FROM research_items WHERE status = "ANALYZED" ORDER BY fetched_at DESC LIMIT 3',
-      )
-      .all<ResearchSourceItem>();
-
-    const sources = sourcesRes.results || [];
-    if (sources.length === 0) {
-      // Fallback dummy source if none analyzed yet
+    let sources: ResearchSourceItem[] = [];
+    if (topicRow.source_url) {
+      const sourceRow = await this.db
+        .prepare('SELECT id, title, url, content_summary as summary FROM research_items WHERE url = ? AND status = "ANALYZED"')
+        .bind(topicRow.source_url)
+        .first<ResearchSourceItem>();
+      
+      if (sourceRow) {
+        sources.push(sourceRow);
+      } else {
+        sources.push({
+          id: 'src-mapped',
+          title: topicRow.source_title || topicRow.title,
+          url: topicRow.source_url,
+          summary: topicRow.description,
+        });
+      }
+    } else {
+      // If no specific source is attached, do NOT fetch generic top 3.
+      // Use the topic description as the source to ensure variation.
       sources.push({
         id: 'src-default',
         title: topicRow.title,
         url: 'https://ai.northsoft.is',
-        summary: topicRow.description,
+        summary: (topicRow.content_angle ? 'Angle: ' + topicRow.content_angle + '\\n' : '') + (topicRow.description || topicRow.title),
       });
     }
 
@@ -221,6 +232,8 @@ export class ContentPlannerService {
       // 4b. Persist Post & Version in D1 atomically
       const versionId = crypto.randomUUID();
       const versionCreatedAt = new Date().toISOString();
+      const imageId = crypto.randomUUID();
+      const imageUrl = `https://picsum.photos/seed/${encodeURIComponent(topicRow.title)}/800/600`;
 
       if (!postCreatedInDb) {
         postId = crypto.randomUUID();
@@ -247,6 +260,12 @@ export class ContentPlannerService {
               writerProvider.name,
               versionCreatedAt,
             ),
+          this.db
+            .prepare(
+              `INSERT INTO post_images (id, post_id, version_number, url, alt_text, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            )
+            .bind(imageId, postId, attempt, imageUrl, 'Auto-generated image for ' + topicRow.title, versionCreatedAt)
         ]);
 
         postCreatedInDb = true;
@@ -276,6 +295,12 @@ export class ContentPlannerService {
               writerProvider.name,
               versionCreatedAt,
             ),
+          this.db
+            .prepare(
+              `INSERT INTO post_images (id, post_id, version_number, url, alt_text, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            )
+            .bind(imageId, postId!, attempt, imageUrl, 'Auto-generated image for ' + topicRow.title, versionCreatedAt),
           this.db
             .prepare(
               `UPDATE posts SET current_version = ?, regeneration_count = ?, updated_at = ? WHERE id = ?`,

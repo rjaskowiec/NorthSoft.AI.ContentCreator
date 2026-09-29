@@ -36,6 +36,8 @@ export interface FacebookPublishRequest {
   link?: string;
   /** Scheduled publish time (ISO 8601 or Unix timestamp). If omitted, publishes immediately. */
   scheduledPublishTime?: string;
+  /** Optional image URL to attach to the post */
+  imageUrl?: string;
   /** Internal idempotency key to prevent duplicate calls */
   idempotencyKey?: string;
 }

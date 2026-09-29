@@ -57,8 +57,10 @@ contentRouter.get('/content/posts', async (c) => {
   const db = c.env.DB;
   const postsRes = await db
     .prepare(
-      `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at,
-              v.content as latest_body, v.ai_provider, v.ai_model
+      `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at, p.sync_status,
+              v.content as latest_body, v.ai_provider, v.ai_model,
+              (SELECT url FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version LIMIT 1) as image_url,
+              (SELECT facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id
        FROM posts p
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
        ORDER BY p.created_at DESC
@@ -284,10 +286,12 @@ contentRouter.patch('/content/posts/:id', csrfProtection, async (c) => {
   if (body.body !== undefined) {
     const newBody = body.body.trim();
     const currentVer = postRow.current_version || 1;
-    await db
-      .prepare('UPDATE post_versions SET content = ? WHERE post_id = ? AND version_number = ?')
-      .bind(newBody, id, currentVer)
-      .run();
+    await db.batch([
+      db.prepare('UPDATE post_versions SET content = ? WHERE post_id = ? AND version_number = ?')
+        .bind(newBody, id, currentVer),
+      db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?")
+        .bind(id)
+    ]);
   }
 
   return c.json({ success: true, id });

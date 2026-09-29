@@ -164,7 +164,8 @@ export class PublicationService {
     const postRow = await this.db
       .prepare(
         `SELECT p.id, p.title, p.status as post_status,
-                pv.id as version_id, pv.content as body, p.status as version_status, pv.version_number
+                pv.id as version_id, pv.content as body, p.status as version_status, pv.version_number,
+                (SELECT url FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version LIMIT 1) as image_url
          FROM posts p
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE p.id = ?`,
@@ -178,6 +179,7 @@ export class PublicationService {
         body: string;
         version_status: string;
         version_number: number;
+        image_url?: string;
       }>();
 
     if (!postRow) {
@@ -345,6 +347,7 @@ export class PublicationService {
       postVersionId: postRow.version_id,
       message: postRow.body,
       idempotencyKey,
+      imageUrl: postRow.image_url,
     });
 
     // 8. HANDLE PUBLISH RESULT

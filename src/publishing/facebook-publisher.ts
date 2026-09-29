@@ -241,17 +241,20 @@ export class FacebookPublisher implements IMetaPublisher {
       };
     }
 
-    const graphUrl = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${this.pageId}/feed`;
+    let graphUrl = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${this.pageId}/feed`;
+    const bodyParams: Record<string, string> = {
+      message: request.message,
+      access_token: this.accessToken,
+    };
+
+    if (request.imageUrl) {
+      graphUrl = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${this.pageId}/photos`;
+      bodyParams.url = request.imageUrl;
+    } else if (request.link) {
+      bodyParams.link = request.link;
+    }
 
     try {
-      const bodyParams: Record<string, string> = {
-        message: request.message,
-        access_token: this.accessToken,
-      };
-
-      if (request.link) {
-        bodyParams.link = request.link;
-      }
 
       if (request.scheduledPublishTime) {
         const unixTime = Math.floor(new Date(request.scheduledPublishTime).getTime() / 1000);
