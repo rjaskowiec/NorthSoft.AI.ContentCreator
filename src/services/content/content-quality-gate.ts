@@ -56,7 +56,11 @@ export class ContentQualityGate {
   /**
    * Evaluates semantic content quality & substantive value of a draft.
    */
-  evaluate(draft: PostDraft, topicTitle?: string): ContentQualityGateResult {
+  evaluate(
+    draft: PostDraft,
+    topicTitle?: string,
+    referenceTexts: string[] = [],
+  ): ContentQualityGateResult {
     const reasons: string[] = [];
     const body = (draft.body || '').trim();
     const title = (draft.title || '').trim();
@@ -138,6 +142,37 @@ export class ContentQualityGate {
         topicAlignment = false;
         reasons.push('Topic alignment failure: title/topic is about SEO, but body content focuses on social media.');
       }
+    }
+
+    // A topic/source teaser is context for the writer, not a finished post. Reject
+    // drafts that mostly repeat a long reference without adding meaningful detail.
+    const bodyWords = new Set(body.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+    const bodyLength = body.replace(/\s+/g, ' ').trim().length;
+    const repeatsReference = [topicTitle, ...referenceTexts].some((reference) => {
+      const normalizedReference = (reference || '').replace(/\s+/g, ' ').trim();
+      const referenceWords = new Set(
+        normalizedReference.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [],
+      );
+
+      if (normalizedReference.length < 80 || referenceWords.size < 10 || bodyWords.size < 10) {
+        return false;
+      }
+
+      let sharedWords = 0;
+      for (const word of referenceWords) {
+        if (bodyWords.has(word)) sharedWords++;
+      }
+
+      const referenceCoverage = sharedWords / referenceWords.size;
+      const bodyCoverage = sharedWords / bodyWords.size;
+      const lengthRatio = bodyLength / normalizedReference.length;
+
+      return referenceCoverage >= 0.85 && bodyCoverage >= 0.85 && lengthRatio >= 0.65 && lengthRatio <= 1.5;
+    });
+
+    if (repeatsReference) {
+      substantiveValue = false;
+      reasons.push('Post mostly repeats the topic or source summary without adding useful information.');
     }
 
     // 4. CTA Quality Check

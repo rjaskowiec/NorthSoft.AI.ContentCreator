@@ -13,6 +13,17 @@ export interface CloudflareWorkersAIConfig {
   defaultModel?: string;
 }
 
+const JSON_MODE_SUPPORTED_MODELS = new Set([
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/meta/llama-3-8b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct',
+  '@hf/nousresearch/hermes-2-pro-mistral-7b',
+  '@hf/thebloke/deepseek-coder-6.7b-instruct-awq',
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+]);
+
+const JSON_MODE_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+
 export class CloudflareWorkersAIProvider implements IAIProvider {
   readonly name = 'cloudflare-workers-ai';
   private aiBinding?: { run(model: string, inputs: unknown): Promise<unknown> };
@@ -25,7 +36,12 @@ export class CloudflareWorkersAIProvider implements IAIProvider {
 
   async complete(request: AICompletionRequest): Promise<AICompletionResult> {
     const startTime = Date.now();
-    const model = this.defaultModel;
+    // JSON mode is only supported by specific Workers AI models. The configured
+    // default may be the FP8 variant, which is not on Cloudflare's JSON-mode list.
+    const model =
+      request.responseFormat === 'json' && !JSON_MODE_SUPPORTED_MODELS.has(this.defaultModel)
+        ? JSON_MODE_FALLBACK_MODEL
+        : this.defaultModel;
 
     if (!this.aiBinding) {
       throw new Error(
@@ -34,7 +50,7 @@ export class CloudflareWorkersAIProvider implements IAIProvider {
       );
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       messages: request.messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -43,18 +59,27 @@ export class CloudflareWorkersAIProvider implements IAIProvider {
       temperature: request.temperature ?? 0.3,
     };
 
+    // Workers AI supports JSON mode for the configured Llama 3.1 model. Forward
+    // the caller's structured-output request instead of relying on prompt text alone.
+    if (request.responseFormat === 'json') {
+      payload.response_format = { type: 'json_object' };
+    }
+
     try {
       const result = (await this.aiBinding.run(model, payload)) as {
-        response?: string;
-        choices?: Array<{ message?: { content?: string } }>;
+        response?: unknown;
+        choices?: Array<{ message?: { content?: unknown } }>;
       };
 
       let text = '';
       if (typeof result === 'string') {
         text = result;
-      } else if (result?.response) {
+      } else if (typeof result?.response === 'string') {
         text = result.response;
-      } else if (result?.choices?.[0]?.message?.content) {
+      } else if (result?.response && typeof result.response === 'object') {
+        // JSON mode can return the structured value directly in `response`.
+        text = JSON.stringify(result.response);
+      } else if (typeof result?.choices?.[0]?.message?.content === 'string') {
         text = result.choices[0].message.content;
       } else {
         throw new Error('Cloudflare Workers AI returned empty or unparseable response format.');
