@@ -288,4 +288,125 @@ describe('Admin UI Navigation & Tab Fault Isolation Regression Tests', () => {
     await sandbox.window.switchTab('pipeline');
     expect(elements['dashboard-screen'].style.display).toBe('flex');
   });
+
+  it('ensures all tab-section containers exist as root siblings without nesting inside tab-publications', async () => {
+    const res = await app.request('/admin');
+    const html = await res.text();
+
+    // Verify tab-intelligence is NOT nested inside tab-publications
+    const pubIndex = html.indexOf('id="tab-publications"');
+    const intelIndex = html.indexOf('id="tab-intelligence"');
+
+    expect(pubIndex).toBeGreaterThan(-1);
+    expect(intelIndex).toBeGreaterThan(pubIndex);
+
+    // Verify closing </div> for tab-publications exists before TAB: CONTENT INTELLIGENCE
+    const pubSegment = html.substring(pubIndex, intelIndex);
+    let depth = 0;
+    const matches = pubSegment.matchAll(/<div\b|<\/div>/gi);
+    for (const match of matches) {
+      if (match[0].toLowerCase().startsWith('<div')) {
+        depth++;
+      } else {
+        depth--;
+      }
+    }
+    expect(depth).toBe(0);
+  });
+
+  it('supports repeated Dashboard -> Intelligence -> Dashboard -> Intelligence cycles cleanly', async () => {
+    const res = await app.request('/admin');
+    const html = await res.text();
+
+    const scriptStart = html.indexOf('<script>');
+    const scriptEnd = html.indexOf('</script>', scriptStart);
+    const js = html.substring(scriptStart + 8, scriptEnd);
+
+    const vm = await import('vm');
+
+    interface MockElement {
+      id: string;
+      style: Record<string, string>;
+      classList: { add: (cls: string) => void; remove: (cls: string) => void };
+      textContent: string;
+      innerHTML: string;
+      addEventListener: (evt: string, fn: () => void) => void;
+      dataset: Record<string, string>;
+    }
+
+    const elements: Record<string, MockElement> = {};
+
+    function getMockEl(id: string): MockElement {
+      if (!elements[id]) {
+        elements[id] = {
+          id,
+          style: {},
+          classList: { add: () => {}, remove: () => {} },
+          textContent: '',
+          innerHTML: '',
+          addEventListener: () => {},
+          dataset: {},
+        };
+      }
+      return elements[id];
+    }
+
+    elements['login-screen'] = getMockEl('login-screen');
+    elements['login-screen'].style.display = 'flex';
+    elements['dashboard-screen'] = getMockEl('dashboard-screen');
+    elements['dashboard-screen'].style.display = 'none';
+
+    const sandbox = {
+      window: {
+        location: { hash: '', search: '', pathname: '/admin' },
+        history: { pushState: () => {} },
+        addEventListener: () => {},
+        document: {
+          readyState: 'complete',
+          addEventListener: () => {},
+          getElementById: (id: string) => getMockEl(id),
+          querySelectorAll: () => [getMockEl('mock1')],
+        },
+        switchTab: undefined as unknown as (tabName: string) => Promise<void>,
+      },
+      document: {
+        readyState: 'complete',
+        addEventListener: () => {},
+        getElementById: (id: string) => getMockEl(id),
+        querySelectorAll: () => [getMockEl('mock1')],
+      },
+      fetch: async (url: string) => {
+        if (url.includes('/session')) {
+          return { ok: true, json: async () => ({ authenticated: true, user: { username: 'admin' } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ activeProfile: {}, guidelines: [], strongPosts: [], weakPosts: [] }) };
+      },
+      console: { log: () => {}, error: () => {}, warn: () => {} },
+      URLSearchParams,
+      Date,
+      Math,
+      setTimeout,
+      clearTimeout,
+      String,
+      Number,
+      Boolean,
+      Array,
+      Object,
+      Set,
+      encodeURIComponent,
+      decodeURIComponent,
+    };
+
+    const context = vm.createContext(sandbox);
+    vm.runInContext(js, context);
+
+    // Cycle multiple times: Dashboard -> Intelligence -> Dashboard -> Intelligence
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await sandbox.window.switchTab('dashboard');
+      await sandbox.window.switchTab('intelligence');
+    }
+
+    expect(elements['dashboard-screen'].style.display).toBe('flex');
+    expect(elements['login-screen'].style.display).toBe('none');
+  });
 });

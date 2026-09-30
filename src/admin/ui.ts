@@ -662,6 +662,8 @@ export function renderAdminHtml(): string {
                 <button class="btn-secondary" onclick="loadMoreFacebookPublications()">Load more posts</button>
               </div>
             </div>
+          </div>
+
           <!-- TAB: CONTENT INTELLIGENCE -->
           <div id="tab-intelligence" class="tab-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
