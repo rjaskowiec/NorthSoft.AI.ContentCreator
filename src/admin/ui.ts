@@ -677,8 +677,19 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
+            <!-- Early Stage Learning Notice Banner -->
+            <div id="intel-early-notice" style="display:none; margin-bottom:1.5rem; background:rgba(59, 130, 246, 0.1); border:1px solid var(--accent-blue); color:var(--accent-blue); padding:0.85rem 1.1rem; border-radius:8px; font-size:0.875rem;">
+              ⚡ <strong>Early Learning Stage</strong> — Reference pools currently utilize relative performance snapshots while historical post data accumulates.
+            </div>
+
             <!-- Intelligence Overview KPI Cards -->
-            <div class="section-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom:1.5rem;">
+
+            <div class="section-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom:1.5rem;">
+              <div class="card">
+                <div class="card-label">Learning Phase</div>
+                <div class="card-val" id="intel-learning-mode" style="font-size:1.1rem; color:var(--accent-blue); margin-top:0.25rem;"><span class="status-badge status-healthy">EARLY</span></div>
+                <div class="card-sub">Adaptive Cold-Start</div>
+              </div>
               <div class="card">
                 <div class="card-label">Evaluated Posts</div>
                 <div class="card-val" id="intel-eval-count">0</div>
@@ -688,6 +699,11 @@ export function renderAdminHtml(): string {
                 <div class="card-label">Median Benchmark</div>
                 <div class="card-val" id="intel-median-rate" style="color:var(--accent-blue);">0.00%</div>
                 <div class="card-sub">Engagement rate threshold</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Low Confidence</div>
+                <div class="card-val" id="intel-low-conf-count" style="color:var(--text-muted);">0</div>
+                <div class="card-sub">Early exposure observations</div>
               </div>
               <div class="card">
                 <div class="card-label">Strong Examples</div>
@@ -724,6 +740,7 @@ export function renderAdminHtml(): string {
                   <thead>
                     <tr>
                       <th>Title</th>
+                      <th>Confidence</th>
                       <th>Score</th>
                       <th>Percentile</th>
                       <th>Reach / Views</th>
@@ -732,7 +749,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="intel-strong-table">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active strong examples.</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active strong examples.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -748,6 +765,7 @@ export function renderAdminHtml(): string {
                   <thead>
                     <tr>
                       <th>Title</th>
+                      <th>Confidence</th>
                       <th>Score</th>
                       <th>Percentile</th>
                       <th>Reach / Views</th>
@@ -756,7 +774,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="intel-weak-table">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active weak examples.</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active weak examples.</td></tr>
                   </tbody>
                 </table>
               </div>

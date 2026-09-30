@@ -17,7 +17,11 @@ performanceRouter.get('/performance', async (c) => {
   const db = c.env.DB;
   const engine = new PerformanceEngineService();
 
-  const profile = await engine.getActiveProfile(db);
+  let profile = await engine.getActiveProfile(db);
+  if (!profile) {
+    profile = await engine.evaluateAndGenerateProfile(db);
+  }
+
   const snapshotsRes = await db
     .prepare(
       `SELECT pm.*, p.title as post_title
@@ -54,8 +58,37 @@ performanceRouter.get('/performance', async (c) => {
       )
       .all();
     weakPosts = weakRes.results || [];
-  } catch {
-    // Fallback if schema pending
+
+    // If published posts exist but either active reference pool is unpopulated, evaluate now
+    const pubCnt = (await db.prepare("SELECT COUNT(*) as cnt FROM publications WHERE status = 'published'").first<{ cnt: number }>())?.cnt || 0;
+    if (pubCnt > 0 && (strongPosts.length === 0 || weakPosts.length === 0 || profile.diagnostics?.evaluatedPostsCount !== pubCnt)) {
+      profile = await engine.evaluateAndGenerateProfile(db);
+      const refetchedStrong = await db
+        .prepare(
+          `SELECT grp.*, p.title as post_title, pv.content as post_content
+           FROM generator_reference_posts grp
+           JOIN posts p ON p.id = grp.post_id
+           JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+           WHERE grp.classification = 'STRONG' AND grp.is_active = 1
+           ORDER BY grp.rank ASC`,
+        )
+        .all();
+      strongPosts = refetchedStrong.results || [];
+
+      const refetchedWeak = await db
+        .prepare(
+          `SELECT grp.*, p.title as post_title, pv.content as post_content
+           FROM generator_reference_posts grp
+           JOIN posts p ON p.id = grp.post_id
+           JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+           WHERE grp.classification = 'WEAK' AND grp.is_active = 1
+           ORDER BY grp.rank ASC`,
+        )
+        .all();
+      weakPosts = refetchedWeak.results || [];
+    }
+  } catch (err) {
+    console.warn('Warning fetching generator_reference_posts:', err);
   }
 
   // Guidelines (Manual & Learned)

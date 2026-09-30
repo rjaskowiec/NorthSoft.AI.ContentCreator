@@ -92,6 +92,17 @@ export interface GeneratorGuideline {
   updatedAt: string;
 }
 
+export interface ContentPerformanceDiagnostics {
+  learningMode: 'EARLY' | 'DEVELOPING' | 'MATURE';
+  totalPublishedPosts: number;
+  evaluatedPostsCount: number;
+  maturingPostsCount: number;
+  lowConfidenceCount: number;
+  activeStrongCount: number;
+  activeWeakCount: number;
+  medianEngagementRate: number;
+}
+
 export interface ContentPerformanceProfile {
   summary: string;
   successfulPatterns: string[];
@@ -106,6 +117,7 @@ export interface ContentPerformanceProfile {
     outperformingCount: number;
     underperformingCount: number;
   };
+  diagnostics?: ContentPerformanceDiagnostics;
   generatedAt: string;
 }
 
@@ -408,85 +420,158 @@ export class PerformanceEngineService {
       });
     }
 
-    // ADAPTIVE EVALUATION: Small-data / Early Mode fallback when total published posts < 10
+    // ADAPTIVE EVALUATION: Determine Learning Mode & Exposure Thresholds
     const totalPublishedCount = evaluatedPosts.length;
     let learningMode: 'EARLY' | 'DEVELOPING' | 'MATURE' = 'MATURE';
-    let effectiveMinExposure = MIN_EXPOSURE_THRESHOLD;
-
     if (totalPublishedCount <= 10) {
       learningMode = 'EARLY';
-      effectiveMinExposure = 1; // Evaluate any post with at least 1 view in early mode
     } else if (totalPublishedCount <= 30) {
       learningMode = 'DEVELOPING';
-      effectiveMinExposure = 5;
     }
 
+    let maturingPostsCount = 0;
+    let lowConfidenceCount = 0;
+
     const postsToEvaluate = evaluatedPosts.filter((p) => {
-      if (p.exposure >= effectiveMinExposure) return true;
-      // Aged post check (>72h with 0 engagement -> evaluate as weak candidate)
       const ageHours = (Date.now() - new Date(p.publishedAt).getTime()) / (1000 * 60 * 60);
-      if (ageHours >= 72 && p.engagementRate === 0) return true;
-      return false;
+      if (learningMode === 'EARLY') {
+        // In EARLY mode, evaluate all published posts (unless created < 15 mins ago with 0 views)
+        if (ageHours < 0.25 && p.exposure === 0) {
+          maturingPostsCount++;
+          return false;
+        }
+        return true;
+      } else if (learningMode === 'DEVELOPING') {
+        if (p.exposure >= 2 || ageHours >= 12) return true;
+        maturingPostsCount++;
+        return false;
+      } else {
+        if (p.exposure >= 10 || ageHours >= 24) return true;
+        maturingPostsCount++;
+        return false;
+      }
     });
 
     const rates = postsToEvaluate.map((p) => p.engagementRate);
     const medianRate = PerformanceEngineService.calculateMedian(rates);
 
-    const outperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number; confidence: number; referenceValue: number }> = [];
-    const underperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number; confidence: number; referenceValue: number }> = [];
+    const outperformingList: Array<{
+      postId: string;
+      title: string;
+      content: string;
+      score: number;
+      percentile: number;
+      exposure: number;
+      weightedEng: number;
+      confidence: number;
+      confidenceLabel: 'LOW' | 'MEDIUM' | 'HIGH';
+      referenceValue: number;
+      rankOrder: number;
+      totalCount: number;
+    }> = [];
 
-    for (const post of evaluatedPosts) {
+    const underperformingList: Array<{
+      postId: string;
+      title: string;
+      content: string;
+      score: number;
+      percentile: number;
+      exposure: number;
+      weightedEng: number;
+      confidence: number;
+      confidenceLabel: 'LOW' | 'MEDIUM' | 'HIGH';
+      referenceValue: number;
+      rankOrder: number;
+      totalCount: number;
+    }> = [];
+
+    for (const post of postsToEvaluate) {
       const ageHours = (Date.now() - new Date(post.publishedAt).getTime()) / (1000 * 60 * 60);
-      const confidence = Math.min(1.0, Math.max(0.3, (post.exposure / MIN_EXPOSURE_THRESHOLD) * Math.min(1.0, ageHours / 48)));
+
+      // Confidence level calculation
+      const confidence =
+        post.exposure >= 20 && ageHours >= 24
+          ? 1.0
+          : post.exposure >= 5 || ageHours >= 12
+            ? 0.7
+            : 0.4;
+
+      const confidenceLabel: 'LOW' | 'MEDIUM' | 'HIGH' =
+        confidence >= 0.8 ? 'HIGH' : confidence >= 0.6 ? 'MEDIUM' : 'LOW';
+
+      if (confidenceLabel === 'LOW') {
+        lowConfidenceCount++;
+      }
+
       const percentile = PerformanceEngineService.calculatePercentile(post.engagementRate, rates);
       const relativePerf = medianRate > 0 ? Number((post.engagementRate / medianRate).toFixed(2)) : 1.0;
 
-      // Maturing check for fresh posts (<24h with low exposure)
-      if (ageHours < MATURING_HOURS_THRESHOLD && post.exposure < MIN_EXPOSURE_THRESHOLD && post.engagementRate === 0) {
-        continue;
+      // Compute Reference Value = (relativePerf * 0.5 + percentile * 0.005) * confidence * freshnessWeight
+      const referenceValue = Number(
+        ((relativePerf * 0.5 + percentile * 0.005) * confidence * post.freshnessWeight).toFixed(4),
+      );
+
+      // Classification Logic
+      let isStrong = false;
+      let isWeak = false;
+
+      // Sort posts by engagement rate desc, exposure desc, publishedAt desc for deterministic relative ranking
+      const sortedByRank = [...postsToEvaluate].sort((a, b) => {
+        if (b.engagementRate !== a.engagementRate) return b.engagementRate - a.engagementRate;
+        if (b.exposure !== a.exposure) return b.exposure - a.exposure;
+        return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+      });
+      const postRank = sortedByRank.findIndex((p) => p.postId === post.postId);
+      const totalCount = postsToEvaluate.length;
+      const topHalfCutoff = Math.ceil(totalCount / 2);
+
+      if (learningMode === 'EARLY') {
+        if (totalCount === 1) {
+          isStrong = true;
+        } else {
+          // Relative separation for early mode: split top half vs bottom half to ensure active learning pools
+          if (postRank < topHalfCutoff) {
+            isStrong = true;
+          } else {
+            isWeak = true;
+          }
+        }
+      } else if (learningMode === 'DEVELOPING') {
+        if (percentile >= 65 || relativePerf >= 1.15 || postRank < Math.ceil(totalCount * 0.35)) {
+          isStrong = true;
+        } else if (percentile < 40 || relativePerf < 0.85 || postRank >= Math.floor(totalCount * 0.65)) {
+          isWeak = true;
+        }
+      } else {
+        isStrong = percentile >= 75;
+        isWeak = percentile < 25 || (ageHours >= 48 && post.engagementRate === 0);
       }
 
-      // Compute Reference Value = relativePerf * confidence * freshnessWeight
-      const referenceValue = Number((relativePerf * confidence * post.freshnessWeight).toFixed(4));
+      const item = {
+        postId: post.postId,
+        title: post.title,
+        content: post.content,
+        score: relativePerf,
+        percentile,
+        exposure: post.exposure,
+        weightedEng: post.engagementRate * post.exposure,
+        confidence,
+        confidenceLabel,
+        referenceValue,
+        rankOrder: postRank + 1,
+        totalCount,
+      };
 
-      // Classification threshold adaptation based on learning mode
-      const isStrong = learningMode === 'EARLY'
-        ? (percentile >= 70 || relativePerf > 1.5)
-        : percentile >= 75;
-      const isWeak = learningMode === 'EARLY'
-        ? (percentile < 40 || (ageHours >= 72 && post.engagementRate === 0) || (post.engagementRate > 0 && relativePerf < 1.0))
-        : (percentile < 25 || (ageHours >= 72 && post.engagementRate === 0));
-
-      if (isStrong && post.exposure >= effectiveMinExposure) {
-        outperformingList.push({
-          postId: post.postId,
-          title: post.title,
-          content: post.content,
-          score: relativePerf,
-          percentile,
-          exposure: post.exposure,
-          weightedEng: post.engagementRate * post.exposure,
-          confidence,
-          referenceValue,
-        });
+      if (isStrong) {
+        outperformingList.push(item);
       } else if (isWeak) {
-        underperformingList.push({
-          postId: post.postId,
-          title: post.title,
-          content: post.content,
-          score: relativePerf,
-          percentile,
-          exposure: post.exposure,
-          weightedEng: post.engagementRate * post.exposure,
-          confidence,
-          referenceValue,
-        });
+        underperformingList.push(item);
       }
     }
 
-    // Sort by reference value descending
+    // Sort by reference value descending for Strong, ascending for Weak
     outperformingList.sort((a, b) => b.referenceValue - a.referenceValue);
-    underperformingList.sort((a, b) => b.referenceValue - a.referenceValue);
+    underperformingList.sort((a, b) => a.referenceValue - b.referenceValue);
 
     // Dynamic reference pool sync (top 5 strong, bottom 5 weak active, deactivate others)
     try {
@@ -494,54 +579,72 @@ export class PerformanceEngineService {
       let rank = 1;
       for (const strong of outperformingList.slice(0, 5)) {
         const chars = PerformanceEngineService.extractCharacteristics(strong.content, strong.title);
-        await db.prepare(
-          `INSERT INTO generator_reference_posts (
+        const reason = learningMode === 'EARLY'
+          ? `Ranked #${strong.rankOrder} of ${strong.totalCount} posts in Early Learning mode [Confidence: ${strong.confidenceLabel}].`
+          : `Achieved top ${100 - strong.percentile}% engagement benchmark (${strong.score}x median) [Confidence: ${strong.confidenceLabel}].`;
+
+        await db
+          .prepare(
+            `INSERT INTO generator_reference_posts (
             id, post_id, classification, success_score, percentile, exposure_views,
             weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, confidence, reference_value, evaluated_at, created_at
-          ) VALUES (?, ?, 'STRONG', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
-        ).bind(
-          crypto.randomUUID(),
-          strong.postId,
-          strong.score,
-          strong.percentile,
-          strong.exposure,
-          strong.weightedEng,
-          `Achieved top ${100 - strong.percentile}% engagement benchmark (${strong.score}x median) in ${learningMode} mode.`,
-          JSON.stringify(chars),
-          rank++,
-          strong.confidence,
-          strong.referenceValue,
-          nowIso,
-          nowIso
-        ).run();
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            strong.postId,
+            'STRONG',
+            strong.score,
+            strong.percentile,
+            strong.exposure,
+            strong.weightedEng,
+            reason,
+            JSON.stringify(chars),
+            rank++,
+            1,
+            strong.confidence,
+            strong.referenceValue,
+            nowIso,
+            nowIso,
+          )
+          .run();
       }
 
       rank = 1;
       for (const weak of underperformingList.slice(0, 5)) {
         const chars = PerformanceEngineService.extractCharacteristics(weak.content, weak.title);
-        await db.prepare(
-          `INSERT INTO generator_reference_posts (
+        const reason = learningMode === 'EARLY'
+          ? `Ranked #${weak.rankOrder} of ${weak.totalCount} posts in Early Learning mode [Confidence: ${weak.confidenceLabel}].`
+          : `Underperformed benchmark in ${learningMode} mode (${weak.score}x median) [Confidence: ${weak.confidenceLabel}].`;
+
+        await db
+          .prepare(
+            `INSERT INTO generator_reference_posts (
             id, post_id, classification, success_score, percentile, exposure_views,
             weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, confidence, reference_value, evaluated_at, created_at
-          ) VALUES (?, ?, 'WEAK', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
-        ).bind(
-          crypto.randomUUID(),
-          weak.postId,
-          weak.score,
-          weak.percentile,
-          weak.exposure,
-          weak.weightedEng,
-          `Underperformed benchmark in ${learningMode} mode (${weak.score}x median).`,
-          JSON.stringify(chars),
-          rank++,
-          weak.confidence,
-          weak.referenceValue,
-          nowIso,
-          nowIso
-        ).run();
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            weak.postId,
+            'WEAK',
+            weak.score,
+            weak.percentile,
+            weak.exposure,
+            weak.weightedEng,
+            reason,
+            JSON.stringify(chars),
+            rank++,
+            1,
+            weak.confidence,
+            weak.referenceValue,
+            nowIso,
+            nowIso,
+          )
+          .run();
       }
-    } catch {
-      // Table fallback for test mocks without 0022 columns
+    } catch (err) {
+      console.warn('Warning syncing generator_reference_posts:', err);
     }
 
     // Learned Guidelines Extraction
@@ -650,6 +753,16 @@ export class PerformanceEngineService {
         medianEngagementRate: medianRate,
         outperformingCount: outperformingList.length,
         underperformingCount: underperformingList.length,
+      },
+      diagnostics: {
+        learningMode,
+        totalPublishedPosts: totalPublishedCount,
+        evaluatedPostsCount: postsToEvaluate.length,
+        maturingPostsCount,
+        lowConfidenceCount,
+        activeStrongCount: Math.min(outperformingList.length, 5),
+        activeWeakCount: Math.min(underperformingList.length, 5),
+        medianEngagementRate: medianRate,
       },
       generatedAt: nowIso,
     };

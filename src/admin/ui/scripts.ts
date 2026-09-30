@@ -1098,25 +1098,40 @@ export function getAdminScripts(): string {
 
     async function loadIntelligenceData() {
       try {
-        await loadPerformanceData();
         const res = await guardedFetch('/api/admin/performance');
         if (!res.ok) return;
 
         const data = await res.json();
         const profile = data.activeProfile || {};
         const metrics = profile.metricsSummary || {};
+        const diag = profile.diagnostics || {};
+
+        const modeStr = diag.learningMode || 'EARLY';
+        const noticeEl = document.getElementById('intel-early-notice');
+        if (noticeEl) {
+          noticeEl.style.display = (modeStr === 'EARLY' || modeStr === 'DEVELOPING') ? 'block' : 'none';
+        }
+
+        const modeEl = document.getElementById('intel-learning-mode');
+        if (modeEl) {
+          const badgeClass = modeStr === 'EARLY' ? 'status-healthy' : modeStr === 'DEVELOPING' ? 'status-active' : 'status-healthy';
+          modeEl.innerHTML = '<span class="status-badge ' + badgeClass + '">' + modeStr + '</span>';
+        }
 
         const evalCnt = document.getElementById('intel-eval-count');
-        if (evalCnt) evalCnt.textContent = Number(metrics.totalEvaluated || 0);
+        if (evalCnt) evalCnt.textContent = Number(diag.evaluatedPostsCount || metrics.totalEvaluated || 0);
 
         const medRate = document.getElementById('intel-median-rate');
-        if (medRate) medRate.textContent = ((Number(metrics.medianEngagementRate || 0)) * 100).toFixed(2) + '%';
+        if (medRate) medRate.textContent = ((Number(diag.medianEngagementRate || metrics.medianEngagementRate || 0)) * 100).toFixed(2) + '%';
+
+        const lowConfCnt = document.getElementById('intel-low-conf-count');
+        if (lowConfCnt) lowConfCnt.textContent = Number(diag.lowConfidenceCount || 0);
 
         const strongCnt = document.getElementById('intel-strong-count');
-        if (strongCnt) strongCnt.textContent = Array.isArray(data.strongPosts) ? data.strongPosts.length : Number(metrics.outperformingCount || 0);
+        if (strongCnt) strongCnt.textContent = Array.isArray(data.strongPosts) ? data.strongPosts.length : Number(diag.activeStrongCount || metrics.outperformingCount || 0);
 
         const weakCnt = document.getElementById('intel-weak-count');
-        if (weakCnt) weakCnt.textContent = Array.isArray(data.weakPosts) ? data.weakPosts.length : Number(metrics.underperformingCount || 0);
+        if (weakCnt) weakCnt.textContent = Array.isArray(data.weakPosts) ? data.weakPosts.length : Number(diag.activeWeakCount || metrics.underperformingCount || 0);
 
         // Render Guidelines List
         const guideEl = document.getElementById('intel-guidelines-list');
@@ -1138,6 +1153,14 @@ export function getAdminScripts(): string {
           }
         }
 
+        // Helper for confidence badge
+        function getConfBadgeHtml(val) {
+          var num = Number(val || 0.4);
+          var label = num >= 0.8 ? 'HIGH' : num >= 0.6 ? 'MEDIUM' : 'LOW';
+          var badgeClass = label === 'HIGH' ? 'status-healthy' : label === 'MEDIUM' ? 'status-active' : 'status-disabled';
+          return '<span class="status-badge ' + badgeClass + '">' + label + '</span>';
+        }
+
         // Render Strong Examples Table
         const strongTable = document.getElementById('intel-strong-table');
         if (strongTable) {
@@ -1146,6 +1169,7 @@ export function getAdminScripts(): string {
             strongTable.innerHTML = strongPosts.map((p) => {
               return '<tr>' +
                 '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
+                '<td>' + getConfBadgeHtml(p.confidence) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + Number(p.success_score || p.score || 1).toFixed(2) + 'x median</span></td>' +
                 '<td>' + Number(p.percentile || 90).toFixed(0) + 'th percentile</td>' +
                 '<td>' + Number(p.exposure_views || 0) + ' views</td>' +
@@ -1154,7 +1178,7 @@ export function getAdminScripts(): string {
               '</tr>';
             }).join('');
           } else {
-            strongTable.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active strong examples.</td></tr>';
+            strongTable.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active strong examples.</td></tr>';
           }
         }
 
@@ -1166,6 +1190,7 @@ export function getAdminScripts(): string {
             weakTable.innerHTML = weakPosts.map((p) => {
               return '<tr>' +
                 '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
+                '<td>' + getConfBadgeHtml(p.confidence) + '</td>' +
                 '<td><span class="status-badge status-alert">' + Number(p.success_score || p.score || 0.5).toFixed(2) + 'x median</span></td>' +
                 '<td>' + Number(p.percentile || 10).toFixed(0) + 'th percentile</td>' +
                 '<td>' + Number(p.exposure_views || 0) + ' views</td>' +
@@ -1174,7 +1199,7 @@ export function getAdminScripts(): string {
               '</tr>';
             }).join('');
           } else {
-            weakTable.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active weak examples.</td></tr>';
+            weakTable.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active weak examples.</td></tr>';
           }
         }
       } catch (err) {
