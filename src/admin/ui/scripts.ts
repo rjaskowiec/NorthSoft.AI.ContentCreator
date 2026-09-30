@@ -108,6 +108,7 @@ export function getAdminScripts(): string {
 
     const tableSortStates = new WeakMap();
     const observedSortableTables = new WeakSet();
+    const activeSortObservers = new WeakMap();
 
     function getTableCellSortValue(cell) {
       if (!cell) return '';
@@ -116,43 +117,55 @@ export function getAdminScripts(): string {
     }
 
     function sortTableRows(table, columnIndex, direction) {
+      const observer = activeSortObservers.get(table);
+      if (observer) observer.disconnect();
+
       const body = table.tBodies && table.tBodies[0];
       if (!body) return;
-      const rows = Array.from(body.rows).filter(row => row.cells.length > columnIndex && !row.querySelector('[colspan]'));
-      if (rows.length < 2) return;
-      const header = table.tHead && table.tHead.rows[0] && table.tHead.rows[0].cells[columnIndex];
-      const heading = safeLower(header ? header.textContent.replace(/[▲▼↕]/g, '') : '');
-      const isDate = /date|time|published|timestamp|created|scheduled|checked|started/.test(heading);
-      const isNumeric = /views|reactions|comments|shares|count|items|topics|duration|number|total|priority/.test(heading);
-      const keyedRows = rows.map((row, index) => {
-        const value = getTableCellSortValue(row.cells[columnIndex]);
-        const trimmed = value.trim();
-        let key = trimmed.toLocaleLowerCase();
-        let empty = !trimmed || trimmed === '—' || trimmed === '-';
-        if (isDate && !empty) {
-          const parsed = Date.parse(trimmed);
-          if (Number.isFinite(parsed)) key = parsed;
-          else empty = true;
-        } else if (isNumeric && !empty) {
-          const parsed = Number(trimmed.replace(/[^\\d.-]/g, ''));
-          if (Number.isFinite(parsed)) key = parsed;
-        } else if (!empty && /^-?\\d+(?:[.,]\\d+)?$/.test(trimmed)) {
-          key = Number(trimmed.replace(',', '.'));
+
+      try {
+        const rows = Array.from(body.rows).filter(row => row.cells.length > columnIndex && !row.querySelector('[colspan]'));
+        if (rows.length < 2) return;
+        const header = table.tHead && table.tHead.rows[0] && table.tHead.rows[0].cells[columnIndex];
+        const heading = safeLower(header ? header.textContent.replace(/[▲▼↕]/g, '') : '');
+        const isDate = /date|time|published|timestamp|created|scheduled|checked|started/.test(heading);
+        const isNumeric = /views|reactions|comments|shares|count|items|topics|duration|number|total|priority/.test(heading);
+        const keyedRows = rows.map((row, index) => {
+          const value = getTableCellSortValue(row.cells[columnIndex]);
+          const trimmed = value.trim();
+          let key = trimmed.toLocaleLowerCase();
+          let empty = !trimmed || trimmed === '—' || trimmed === '-';
+          if (isDate && !empty) {
+            const parsed = Date.parse(trimmed);
+            if (Number.isFinite(parsed)) key = parsed;
+            else empty = true;
+          } else if (isNumeric && !empty) {
+            const parsed = Number(trimmed.replace(/[^\d.-]/g, ''));
+            if (Number.isFinite(parsed)) key = parsed;
+          } else if (!empty && /^-?\d+(?:[.,]\d+)?$/.test(trimmed)) {
+            key = Number(trimmed.replace(',', '.'));
+          }
+          return { row, key, empty, index };
+        });
+
+        keyedRows.sort((a, b) => {
+          if (a.empty !== b.empty) return a.empty ? 1 : -1;
+          let comparison = typeof a.key === 'number' && typeof b.key === 'number'
+            ? a.key - b.key
+            : String(a.key).localeCompare(String(b.key), undefined, { numeric: true, sensitivity: 'base' });
+          if (direction === 'desc') comparison *= -1;
+          return comparison || a.index - b.index;
+        });
+
+        const currentRows = Array.from(body.rows);
+        const sortedRows = keyedRows.map(item => item.row);
+        if (sortedRows.length !== currentRows.length || sortedRows.some((row, index) => row !== currentRows[index])) {
+          sortedRows.forEach(row => body.appendChild(row));
         }
-        return { row, key, empty, index };
-      });
-      keyedRows.sort((a, b) => {
-        if (a.empty !== b.empty) return a.empty ? 1 : -1;
-        let comparison = typeof a.key === 'number' && typeof b.key === 'number'
-          ? a.key - b.key
-          : String(a.key).localeCompare(String(b.key), undefined, { numeric: true, sensitivity: 'base' });
-        if (direction === 'desc') comparison *= -1;
-        return comparison || a.index - b.index;
-      });
-      const currentRows = Array.from(body.rows);
-      const sortedRows = keyedRows.map(item => item.row);
-      if (sortedRows.length !== currentRows.length || sortedRows.some((row, index) => row !== currentRows[index])) {
-        sortedRows.forEach(row => body.appendChild(row));
+      } finally {
+        if (observer && body) {
+          observer.observe(body, { childList: true });
+        }
       }
     }
 
@@ -178,10 +191,12 @@ export function getAdminScripts(): string {
       });
       const body = table.tBodies && table.tBodies[0];
       if (body) {
-        new MutationObserver(() => {
+        const observer = new MutationObserver(() => {
           const state = tableSortStates.get(table);
           if (state) sortTableRows(table, state.column, state.direction);
-        }).observe(body, { childList: true });
+        });
+        activeSortObservers.set(table, observer);
+        observer.observe(body, { childList: true });
       }
     }
 
@@ -277,9 +292,8 @@ export function getAdminScripts(): string {
           showDashboard(data.user || {});
           if (!initialSessionLoaded) {
             initialSessionLoaded = true;
-            const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-            const validTabs = ['dashboard', 'pipeline', 'content', 'research', 'schedules', 'publications', 'manual-publisher', 'audit', 'security'];
-            if (hash && validTabs.includes(hash)) {
+            const hash = getHashTabName();
+            if (hash && (VALID_TABS.includes(hash) || hash === 'manual-publisher')) {
               switchTab(hash);
             } else {
               switchTab('dashboard');
@@ -295,6 +309,19 @@ export function getAdminScripts(): string {
       } finally {
         isCheckingSession = false;
       }
+    }
+
+    const VALID_TABS = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'intelligence', 'security', 'audit'];
+
+    function getHashTabName() {
+      let h = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
+      if (!h && window.location.search && window.location.search.includes('#')) {
+        h = window.location.search.split('#')[1] || '';
+      }
+      if (h && h.includes('?')) {
+        h = h.split('?')[0];
+      }
+      return safeLower(h.trim());
     }
 
     function showLoginForm() {
@@ -361,8 +388,7 @@ export function getAdminScripts(): string {
       if (tabName === 'manual-publisher') {
         tabName = 'content';
       }
-      const validTabs = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'security', 'audit'];
-      if (!validTabs.includes(tabName)) {
+      if (!VALID_TABS.includes(tabName)) {
         tabName = 'dashboard';
       }
 
@@ -416,9 +442,8 @@ export function getAdminScripts(): string {
     }
 
     window.addEventListener('hashchange', () => {
-      const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-      const validTabs = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'intelligence', 'security', 'audit'];
-      if (hash && (validTabs.includes(hash) || hash === 'manual-publisher')) {
+      const hash = getHashTabName();
+      if (hash && (VALID_TABS.includes(hash) || hash === 'manual-publisher')) {
         switchTab(hash);
       }
     });
@@ -1395,9 +1420,13 @@ export function getAdminScripts(): string {
         const topicsBody = document.getElementById('topics-table-body');
         if (topicsBody) {
           if (cachedTopics.length > 0) {
-            function isUsedStatus(s) { return ['published', 'used', 'rejected'].includes(safeLower(s)); }
-            const activeTopics = cachedTopics.filter(function(t) { return t && !isUsedStatus(t.status); });
-            const usedTopics = cachedTopics.filter(function(t) { return t && isUsedStatus(t.status); });
+            function isUsedStatus(t) {
+              if (!t) return false;
+              const st = safeLower(t.status);
+              return ['published', 'used', 'rejected', 'post_generated', 'scheduled'].includes(st) || Number(t.post_count || 0) > 0;
+            }
+            const activeTopics = cachedTopics.filter(function(t) { return t && !isUsedStatus(t); });
+            const usedTopics = cachedTopics.filter(function(t) { return t && isUsedStatus(t); });
 
             function renderRow(t) {
               const id = safeStr(t.id);
