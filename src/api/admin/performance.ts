@@ -5,7 +5,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../../index';
 import { csrfProtection } from '../../core/auth/csrf';
-import { PerformanceEngineService, type PerformanceMetricInput } from '../../services/analytics/performance-engine';
+import { PerformanceEngineService, type PerformanceMetricInput, type GeneratorGuideline } from '../../services/analytics/performance-engine';
 
 export const performanceRouter = new Hono<AppEnv>();
 
@@ -59,12 +59,12 @@ performanceRouter.get('/performance', async (c) => {
   }
 
   // Guidelines (Manual & Learned)
-  const guidelines: ReferencePostRecord[] = [];
+  const guidelines: GeneratorGuideline[] = [];
   try {
     const guideRes = await db
       .prepare('SELECT * FROM generator_guidelines WHERE is_active = 1 ORDER BY tier DESC, created_at DESC')
       .all();
-    guidelines.push(...((guideRes.results || []) as unknown as ReferencePostRecord[]));
+    guidelines.push(...((guideRes.results || []) as unknown as GeneratorGuideline[]));
   } catch {
     // Fallback if table pending
   }

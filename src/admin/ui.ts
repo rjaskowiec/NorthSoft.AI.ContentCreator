@@ -501,6 +501,9 @@ export function renderAdminHtml(): string {
                 <button class="btn-secondary" onclick="generatePostsForAllEligible()">
                   Generate all
                 </button>
+                <button class="btn-secondary" style="border-color:var(--accent-blue); color:var(--accent-blue);" onclick="scheduleAllEligibleIntelligently()">
+                  Schedule all eligible
+                </button>
                 <button class="btn-primary" onclick="openAddPostModal()">
                   + Add post
                 </button>
@@ -515,6 +518,9 @@ export function renderAdminHtml(): string {
                 <span id="post-selected-count">0</span> drafts selected
               </div>
               <div class="bulk-toolbar-actions">
+                <button class="btn-primary" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="scheduleSelectedIntelligently()">
+                  Schedule selected
+                </button>
                 <select id="post-bulk-status-select" class="bulk-select-status" onchange="executePostBulkStatusChange(this.value)">
                   <option value="">Change Status...</option>
                   <option value="draft">Set Status: Draft</option>
@@ -1256,6 +1262,38 @@ export function renderAdminHtml(): string {
       <div class="modal-footer">
         <button type="button" class="btn-secondary" onclick="closeModal('add-guideline-modal')">Cancel</button>
         <button type="button" class="btn-primary" onclick="saveManualGuideline()">Save Guideline</button>
+      </div>
+    </div>
+  <!-- 12. INTELLIGENT SCHEDULE PREVIEW MODAL -->
+  <div id="intelligent-schedule-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:750px;">
+      <div class="modal-header">
+        <div class="modal-title">Intelligent Schedule Proposals</div>
+        <button class="modal-close-btn" onclick="closeModal('intelligent-schedule-modal')">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
+          Review proposed publication dates and times calculated using historical performance benchmarks, minimum spacing, and backlog depth limits.
+        </p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Post</th>
+                <th>Proposed Date</th>
+                <th>Time Window</th>
+                <th>Selection Reason</th>
+              </tr>
+            </thead>
+            <tbody id="intelligent-slots-table-body">
+              <tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Calculating intelligent proposals...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('intelligent-schedule-modal')">Cancel</button>
+        <button type="button" id="commit-intelligent-schedule-btn" class="btn-primary" onclick="executeCommitIntelligentSchedule()">Accept &amp; Commit Schedule</button>
       </div>
     </div>
   </div>

@@ -1217,6 +1217,97 @@ export function getAdminScripts(): string {
       }
     }
 
+    let activeProposedSlots = [];
+
+    async function scheduleSelectedIntelligently() {
+      const selectedIds = Array.from(selectedPostIds);
+      if (selectedIds.length === 0) {
+        alert('Please select at least one post draft.');
+        return;
+      }
+      await runIntelligentSchedulePreview(selectedIds);
+    }
+
+    async function scheduleAllEligibleIntelligently() {
+      const eligibleIds = cachedPosts
+        .filter((p) => p && (p.status === 'approved' || p.status === 'draft') && !p.schedule_id)
+        .map((p) => p.id);
+
+      if (eligibleIds.length === 0) {
+        alert('No un-scheduled approved or draft posts available.');
+        return;
+      }
+      await runIntelligentSchedulePreview(eligibleIds);
+    }
+
+    async function runIntelligentSchedulePreview(postIds) {
+      const tbody = document.getElementById('intelligent-slots-table-body');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Calculating intelligent proposals...</td></tr>';
+      }
+      openModal('intelligent-schedule-modal');
+
+      try {
+        const res = await fetch('/api/admin/content/schedules/intelligent-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ postIds }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success && Array.isArray(data.proposedSlots)) {
+          activeProposedSlots = data.proposedSlots;
+          if (tbody) {
+            if (activeProposedSlots.length > 0) {
+              tbody.innerHTML = activeProposedSlots.map((slot) => {
+                return '<tr>' +
+                  '<td><strong>' + escapeHtml(safeStr(slot.postTitle)) + '</strong></td>' +
+                  '<td><span class="code-tag">' + escapeHtml(safeStr(slot.scheduledDate)) + '</span></td>' +
+                  '<td><span class="status-badge status-healthy">' + escapeHtml(safeStr(slot.scheduledTime)) + '</span></td>' +
+                  '<td><span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(safeStr(slot.reason)) + '</span></td>' +
+                '</tr>';
+              }).join('');
+            } else {
+              tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No valid schedule slots could be proposed for the selected posts.</td></tr>';
+            }
+          }
+        } else if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to calculate schedule proposals.</td></tr>';
+        }
+      } catch (err) {
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Error calculating schedule proposals.</td></tr>';
+        }
+      }
+    }
+
+    async function executeCommitIntelligentSchedule() {
+      if (!activeProposedSlots || activeProposedSlots.length === 0) return;
+      const commitBtn = document.getElementById('commit-intelligent-schedule-btn');
+      if (commitBtn) commitBtn.textContent = 'Saving schedule...';
+
+      try {
+        const res = await fetch('/api/admin/content/schedules/intelligent-commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ slots: activeProposedSlots }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeModal('intelligent-schedule-modal');
+          selectedPostIds.clear();
+          await loadContentData();
+          await loadSchedulesData();
+          alert('Successfully committed ' + data.committedCount + ' posts to the publication schedule.');
+        } else {
+          alert('Failed to commit schedule proposals.');
+        }
+      } catch (err) {
+        alert('Error committing schedule proposals.');
+      } finally {
+        if (commitBtn) commitBtn.textContent = 'Accept & Commit Schedule';
+      }
+    }
+
     async function reevaluatePerformanceEngine() {
       const summaryEl = document.getElementById('performance-engine-summary');
       if (summaryEl) summaryEl.innerHTML = '<em>Re-calculating Content Performance Profile...</em>';
@@ -4204,8 +4295,9 @@ export function getAdminScripts(): string {
     window.openGenerateSingleTopicModal = openGenerateSingleTopicModal;
     window.handleGeneratePostFromTopicSubmit = handleGeneratePostFromTopicSubmit;
     window.openDeletePublicationModal = openDeletePublicationModal;
-    window.executePublicationDelete = executePublicationDelete;
-    window.executePendingDelete = executePendingDelete;
+    window.scheduleSelectedIntelligently = scheduleSelectedIntelligently;
+    window.scheduleAllEligibleIntelligently = scheduleAllEligibleIntelligently;
+    window.executeCommitIntelligentSchedule = executeCommitIntelligentSchedule;
     window.openScheduledPostDetailModal = openScheduledPostDetailModal;
     window.saveScheduledPostEdits = saveScheduledPostEdits;
     window.unscheduleSelectedPost = unscheduleSelectedPost;

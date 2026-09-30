@@ -570,7 +570,99 @@ contentRouter.delete('/content/schedules/:id', csrfProtection, async (c) => {
       .prepare('UPDATE posts SET status = "approved", updated_at = ? WHERE id = ? AND status = "scheduled"')
       .bind(nowIso, sched.post_id)
       .run();
+
+    // Reset topic status back to post_generated if unscheduled
+    const postRow = await db.prepare('SELECT idea_id FROM posts WHERE id = ?').bind(sched.post_id).first<{ idea_id: string }>();
+    if (postRow && postRow.idea_id) {
+      await db.prepare("UPDATE content_ideas SET status = 'post_generated', updated_at = datetime('now') WHERE id = ?").bind(postRow.idea_id).run();
+    }
   }
 
   return c.json({ success: true, id });
+});
+
+/**
+ * POST /api/admin/content/schedules/intelligent-preview
+ * Previews intelligent scheduling proposals for selected candidate draft post IDs.
+ */
+contentRouter.post('/content/schedules/intelligent-preview', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as { postIds?: string[] };
+  const postIds = Array.isArray(body.postIds) ? body.postIds.filter((i): i is string => typeof i === 'string' && i.trim().length > 0) : [];
+
+  if (postIds.length === 0) {
+    return c.json({ success: false, error: 'postIds array is required' }, 400);
+  }
+
+  const { IntelligentSchedulingService } = await import('../../services/publishing/intelligent-scheduler-service');
+  const scheduler = new IntelligentSchedulingService();
+  const proposedSlots = await scheduler.proposeIntelligentSchedules(db, postIds);
+
+  return c.json({
+    success: true,
+    proposedSlots,
+  });
+});
+
+/**
+ * POST /api/admin/content/schedules/intelligent-commit
+ * Commits approved intelligent scheduling slots to D1, updating post and topic status to scheduled.
+ */
+contentRouter.post('/content/schedules/intelligent-commit', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    slots?: Array<{
+      postId: string;
+      scheduledAtIso: string;
+      decisionMetadata?: any;
+    }>;
+  };
+
+  const slots = Array.isArray(body.slots) ? body.slots : [];
+  if (slots.length === 0) {
+    return c.json({ success: false, error: 'slots array is required' }, 400);
+  }
+
+  const nowIso = new Date().toISOString();
+  let committedCount = 0;
+
+  for (const slot of slots) {
+    const postId = (slot.postId || '').trim();
+    const scheduledAt = (slot.scheduledAtIso || '').trim();
+    if (!postId || !scheduledAt) continue;
+
+    const metadataJson = slot.decisionMetadata ? JSON.stringify(slot.decisionMetadata) : null;
+    const existingSched = await db.prepare('SELECT id FROM schedules WHERE post_id = ?').bind(postId).first();
+
+    if (existingSched) {
+      await db
+        .prepare('UPDATE schedules SET scheduled_at = ?, status = "pending", decision_metadata = ?, updated_at = ? WHERE post_id = ?')
+        .bind(scheduledAt, metadataJson, nowIso, postId)
+        .run();
+    } else {
+      await db
+        .prepare(
+          `INSERT INTO schedules (id, post_id, scheduled_at, timezone, status, decision_metadata, created_at, updated_at)
+           VALUES (?, ?, ?, 'UTC', 'pending', ?, ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), postId, scheduledAt, metadataJson, nowIso, nowIso)
+        .run();
+    }
+
+    // Update post status to scheduled
+    await db.prepare('UPDATE posts SET status = "scheduled", updated_at = ? WHERE id = ?').bind(nowIso, postId).run();
+
+    // Update linked topic status to scheduled
+    const postRow = await db.prepare('SELECT idea_id FROM posts WHERE id = ?').bind(postId).first<{ idea_id: string }>();
+    if (postRow && postRow.idea_id) {
+      await db.prepare("UPDATE content_ideas SET status = 'scheduled', updated_at = datetime('now') WHERE id = ?").bind(postRow.idea_id).run();
+    }
+
+    committedCount++;
+  }
+
+  return c.json({
+    success: true,
+    committedCount,
+  });
 });
