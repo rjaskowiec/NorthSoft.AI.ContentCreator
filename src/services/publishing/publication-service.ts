@@ -22,6 +22,8 @@ export interface PublicationRecord {
   postTitle?: string;
   postBody?: string;
   qualityGateStatus?: string;
+  topicId?: string;
+  topicTitle?: string;
 }
 
 export interface PublishResult {
@@ -671,10 +673,12 @@ export class PublicationService {
                 pub.facebook_post_id, pub.provider, pub.status, pub.attempt_count,
                 pub.http_status, pub.error_code, pub.error_message, pub.idempotency_key,
                 pub.published_at, pub.created_at, pub.updated_at,
-                p.title as post_title, pv.content as post_body, p.status as quality_gate_status
+                p.title as post_title, pv.content as post_body, p.status as quality_gate_status,
+                p.idea_id as topic_id, ci.title as topic_title
          FROM publications pub
          JOIN posts p ON pub.post_id = p.id
          LEFT JOIN post_versions pv ON pub.post_version_id = pv.id
+         LEFT JOIN content_ideas ci ON p.idea_id = ci.id
          ORDER BY pub.created_at DESC
          LIMIT ? OFFSET ?`,
       )
@@ -698,6 +702,8 @@ export class PublicationService {
         post_title?: string;
         post_body?: string;
         quality_gate_status?: string;
+        topic_id?: string;
+        topic_title?: string;
       }>();
 
     return (rows.results || []).map((r) => ({
@@ -719,6 +725,8 @@ export class PublicationService {
       postTitle: r.post_title,
       postBody: r.post_body,
       qualityGateStatus: r.quality_gate_status,
+      topicId: r.topic_id,
+      topicTitle: r.topic_title,
     }));
   }
 
@@ -732,10 +740,12 @@ export class PublicationService {
                 pub.facebook_post_id, pub.provider, pub.status, pub.attempt_count,
                 pub.http_status, pub.error_code, pub.error_message, pub.idempotency_key,
                 pub.published_at, pub.created_at, pub.updated_at,
-                p.title as post_title, pv.content as post_body, p.status as quality_gate_status
+                p.title as post_title, pv.content as post_body, p.status as quality_gate_status,
+                p.idea_id as topic_id, ci.title as topic_title
          FROM publications pub
          JOIN posts p ON pub.post_id = p.id
          LEFT JOIN post_versions pv ON pub.post_version_id = pv.id
+         LEFT JOIN content_ideas ci ON p.idea_id = ci.id
          WHERE pub.id = ?`,
       )
       .bind(id)
@@ -758,6 +768,8 @@ export class PublicationService {
         post_title?: string;
         post_body?: string;
         quality_gate_status?: string;
+        topic_id?: string;
+        topic_title?: string;
       }>();
 
     if (!r) return null;
@@ -781,6 +793,8 @@ export class PublicationService {
       postTitle: r.post_title,
       postBody: r.post_body,
       qualityGateStatus: r.quality_gate_status,
+      topicId: r.topic_id,
+      topicTitle: r.topic_title,
     };
   }
 

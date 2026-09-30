@@ -275,6 +275,7 @@ export class FacebookPublisher implements IMetaPublisher {
       const httpStatus = response.status;
       const data = (await response.json()) as {
         id?: string;
+        post_id?: string;
         error?: {
           message?: string;
           type?: string;
@@ -284,11 +285,11 @@ export class FacebookPublisher implements IMetaPublisher {
         };
       };
 
-      if (response.ok && data.id) {
+      if (response.ok && (data.id || data.post_id)) {
         this.lastErrorCategory = undefined;
         return {
           success: true,
-          externalPostId: data.id,
+          externalPostId: data.post_id || data.id!,
           publishedAt: new Date().toISOString(),
           httpStatus,
         };

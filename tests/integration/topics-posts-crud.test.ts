@@ -177,10 +177,12 @@ function createMockDb() {
     }
 
     if (normSql.includes('FROM posts')) {
+      const allFn = vi.fn().mockImplementation(async () => ({
+        results: Array.from(postsMap.values()),
+      }));
       return {
-        all: vi.fn().mockImplementation(async () => ({
-          results: Array.from(postsMap.values()),
-        })),
+        bind: vi.fn().mockReturnValue({ all: allFn }),
+        all: allFn,
       };
     }
 

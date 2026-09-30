@@ -402,7 +402,7 @@ export function getAdminScripts(): string {
         } else if (tabName === 'schedules') {
           await loadSchedulesData();
         } else if (tabName === 'publications') {
-          await loadFacebookPublications(false);
+          await loadPublicationsData();
         } else if (tabName === 'audit') {
           await loadAuditData();
         } else if (tabName === 'security') {
@@ -1578,6 +1578,10 @@ export function getAdminScripts(): string {
       } catch (err) {
         console.error('Failed to load publications:', err);
       }
+    }
+
+    async function loadPublicationsData() {
+      await loadFacebookPublications(false);
     }
 
     async function loadFacebookPublications(append) {

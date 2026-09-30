@@ -126,7 +126,7 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
 
     // 3. Fetch Latest Posts from Page Posts endpoint — GET only
     const fields = 'id,message,story,created_time,updated_time,permalink_url,full_picture,is_published,is_hidden,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)';
-    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/published_posts?fields=${encodeURIComponent(fields)}&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
+    let postsUrl = `${META_API.GRAPH_API_BASE_URL}/${apiVersion}/${pageId}/posts?fields=${encodeURIComponent(fields)}&limit=${limit}&access_token=${encodeURIComponent(accessToken)}`;
     if (after) {
       postsUrl += `&after=${encodeURIComponent(after)}`;
     }
@@ -160,8 +160,17 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
       scheduledAt: string | null;
       publishedAt: string | null;
     }>();
+
     if (facebookPostIds.length > 0) {
-      const placeholders = facebookPostIds.map(() => '?').join(',');
+      const candidateIds = new Set<string>();
+      for (const id of facebookPostIds) {
+        candidateIds.add(id);
+        if (id.includes('_')) {
+          candidateIds.add(id.split('_').pop()!);
+        }
+      }
+      const idList = Array.from(candidateIds);
+      const placeholders = idList.map(() => '?').join(',');
       const linkedPosts = await c.env.DB.prepare(
         `SELECT pub.facebook_post_id, p.id as post_id, p.idea_id, ci.title as topic_title, ci.source_title, ci.source_url,
                 pi.url as image_url,
@@ -170,25 +179,30 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
          FROM publications pub JOIN posts p ON p.id = pub.post_id
          LEFT JOIN content_ideas ci ON ci.id = p.idea_id
          LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
-         WHERE pub.facebook_post_id IN (${placeholders}) AND pub.fb_deleted_at IS NULL
+         WHERE (pub.facebook_post_id IN (${placeholders}) OR pub.pushed_image_url IN (${placeholders})) AND pub.fb_deleted_at IS NULL
          ORDER BY pub.updated_at DESC`,
-      ).bind(...facebookPostIds).all<{
+      ).bind(...idList, ...idList).all<{
         facebook_post_id: string; post_id: string; idea_id: string | null; topic_title: string | null;
         source_title: string | null; source_url: string | null; image_url: string | null;
         scheduled_at: string | null; published_at: string | null;
       }>();
+
       for (const linked of linkedPosts.results || []) {
-        if (!localPostIds.has(linked.facebook_post_id)) {
-          localPostIds.set(linked.facebook_post_id, {
-            postId: linked.post_id,
-            topicId: linked.idea_id,
-            topicTitle: linked.topic_title,
-            sourceTitle: linked.source_title,
-            sourceUrl: linked.source_url,
-            imageUrl: linked.image_url,
-            scheduledAt: linked.scheduled_at,
-            publishedAt: linked.published_at,
-          });
+        const item = {
+          postId: linked.post_id,
+          topicId: linked.idea_id,
+          topicTitle: linked.topic_title,
+          sourceTitle: linked.source_title,
+          sourceUrl: linked.source_url,
+          imageUrl: linked.image_url,
+          scheduledAt: linked.scheduled_at,
+          publishedAt: linked.published_at,
+        };
+        if (linked.facebook_post_id) {
+          localPostIds.set(linked.facebook_post_id, item);
+          if (linked.facebook_post_id.includes('_')) {
+            localPostIds.set(linked.facebook_post_id.split('_').pop()!, item);
+          }
         }
       }
     }
@@ -220,29 +234,32 @@ facebookRouter.get('/facebook/page-posts', async (c) => {
           insightsError = sanitizeSecretTokens(error instanceof Error ? error.message : String(error));
         }
       }
+      const postShortId = post.id.includes('_') ? post.id.split('_').pop()! : post.id;
+      const linkedData = localPostIds.get(post.id) || localPostIds.get(postShortId) || null;
+
       return {
-      id: post.id,
-      internalPostId: localPostIds.get(post.id)?.postId || null,
-      topicId: localPostIds.get(post.id)?.topicId || null,
-      topicTitle: localPostIds.get(post.id)?.topicTitle || null,
-      sourceTitle: localPostIds.get(post.id)?.sourceTitle || null,
-      sourceUrl: localPostIds.get(post.id)?.sourceUrl || null,
-      imageUrl: localPostIds.get(post.id)?.imageUrl || null,
-      scheduledAt: localPostIds.get(post.id)?.scheduledAt || null,
-      publishedAt: localPostIds.get(post.id)?.publishedAt || null,
-      message: post.message || post.story || null,
-      createdTime: post.created_time || null,
-      updatedTime: post.updated_time || null,
-      permalinkUrl: post.permalink_url || null,
-      fullPicture: post.full_picture || null,
-      isPublished: post.is_published !== false,
-      isHidden: post.is_hidden === true,
-      comments: post.comments?.summary?.total_count ?? null,
-      reactions: post.reactions?.summary?.total_count ?? null,
-      shares: post.shares?.count ?? 0,
-      views,
-      uniqueViews,
-      insightsError,
+        id: post.id,
+        internalPostId: linkedData?.postId || null,
+        topicId: linkedData?.topicId || null,
+        topicTitle: linkedData?.topicTitle || null,
+        sourceTitle: linkedData?.sourceTitle || null,
+        sourceUrl: linkedData?.sourceUrl || null,
+        imageUrl: linkedData?.imageUrl || null,
+        scheduledAt: linkedData?.scheduledAt || null,
+        publishedAt: linkedData?.publishedAt || null,
+        message: post.message || post.story || null,
+        createdTime: post.created_time || null,
+        updatedTime: post.updated_time || null,
+        permalinkUrl: post.permalink_url || null,
+        fullPicture: post.full_picture || null,
+        isPublished: post.is_published !== false,
+        isHidden: post.is_hidden === true,
+        comments: post.comments?.summary?.total_count ?? null,
+        reactions: post.reactions?.summary?.total_count ?? null,
+        shares: post.shares?.count ?? 0,
+        views,
+        uniqueViews,
+        insightsError,
       };
     }));
 
