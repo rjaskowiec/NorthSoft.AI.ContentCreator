@@ -1,6 +1,8 @@
 import { CONTENT_INVARIANTS } from '../../core/constants.js';
 import type { IAuditLogger } from '../../core/audit.js';
 import type { IMetaPublisher, MetaPublisherConfigStatus } from '../../publishing/meta-publisher.js';
+import type { IMailGatewayClient } from '../mail/mail-service.js';
+import { NotificationService } from '../notifications/notification-service.js';
 
 export interface PublicationRecord {
   id: string;
@@ -77,6 +79,7 @@ export class PublicationService {
     private db: D1Database,
     private publisher: IMetaPublisher,
     private auditLogger?: IAuditLogger,
+    private mailClient?: IMailGatewayClient | null,
   ) {}
 
   /**
@@ -404,6 +407,21 @@ export class PublicationService {
         },
       });
 
+      if (this.mailClient) {
+        try {
+          await NotificationService.sendPublicationSuccessNotification(this.db, this.mailClient, {
+            postId,
+            title: postRow.title,
+            body: postRow.body,
+            publishedAt,
+            facebookPostId: pubResult.externalPostId,
+            imageUrl: postRow.image_url,
+          });
+        } catch (err) {
+          console.error('[PublicationService] Failed to send publication success email notification:', err);
+        }
+      }
+
       return {
         success: true,
         publicationId,
@@ -455,6 +473,22 @@ export class PublicationService {
         retryable: isRetryable,
       },
     });
+
+    if (this.mailClient) {
+      try {
+        await NotificationService.sendPublicationErrorNotification(this.db, this.mailClient, {
+          postId,
+          title: postRow.title,
+          action: 'Facebook Publication',
+          errorMessage: pubResult.errorMessage || 'Facebook publish failed',
+          suggestedAction: isRetryable
+            ? 'Check Meta API status and retry publication.'
+            : 'Inspect post content or Meta configuration.',
+        });
+      } catch (err) {
+        console.error('[PublicationService] Failed to send publication error email notification:', err);
+      }
+    }
 
     return {
       success: false,

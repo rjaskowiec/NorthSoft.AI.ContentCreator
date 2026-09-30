@@ -15,6 +15,7 @@ import { getAIProvider } from '../../ai/factory';
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import { CloudflareUsageService } from '../cloudflare/cloudflare-usage-service';
 import { FacebookPublisher } from '../../publishing/facebook-publisher';
+import { NorthSoftMailGatewayClient } from '../mail/mail-service';
 import { PublicationService } from '../publishing/publication-service';
 import { ResearchService } from '../research/research-service';
 import { ContentPlannerService } from './content-planner-service';
@@ -359,7 +360,8 @@ export class PipelineOrchestratorService {
 
     try {
       const publisher = new FacebookPublisher(this.env);
-      const pubService = new PublicationService(this.db, publisher, this.auditLogger);
+      const mailClient = new NorthSoftMailGatewayClient(this.env);
+      const pubService = new PublicationService(this.db, publisher, this.auditLogger, mailClient);
 
       const pubResult = await pubService.publishPost(postId, { actor });
 

@@ -122,17 +122,44 @@ Return ONLY a valid JSON object matching this schema:
 }`;
 
     const perfEngine = new PerformanceEngineService();
-    const perfProfile = await perfEngine.getActiveProfile(this.db).catch(() => null);
+    const contextPreview = await perfEngine.buildGeneratorContextPreview(this.db).catch(() => null);
 
     let performanceContext = '';
-    if (perfProfile && (perfProfile.successfulPatterns.length > 0 || perfProfile.failurePatterns.length > 0)) {
-      performanceContext =
-        '\n<<< CURRENT_PERFORMANCE_INSIGHTS >>>\n' +
-        'Derived from real social media publication engagement metrics. Use these patterns for guidance on hook, tone, and structure. Do NOT copy verbatim.\n' +
-        (perfProfile.successfulPatterns.length > 0 ? 'PATTERNS THAT CURRENTLY OUTPERFORM:\n' + perfProfile.successfulPatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
-        (perfProfile.failurePatterns.length > 0 ? 'PATTERNS THAT CURRENTLY UNDERPERFORM (AVOID):\n' + perfProfile.failurePatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
-        (perfProfile.successfulExamples.length > 0 ? 'HIGH-PERFORMING REPRESENTATIVE EXAMPLES (FOR INSPIRATION ONLY):\n' + perfProfile.successfulExamples.map((e) => `[Snippet]: ${e.snippet}`).join('\n') + '\n' : '') +
-        '<<< END_PERFORMANCE_INSIGHTS >>>\n';
+    if (contextPreview) {
+      const parts: string[] = [];
+      if (contextPreview.manualGuidelines.length > 0) {
+        parts.push('ADMIN EDITABLE GUIDELINES (HIGH PRIORITY):\n' + contextPreview.manualGuidelines.map((g) => `- ${g.guidelineText}`).join('\n'));
+      }
+      if (contextPreview.learnedGuidelines.length > 0) {
+        parts.push('LEARNED PERFORMANCE GUIDELINES:\n' + contextPreview.learnedGuidelines.map((g) => `- [${g.category}] ${g.guidelineText}`).join('\n'));
+      }
+      if (contextPreview.activeStrongExamples.length > 0) {
+        parts.push('ACTIVE STRONG EXAMPLES (FOR STRUCTURAL PATTERNS ONLY — DO NOT COPY SENTENCES 1:1):\n' + contextPreview.activeStrongExamples.map((e) => `- ${e.title}: ${e.reasonForInclusion}`).join('\n'));
+      }
+      if (contextPreview.activeWeakExamples.length > 0) {
+        parts.push('ACTIVE WEAK EXAMPLES (PATTERNS TO AVOID):\n' + contextPreview.activeWeakExamples.map((e) => `- ${e.title}: ${e.reasonForInclusion}`).join('\n'));
+      }
+
+      if (parts.length > 0) {
+        performanceContext =
+          '\n<<< CURRENT_PERFORMANCE_INSIGHTS >>>\n' +
+          'Derived from real social media publication metrics & admin guidelines. Generalize structural insights without copying or paraphrasing sentences.\n' +
+          parts.join('\n\n') +
+          '\n<<< END_PERFORMANCE_INSIGHTS >>>\n';
+      }
+    }
+
+    if (!performanceContext) {
+      const perfProfile = await perfEngine.getActiveProfile(this.db).catch(() => null);
+      if (perfProfile && (perfProfile.successfulPatterns.length > 0 || perfProfile.failurePatterns.length > 0)) {
+        performanceContext =
+          '\n<<< CURRENT_PERFORMANCE_INSIGHTS >>>\n' +
+          'Derived from real social media publication engagement metrics. Use these patterns for guidance on hook, tone, and structure. Do NOT copy verbatim.\n' +
+          (perfProfile.successfulPatterns.length > 0 ? 'PATTERNS THAT CURRENTLY OUTPERFORM:\n' + perfProfile.successfulPatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
+          (perfProfile.failurePatterns.length > 0 ? 'PATTERNS THAT CURRENTLY UNDERPERFORM (AVOID):\n' + perfProfile.failurePatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
+          (perfProfile.successfulExamples.length > 0 ? 'HIGH-PERFORMING REPRESENTATIVE EXAMPLES (FOR INSPIRATION ONLY):\n' + perfProfile.successfulExamples.map((e) => `[Snippet]: ${e.snippet}`).join('\n') + '\n' : '') +
+          '<<< END_PERFORMANCE_INSIGHTS >>>\n';
+      }
     }
 
     const researchContext =

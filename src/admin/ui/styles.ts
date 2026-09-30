@@ -1480,6 +1480,140 @@ export function getAdminCss(): string {
     .batch-status-running { color: var(--accent-cyan); animation: pulse 1.5s infinite; }
     .batch-status-completed { color: var(--accent-emerald); }
     .batch-status-failed { color: var(--accent-rose); }
+
+    /* GLOBAL TASK QUEUE / ACTIVITY CENTER WIDGET */
+    #global-task-queue-widget {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 360px;
+      max-width: calc(100vw - 40px);
+      z-index: 9999;
+      background: #111827;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      font-family: inherit;
+      overflow: hidden;
+      transition: all 0.25s ease;
+    }
+
+    .tq-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      background: #1f2937;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tq-header-title {
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .tq-header-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+    }
+
+    .tq-toggle-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 0.2rem;
+    }
+
+    .tq-body {
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .tq-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+      font-size: 0.825rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      transition: all 0.15s ease;
+    }
+
+    .tq-item-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .tq-item-title {
+      font-weight: 600;
+      color: var(--text-main);
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tq-status-badge {
+      font-size: 0.675rem;
+      font-weight: 700;
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .tq-status-queued { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+    .tq-status-running { background: rgba(59, 130, 246, 0.2); color: #60a5fa; animation: pulse 1.5s infinite; }
+    .tq-status-completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .tq-status-failed { background: rgba(244, 63, 94, 0.2); color: #fda4af; }
+
+    .tq-item-detail {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      word-break: break-word;
+    }
+
+    .tq-item-error {
+      font-size: 0.75rem;
+      color: #fda4af;
+      background: rgba(244, 63, 94, 0.1);
+      border-radius: 4px;
+      padding: 0.35rem 0.5rem;
+      margin-top: 0.25rem;
+    }
+
+    .tq-progress-bar {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .tq-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #06b6d4);
+      transition: width 0.2s ease;
+    }
   `;
 }
 

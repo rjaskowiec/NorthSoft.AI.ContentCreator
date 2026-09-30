@@ -18,6 +18,8 @@ import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
 import { FacebookPublisher } from './publishing/facebook-publisher';
 import { ContentOrchestrator } from './services/content/content-orchestrator';
+import { NorthSoftMailGatewayClient } from './services/mail/mail-service';
+import { NotificationService } from './services/notifications/notification-service';
 import { PublicationService } from './services/publishing/publication-service';
 
 export type AppEnv = {
@@ -113,10 +115,15 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const orchestrator = new ContentOrchestrator(env.DB, env);
     const publisher = new FacebookPublisher(env);
-    const pubService = new PublicationService(env.DB, publisher);
+    const mailClient = new NorthSoftMailGatewayClient(env);
+    const pubService = new PublicationService(env.DB, publisher, undefined, mailClient);
 
     ctx.waitUntil(
-      Promise.all([orchestrator.runPipeline('cron'), pubService.publishScheduledDuePosts()]),
+      Promise.all([
+        orchestrator.runPipeline('cron'),
+        pubService.publishScheduledDuePosts(),
+        NotificationService.sendWeeklyDigest(env.DB, mailClient),
+      ]),
     );
   },
 };

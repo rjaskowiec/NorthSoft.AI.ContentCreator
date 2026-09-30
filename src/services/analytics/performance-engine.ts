@@ -408,19 +408,56 @@ export class PerformanceEngineService {
       });
     }
 
-    const validSizedPosts = evaluatedPosts.filter((p) => p.exposure >= MIN_EXPOSURE_THRESHOLD);
-    const rates = validSizedPosts.map((p) => p.engagementRate);
+    // ADAPTIVE EVALUATION: Small-data / Early Mode fallback when total published posts < 10
+    const totalPublishedCount = evaluatedPosts.length;
+    let learningMode: 'EARLY' | 'DEVELOPING' | 'MATURE' = 'MATURE';
+    let effectiveMinExposure = MIN_EXPOSURE_THRESHOLD;
+
+    if (totalPublishedCount <= 10) {
+      learningMode = 'EARLY';
+      effectiveMinExposure = 1; // Evaluate any post with at least 1 view in early mode
+    } else if (totalPublishedCount <= 30) {
+      learningMode = 'DEVELOPING';
+      effectiveMinExposure = 5;
+    }
+
+    const postsToEvaluate = evaluatedPosts.filter((p) => {
+      if (p.exposure >= effectiveMinExposure) return true;
+      // Aged post check (>72h with 0 engagement -> evaluate as weak candidate)
+      const ageHours = (Date.now() - new Date(p.publishedAt).getTime()) / (1000 * 60 * 60);
+      if (ageHours >= 72 && p.engagementRate === 0) return true;
+      return false;
+    });
+
+    const rates = postsToEvaluate.map((p) => p.engagementRate);
     const medianRate = PerformanceEngineService.calculateMedian(rates);
 
-    const outperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number }> = [];
-    const underperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number }> = [];
+    const outperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number; confidence: number; referenceValue: number }> = [];
+    const underperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number; confidence: number; referenceValue: number }> = [];
 
-    for (const post of validSizedPosts) {
+    for (const post of evaluatedPosts) {
+      const ageHours = (Date.now() - new Date(post.publishedAt).getTime()) / (1000 * 60 * 60);
+      const confidence = Math.min(1.0, Math.max(0.3, (post.exposure / MIN_EXPOSURE_THRESHOLD) * Math.min(1.0, ageHours / 48)));
       const percentile = PerformanceEngineService.calculatePercentile(post.engagementRate, rates);
       const relativePerf = medianRate > 0 ? Number((post.engagementRate / medianRate).toFixed(2)) : 1.0;
-      const classification = PerformanceEngineService.classifyPerformance(post.exposure, percentile, post.publishedAt);
 
-      if (classification === 'STRONG') {
+      // Maturing check for fresh posts (<24h with low exposure)
+      if (ageHours < MATURING_HOURS_THRESHOLD && post.exposure < MIN_EXPOSURE_THRESHOLD && post.engagementRate === 0) {
+        continue;
+      }
+
+      // Compute Reference Value = relativePerf * confidence * freshnessWeight
+      const referenceValue = Number((relativePerf * confidence * post.freshnessWeight).toFixed(4));
+
+      // Classification threshold adaptation based on learning mode
+      const isStrong = learningMode === 'EARLY'
+        ? (percentile >= 70 || relativePerf > 1.5)
+        : percentile >= 75;
+      const isWeak = learningMode === 'EARLY'
+        ? (percentile < 40 || (ageHours >= 72 && post.engagementRate === 0) || (post.engagementRate > 0 && relativePerf < 1.0))
+        : (percentile < 25 || (ageHours >= 72 && post.engagementRate === 0));
+
+      if (isStrong && post.exposure >= effectiveMinExposure) {
         outperformingList.push({
           postId: post.postId,
           title: post.title,
@@ -429,8 +466,10 @@ export class PerformanceEngineService {
           percentile,
           exposure: post.exposure,
           weightedEng: post.engagementRate * post.exposure,
+          confidence,
+          referenceValue,
         });
-      } else if (classification === 'WEAK' || classification === 'POOR') {
+      } else if (isWeak) {
         underperformingList.push({
           postId: post.postId,
           title: post.title,
@@ -439,11 +478,17 @@ export class PerformanceEngineService {
           percentile,
           exposure: post.exposure,
           weightedEng: post.engagementRate * post.exposure,
+          confidence,
+          referenceValue,
         });
       }
     }
 
-    // Dynamic reference pool sync (top 5 strong, bottom 5 weak)
+    // Sort by reference value descending
+    outperformingList.sort((a, b) => b.referenceValue - a.referenceValue);
+    underperformingList.sort((a, b) => b.referenceValue - a.referenceValue);
+
+    // Dynamic reference pool sync (top 5 strong, bottom 5 weak active, deactivate others)
     try {
       await db.prepare('UPDATE generator_reference_posts SET is_active = 0').run();
       let rank = 1;
@@ -452,8 +497,8 @@ export class PerformanceEngineService {
         await db.prepare(
           `INSERT INTO generator_reference_posts (
             id, post_id, classification, success_score, percentile, exposure_views,
-            weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, evaluated_at, created_at
-          ) VALUES (?, ?, 'STRONG', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+            weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, confidence, reference_value, evaluated_at, created_at
+          ) VALUES (?, ?, 'STRONG', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
         ).bind(
           crypto.randomUUID(),
           strong.postId,
@@ -461,9 +506,11 @@ export class PerformanceEngineService {
           strong.percentile,
           strong.exposure,
           strong.weightedEng,
-          `Achieved top ${100 - strong.percentile}% engagement benchmark (${strong.score}x median).`,
+          `Achieved top ${100 - strong.percentile}% engagement benchmark (${strong.score}x median) in ${learningMode} mode.`,
           JSON.stringify(chars),
           rank++,
+          strong.confidence,
+          strong.referenceValue,
           nowIso,
           nowIso
         ).run();
@@ -475,8 +522,8 @@ export class PerformanceEngineService {
         await db.prepare(
           `INSERT INTO generator_reference_posts (
             id, post_id, classification, success_score, percentile, exposure_views,
-            weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, evaluated_at, created_at
-          ) VALUES (?, ?, 'WEAK', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+            weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, confidence, reference_value, evaluated_at, created_at
+          ) VALUES (?, ?, 'WEAK', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
         ).bind(
           crypto.randomUUID(),
           weak.postId,
@@ -484,15 +531,17 @@ export class PerformanceEngineService {
           weak.percentile,
           weak.exposure,
           weak.weightedEng,
-          `Fell into lower ${weak.percentile}% engagement percentile (${weak.score}x median).`,
+          `Underperformed benchmark in ${learningMode} mode (${weak.score}x median).`,
           JSON.stringify(chars),
           rank++,
+          weak.confidence,
+          weak.referenceValue,
           nowIso,
           nowIso
         ).run();
       }
     } catch {
-      // Table may be pending or in test mocks
+      // Table fallback for test mocks without 0022 columns
     }
 
     // Learned Guidelines Extraction
@@ -559,7 +608,7 @@ export class PerformanceEngineService {
     const manualGuidelinesList: string[] = [];
     try {
       const manualRows = await db
-        .prepare("SELECT guideline_text FROM generator_guidelines WHERE tier = 'MANUAL' AND is_active = 1")
+        .prepare("SELECT guideline_text FROM generator_guidelines WHERE tier = 'MANUAL' AND is_active = 1 ORDER BY created_at DESC")
         .all<{ guideline_text: string }>();
       manualGuidelinesList.push(...(manualRows.results || []).map((r) => r.guideline_text));
     } catch {
@@ -589,7 +638,7 @@ export class PerformanceEngineService {
     }));
 
     const profile: ContentPerformanceProfile = {
-      summary: `Active Performance Profile built from ${validSizedPosts.length} evaluated posts (median engagement rate: ${(medianRate * 100).toFixed(2)}%).`,
+      summary: `Active Performance Profile (${learningMode} mode) built from ${postsToEvaluate.length} evaluated posts (median engagement rate: ${(medianRate * 100).toFixed(2)}%).`,
       successfulPatterns,
       failurePatterns,
       successfulExamples,
@@ -597,7 +646,7 @@ export class PerformanceEngineService {
       manualGuidelines: manualGuidelinesList,
       systemRules,
       metricsSummary: {
-        totalEvaluated: validSizedPosts.length,
+        totalEvaluated: postsToEvaluate.length,
         medianEngagementRate: medianRate,
         outperformingCount: outperformingList.length,
         underperformingCount: underperformingList.length,
@@ -627,6 +676,225 @@ export class PerformanceEngineService {
   }
 
   /**
+   * Manual Guidelines CRUD: Fetch all manual guidelines
+   */
+  public async getManualGuidelines(db: D1Database): Promise<GeneratorGuideline[]> {
+    try {
+      const rows = await db
+        .prepare("SELECT * FROM generator_guidelines WHERE tier = 'MANUAL' ORDER BY updated_at DESC")
+        .all<any>();
+      return (rows.results || []).map((r) => ({
+        id: r.id,
+        tier: 'MANUAL',
+        category: r.category || 'DO_MORE',
+        guidelineText: r.guideline_text,
+        evidenceCount: r.evidence_count || 1,
+        isActive: Boolean(r.is_active),
+        createdBy: r.created_by || 'admin',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Manual Guidelines CRUD: Add new manual guideline
+   */
+  public async addManualGuideline(
+    db: D1Database,
+    text: string,
+    category: 'DO_MORE' | 'AVOID' | 'STYLE' | 'STRUCTURE' | 'BENCHMARK' = 'DO_MORE',
+  ): Promise<GeneratorGuideline> {
+    const id = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const record: GeneratorGuideline = {
+      id,
+      tier: 'MANUAL',
+      category,
+      guidelineText: text.trim(),
+      evidenceCount: 1,
+      isActive: true,
+      createdBy: 'admin',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    await db
+      .prepare(
+        `INSERT INTO generator_guidelines (id, tier, category, guideline_text, evidence_count, is_active, created_by, created_at, updated_at)
+         VALUES (?, 'MANUAL', ?, ?, 1, 1, 'admin', ?, ?)`,
+      )
+      .bind(record.id, record.category, record.guidelineText, nowIso, nowIso)
+      .run();
+
+    return record;
+  }
+
+  /**
+   * Manual Guidelines CRUD: Update existing manual guideline
+   */
+  public async updateManualGuideline(
+    db: D1Database,
+    id: string,
+    text: string,
+    isActive = true,
+  ): Promise<boolean> {
+    const nowIso = new Date().toISOString();
+    const res = await db
+      .prepare("UPDATE generator_guidelines SET guideline_text = ?, is_active = ?, updated_at = ? WHERE id = ? AND tier = 'MANUAL'")
+      .bind(text.trim(), isActive ? 1 : 0, nowIso, id)
+      .run();
+    return (res.meta?.changes || 0) > 0;
+  }
+
+  /**
+   * Manual Guidelines CRUD: Delete manual guideline
+   */
+  public async deleteManualGuideline(db: D1Database, id: string): Promise<boolean> {
+    const res = await db
+      .prepare("DELETE FROM generator_guidelines WHERE id = ? AND tier = 'MANUAL'")
+      .bind(id)
+      .run();
+    return (res.meta?.changes || 0) > 0;
+  }
+
+  /**
+   * Builds full instant Generator Context Preview payload
+   */
+  public async buildGeneratorContextPreview(db: D1Database): Promise<{
+    systemRules: string[];
+    manualGuidelines: GeneratorGuideline[];
+    learnedGuidelines: GeneratorGuideline[];
+    activeStrongExamples: ReferencePostRecord[];
+    activeWeakExamples: ReferencePostRecord[];
+    finalInstructionsText: string;
+    learningMode: string;
+  }> {
+    const systemRules = [
+      'Strictly English ("en") language.',
+      'No corporate buzzwords ("unlock potential", "game changer", "digital transformation").',
+      'Fact preservation rule: retain 100% accurate statistics from source without inventing fake numbers.',
+      'Pattern generalization rule: learn structural insights from reference examples without copying sentences or exact phrases.',
+    ];
+
+    const manualGuidelines: GeneratorGuideline[] = [];
+    const learnedGuidelines: GeneratorGuideline[] = [];
+    const activeStrongExamples: ReferencePostRecord[] = [];
+    const activeWeakExamples: ReferencePostRecord[] = [];
+
+    try {
+      const gRows = await db
+        .prepare('SELECT * FROM generator_guidelines WHERE is_active = 1 ORDER BY tier ASC, created_at DESC')
+        .all<any>();
+
+      for (const r of gRows.results || []) {
+        const item: GeneratorGuideline = {
+          id: r.id,
+          tier: r.tier,
+          category: r.category,
+          guidelineText: r.guideline_text,
+          evidenceCount: r.evidence_count || 1,
+          isActive: Boolean(r.is_active),
+          createdBy: r.created_by || 'system',
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        };
+        if (r.tier === 'MANUAL') manualGuidelines.push(item);
+        else if (r.tier === 'LEARNED') learnedGuidelines.push(item);
+      }
+
+      const refRows = await db
+        .prepare(
+          `SELECT r.*, p.title as post_title, pv.content as post_snippet
+           FROM generator_reference_posts r
+           LEFT JOIN posts p ON p.id = r.post_id
+           LEFT JOIN post_versions pv ON pv.post_id = p.id AND p.current_version = pv.version_number
+           WHERE r.is_active = 1
+           ORDER BY r.classification ASC, r.rank ASC`,
+        )
+        .all<any>();
+
+      for (const r of refRows.results || []) {
+        let chars: ExtractedCharacteristics | undefined;
+        try {
+          chars = r.extracted_characteristics ? JSON.parse(r.extracted_characteristics) : undefined;
+        } catch {
+          // Fallback
+        }
+        const refItem: ReferencePostRecord = {
+          id: r.id,
+          postId: r.post_id,
+          classification: r.classification,
+          successScore: r.success_score,
+          percentile: r.percentile,
+          exposureViews: r.exposure_views,
+          weightedEngagement: r.weighted_engagement,
+          reasonForInclusion: r.reason_for_inclusion,
+          extractedCharacteristics: chars,
+          rank: r.rank,
+          isActive: Boolean(r.is_active),
+          evaluatedAt: r.evaluated_at,
+          createdAt: r.created_at,
+          title: r.post_title || 'Reference Post',
+          snippet: r.post_snippet ? r.post_snippet.slice(0, 180) + '...' : undefined,
+        };
+        if (r.classification === 'STRONG') activeStrongExamples.push(refItem);
+        else activeWeakExamples.push(refItem);
+      }
+    } catch {
+      // Table fallback
+    }
+
+    // Determine learning mode
+    const pubCount = (await db.prepare("SELECT COUNT(*) as cnt FROM publications WHERE status = 'published'").first<{ cnt: number }>())?.cnt || 0;
+    const learningMode = pubCount <= 10 ? 'EARLY' : pubCount <= 30 ? 'DEVELOPING' : 'MATURE';
+
+    // Build final prompt instructions text representation
+    const promptLines: string[] = [];
+    promptLines.push('=== SYSTEM RULES (MANDATORY) ===');
+    systemRules.forEach((rule) => promptLines.push('- ' + rule));
+
+    if (manualGuidelines.length > 0) {
+      promptLines.push('\n=== EDITABLE MANUAL GUIDELINES (ADMIN DEFINED) ===');
+      manualGuidelines.forEach((g) => promptLines.push('- ' + g.guidelineText));
+    }
+
+    if (learnedGuidelines.length > 0) {
+      promptLines.push('\n=== LEARNED PERFORMANCE GUIDELINES (AUTO-EXTRACTED) ===');
+      learnedGuidelines.forEach((g) => promptLines.push('- [' + g.category + '] ' + g.guidelineText));
+    }
+
+    if (activeStrongExamples.length > 0) {
+      promptLines.push('\n=== ACTIVE STRONG EXAMPLES (STRUCTURAL INSIGHTS) ===');
+      activeStrongExamples.forEach((e) => {
+        const charStr = e.extractedCharacteristics
+          ? `[Hook: ${e.extractedCharacteristics.hookStyle}, Length: ${e.extractedCharacteristics.lengthCategory}, CTA: ${e.extractedCharacteristics.ctaStyle}]`
+          : '';
+        promptLines.push(`- "${e.title}" ${charStr} — ${e.reasonForInclusion}`);
+      });
+    }
+
+    if (activeWeakExamples.length > 0) {
+      promptLines.push('\n=== ACTIVE WEAK EXAMPLES (PATTERNS TO AVOID) ===');
+      activeWeakExamples.forEach((e) => {
+        promptLines.push(`- "${e.title}" — ${e.reasonForInclusion}`);
+      });
+    }
+
+    return {
+      systemRules,
+      manualGuidelines,
+      learnedGuidelines,
+      activeStrongExamples,
+      activeWeakExamples,
+      finalInstructionsText: promptLines.join('\n'),
+      learningMode,
+    };
+  }
+
+  /**
    * Persists new active profile, deactivating old profiles.
    */
   private async saveActiveProfile(db: D1Database, profile: ContentPerformanceProfile): Promise<void> {
@@ -642,3 +910,4 @@ export class PerformanceEngineService {
     ]);
   }
 }
+

@@ -86,53 +86,17 @@ performanceRouter.get('/performance', async (c) => {
 performanceRouter.get('/performance/preview-context', async (c) => {
   const db = c.env.DB;
   const engine = new PerformanceEngineService();
-  const profile = await engine.getActiveProfile(db);
-
-  const manualGuidelinesList: string[] = [];
-  const learnedGuidelinesList: string[] = [];
-  try {
-    const mRows = await db
-      .prepare("SELECT guideline_text FROM generator_guidelines WHERE tier = 'MANUAL' AND is_active = 1")
-      .all<{ guideline_text: string }>();
-    manualGuidelinesList.push(...(mRows.results || []).map((r) => r.guideline_text));
-
-    const lRows = await db
-      .prepare("SELECT guideline_text FROM generator_guidelines WHERE tier = 'LEARNED' AND is_active = 1")
-      .all<{ guideline_text: string }>();
-    learnedGuidelinesList.push(...(lRows.results || []).map((r) => r.guideline_text));
-  } catch {
-    manualGuidelinesList.push(...(profile?.manualGuidelines || []));
-    learnedGuidelinesList.push(...(profile?.successfulPatterns || []));
-  }
-
-  const systemRules = [
-    'Tone: Natural, friendly, human conversational English speaking directly to a small business owner.',
-    'Language: MUST be written strictly in English ("en").',
-    'FORBIDDEN JARGON: "unlock potential", "digital transformation", "game changer", "scaling your business".',
-    'FACT PRESERVATION: Retain 100% accurate statistics from source without inventing fake numbers.',
-  ];
-
-  const previewPayload = {
-    systemRules,
-    manualGuidelines: manualGuidelinesList,
-    learnedGuidelines: learnedGuidelinesList,
-    successfulPatterns: profile?.successfulPatterns || [],
-    failurePatterns: profile?.failurePatterns || [],
-    successfulExamples: profile?.successfulExamples || [],
-    poorExamples: profile?.poorExamples || [],
-    metricsSummary: profile?.metricsSummary || null,
-    generatedAt: new Date().toISOString(),
-  };
+  const preview = await engine.buildGeneratorContextPreview(db);
 
   return c.json({
     success: true,
-    previewPayload,
+    previewPayload: preview,
   });
 });
 
 /**
  * POST /api/admin/performance/guidelines
- * Adds or updates a manual guideline in generator_guidelines table.
+ * Adds a manual guideline in generator_guidelines table.
  */
 performanceRouter.post('/performance/guidelines', csrfProtection, async (c) => {
   const db = c.env.DB;
@@ -148,23 +112,47 @@ performanceRouter.post('/performance/guidelines', csrfProtection, async (c) => {
     return c.json({ success: false, error: 'Guideline text is required' }, 400);
   }
 
-  const id = crypto.randomUUID();
-  const nowIso = new Date().toISOString();
-
-  await db
-    .prepare(
-      `INSERT INTO generator_guidelines (id, tier, category, guideline_text, evidence_count, is_active, created_by, created_at, updated_at)
-       VALUES (?, 'MANUAL', ?, ?, 1, 1, 'admin', ?, ?)`,
-    )
-    .bind(id, category, text, nowIso, nowIso)
-    .run();
-
   const engine = new PerformanceEngineService();
+  const guideline = await engine.addManualGuideline(db, text, category);
   const updatedProfile = await engine.evaluateAndGenerateProfile(db);
 
   return c.json({
     success: true,
-    guidelineId: id,
+    guideline,
+    profile: updatedProfile,
+  });
+});
+
+/**
+ * PUT /api/admin/performance/guidelines/:id
+ * Updates an existing manual guideline in generator_guidelines table.
+ */
+performanceRouter.put('/performance/guidelines/:id', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  if (!id) {
+    return c.json({ success: false, error: 'Guideline ID is required' }, 400);
+  }
+  const body = (await c.req.json().catch(() => ({}))) as {
+    guidelineText?: string;
+    isActive?: boolean;
+  };
+
+  const text = (body.guidelineText || '').trim();
+  if (!text) {
+    return c.json({ success: false, error: 'Guideline text is required' }, 400);
+  }
+
+  const engine = new PerformanceEngineService();
+  const updated = await engine.updateManualGuideline(db, id, text, body.isActive !== false);
+  if (!updated) {
+    return c.json({ success: false, error: 'Guideline not found or not editable' }, 404);
+  }
+
+  const updatedProfile = await engine.evaluateAndGenerateProfile(db);
+
+  return c.json({
+    success: true,
     profile: updatedProfile,
   });
 });
@@ -176,10 +164,12 @@ performanceRouter.post('/performance/guidelines', csrfProtection, async (c) => {
 performanceRouter.delete('/performance/guidelines/:id', csrfProtection, async (c) => {
   const db = c.env.DB;
   const id = c.req.param('id');
-
-  await db.prepare("UPDATE generator_guidelines SET is_active = 0 WHERE id = ? AND tier = 'MANUAL'").bind(id).run();
-
+  if (!id) {
+    return c.json({ success: false, error: 'Guideline ID is required' }, 400);
+  }
   const engine = new PerformanceEngineService();
+
+  await engine.deleteManualGuideline(db, id);
   const updatedProfile = await engine.evaluateAndGenerateProfile(db);
 
   return c.json({

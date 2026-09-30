@@ -140,9 +140,9 @@ export function getAdminScripts(): string {
             if (Number.isFinite(parsed)) key = parsed;
             else empty = true;
           } else if (isNumeric && !empty) {
-            const parsed = Number(trimmed.replace(/[^\d.-]/g, ''));
+            const parsed = Number(trimmed.replace(/[^0-9.-]/g, ''));
             if (Number.isFinite(parsed)) key = parsed;
-          } else if (!empty && /^-?\d+(?:[.,]\d+)?$/.test(trimmed)) {
+          } else if (!empty && /^-?[0-9]+(?:[.,][0-9]+)?$/.test(trimmed)) {
             key = Number(trimmed.replace(',', '.'));
           }
           return { row, key, empty, index };
@@ -1197,6 +1197,117 @@ export function getAdminScripts(): string {
       }
     }
 
+    // ======================================================================
+    // GLOBAL TASK QUEUE / ACTIVITY CENTER SERVICE
+    // ======================================================================
+    window.TaskQueue = {
+      tasks: [],
+      isExpanded: true,
+      add: function(title, options) {
+        var opts = options || {};
+        var task = {
+          id: 'task_' + Math.random().toString(36).substring(2, 9),
+          title: title,
+          type: opts.type || 'manual',
+          status: 'QUEUED',
+          progress: opts.total ? { completed: 0, total: opts.total } : null,
+          detail: opts.detail || 'Waiting in queue...',
+          errorMessage: null,
+          errorDetail: null,
+          createdAt: new Date().toISOString(),
+          completedAt: null
+        };
+        this.tasks.unshift(task);
+        this.render();
+        return task.id;
+      },
+      start: function(id, detail) {
+        var task = this.getTask(id);
+        if (!task) return;
+        task.status = 'RUNNING';
+        if (detail) task.detail = detail;
+        this.render();
+      },
+      updateProgress: function(id, completed, total, detail) {
+        var task = this.getTask(id);
+        if (!task) return;
+        task.status = 'RUNNING';
+        task.progress = { completed: completed, total: total };
+        if (detail) task.detail = detail;
+        this.render();
+      },
+      complete: function(id, summary) {
+        var task = this.getTask(id);
+        if (!task) return;
+        task.status = 'COMPLETED';
+        task.detail = summary || 'Completed successfully.';
+        task.completedAt = new Date().toISOString();
+        this.render();
+        setTimeout(function() {
+          window.TaskQueue.render();
+        }, 5000);
+      },
+      fail: function(id, errorMessage, userAdvice) {
+        var task = this.getTask(id);
+        if (!task) return;
+        task.status = 'FAILED';
+        task.errorMessage = errorMessage || 'Operation failed.';
+        task.detail = userAdvice || errorMessage || 'An unexpected error occurred.';
+        task.completedAt = new Date().toISOString();
+        this.render();
+      },
+      getTask: function(id) {
+        return this.tasks.find(function(t) { return t.id === id; });
+      },
+      toggle: function() {
+        this.isExpanded = !this.isExpanded;
+        var container = document.getElementById('tq-body-container');
+        var icon = document.getElementById('tq-toggle-icon');
+        if (container) container.style.display = this.isExpanded ? 'flex' : 'none';
+        if (icon) icon.textContent = this.isExpanded ? '▲' : '▼';
+      },
+      render: function() {
+        var widget = document.getElementById('global-task-queue-widget');
+        var container = document.getElementById('tq-body-container');
+        var badge = document.getElementById('tq-header-badge');
+        if (!widget || !container) return;
+
+        if (this.tasks.length === 0) {
+          widget.style.display = 'none';
+          return;
+        }
+
+        widget.style.display = 'block';
+        var activeTasks = this.tasks.filter(function(t) { return t.status === 'RUNNING' || t.status === 'QUEUED'; });
+        if (badge) {
+          badge.textContent = activeTasks.length > 0 ? (activeTasks.length + ' Active') : '✓ Completed';
+        }
+
+        container.innerHTML = this.tasks.slice(0, 8).map(function(t) {
+          var statusClass = 'tq-status-' + t.status.toLowerCase();
+          var pct = t.progress && t.progress.total > 0 ? Math.round((t.progress.completed / t.progress.total) * 100) : 0;
+          
+          return '<div class="tq-item">' +
+            '<div class="tq-item-top">' +
+              '<div class="tq-item-title" title="' + escapeHtml(safeStr(t.title)) + '">' + escapeHtml(safeStr(t.title)) + '</div>' +
+              '<span class="tq-status-badge ' + statusClass + '">' + escapeHtml(t.status) + '</span>' +
+            '</div>' +
+            '<div class="tq-item-detail">' + escapeHtml(safeStr(t.detail)) + '</div>' +
+            (t.progress ? '<div class="tq-progress-bar"><div class="tq-progress-fill" style="width:' + pct + '%;"></div></div>' : '') +
+            (t.errorMessage ? '<div class="tq-item-error">' + escapeHtml(safeStr(t.errorMessage)) + '</div>' : '') +
+          '</div>';
+        }).join('');
+      }
+    };
+
+    function toggleTaskQueueWidget() {
+      if (window.TaskQueue) window.TaskQueue.toggle();
+    }
+    window.toggleTaskQueueWidget = toggleTaskQueueWidget;
+
+    // ======================================================================
+    // MANUAL GUIDELINES & CONTEXT EDITOR HANDLERS
+    // ======================================================================
     function openAddGuidelineModal() {
       const input = document.getElementById('guideline-text-input');
       if (input) input.value = '';
@@ -1210,6 +1321,9 @@ export function getAdminScripts(): string {
       const guidelineText = textEl ? safeStr(textEl.value).trim() : '';
       if (!guidelineText) return;
 
+      const taskId = window.TaskQueue.add('Saving Manual Guideline', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Saving guideline to D1...');
+
       try {
         const res = await fetch('/api/admin/performance/guidelines', {
           method: 'POST',
@@ -1218,27 +1332,126 @@ export function getAdminScripts(): string {
         });
         if (res.ok) {
           closeModal('add-guideline-modal');
+          window.TaskQueue.complete(taskId, 'Manual guideline saved.');
           await loadIntelligenceData();
         } else {
-          alert('Failed to save manual guideline.');
+          window.TaskQueue.fail(taskId, 'Could not save guideline', 'Server returned error status.');
         }
       } catch (err) {
-        alert('Error saving guideline.');
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error saving guideline.');
+      }
+    }
+
+    function openEditGuidelineModal(id, currentText) {
+      const idEl = document.getElementById('edit-guideline-id');
+      const textEl = document.getElementById('edit-guideline-text-input');
+      if (idEl) idEl.value = safeStr(id);
+      if (textEl) textEl.value = safeStr(currentText);
+      openModal('edit-guideline-modal');
+    }
+
+    async function submitUpdateManualGuideline() {
+      const idEl = document.getElementById('edit-guideline-id');
+      const textEl = document.getElementById('edit-guideline-text-input');
+      const id = idEl ? safeStr(idEl.value) : '';
+      const text = textEl ? safeStr(textEl.value).trim() : '';
+      if (!id || !text) return;
+
+      const taskId = window.TaskQueue.add('Updating Manual Guideline', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Updating guideline...');
+
+      try {
+        const res = await fetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ guidelineText: text, isActive: true })
+        });
+        if (res.ok) {
+          closeModal('edit-guideline-modal');
+          window.TaskQueue.complete(taskId, 'Guideline updated.');
+          await loadIntelligenceData();
+        } else {
+          window.TaskQueue.fail(taskId, 'Could not update guideline', 'Server returned error status.');
+        }
+      } catch (err) {
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Failed to update guideline.');
       }
     }
 
     async function deleteManualGuideline(id) {
       if (!confirm('Are you sure you want to remove this manual guideline?')) return;
+      const taskId = window.TaskQueue.add('Deleting Manual Guideline', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Removing guideline...');
+
       try {
         const res = await fetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
           method: 'DELETE',
           headers: { 'x-csrf-token': csrfToken }
         });
         if (res.ok) {
+          window.TaskQueue.complete(taskId, 'Guideline deleted.');
           await loadIntelligenceData();
+        } else {
+          window.TaskQueue.fail(taskId, 'Could not delete guideline', 'Server error deleting guideline.');
         }
       } catch (err) {
-        alert('Failed to delete guideline.');
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network failure deleting guideline.');
+      }
+    }
+
+    async function openGeneratorContextModal() {
+      openModal('generator-context-modal');
+      const sysEl = document.getElementById('ctx-system-rules');
+      const manEl = document.getElementById('ctx-manual-guidelines');
+      const lrnEl = document.getElementById('ctx-learned-guidelines');
+      const strEl = document.getElementById('ctx-strong-examples');
+      const awkEl = document.getElementById('ctx-weak-examples');
+      const rawEl = document.getElementById('ctx-raw-instructions');
+
+      if (sysEl) sysEl.innerHTML = '<em>Loading generator context...</em>';
+
+      try {
+        const res = await guardedFetch('/api/admin/performance/preview-context');
+        const data = await res.json();
+        if (res.ok && data.success && data.previewPayload) {
+          const payload = data.previewPayload;
+          if (sysEl) sysEl.innerHTML = (payload.systemRules || []).map(r => '<div>• ' + escapeHtml(safeStr(r)) + '</div>').join('');
+          if (manEl) {
+            manEl.innerHTML = (payload.manualGuidelines || []).length > 0
+              ? (payload.manualGuidelines || []).map(g => {
+                  const id = safeStr(g.id);
+                  const text = safeStr(g.guidelineText || g);
+                  return '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">' +
+                    '<span>☑ ' + escapeHtml(text) + '</span>' +
+                    (id ? '<div style="display:flex; gap:0.25rem;">' +
+                      '<button class="btn-secondary edit-gl-btn" style="font-size:0.7rem; padding:0.15rem 0.4rem;" data-id="' + escapeHtml(id) + '" data-text="' + escapeHtml(text) + '" onclick="openEditGuidelineModal(this.dataset.id, this.dataset.text)">Edit</button>' +
+                      '<button class="btn-logout" style="font-size:0.7rem; padding:0.15rem 0.4rem;" data-id="' + escapeHtml(id) + '" onclick="deleteManualGuideline(this.dataset.id)">Delete</button>' +
+                    '</div>' : '') +
+                  '</div>';
+                }).join('')
+              : '<span style="color:var(--text-muted);">No manual guidelines added yet. Click "+ Add Guideline" above to create one.</span>';
+          }
+          if (lrnEl) {
+            lrnEl.innerHTML = (payload.learnedGuidelines || []).length > 0
+              ? (payload.learnedGuidelines || []).map(g => '<div>• [' + escapeHtml(safeStr(g.category || 'PATTERN')) + '] ' + escapeHtml(safeStr(g.guidelineText || g)) + '</div>').join('')
+              : '<span style="color:var(--text-muted);">No learned insights extracted yet. Evaluates automatically as publications mature.</span>';
+          }
+          if (strEl) {
+            strEl.innerHTML = (payload.activeStrongExamples || []).length > 0
+              ? (payload.activeStrongExamples || []).map(e => '<div style="margin-bottom:0.35rem;"><strong>' + escapeHtml(safeStr(e.title)) + '</strong>: <span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(e.reasonForInclusion)) + '</span></div>').join('')
+              : '<span style="color:var(--text-muted);">No active strong reference posts yet.</span>';
+          }
+          if (awkEl) {
+            awkEl.innerHTML = (payload.activeWeakExamples || []).length > 0
+              ? (payload.activeWeakExamples || []).map(e => '<div style="margin-bottom:0.35rem;"><strong>' + escapeHtml(safeStr(e.title)) + '</strong>: <span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(e.reasonForInclusion)) + '</span></div>').join('')
+              : '<span style="color:var(--text-muted);">No active weak reference posts yet.</span>';
+          }
+          if (rawEl) rawEl.textContent = safeStr(payload.finalInstructionsText || JSON.stringify(payload, null, 2));
+        } else if (sysEl) {
+          sysEl.innerHTML = '<span style="color:var(--accent-rose);">Failed to load generator context payload.</span>';
+        }
+      } catch (err) {
+        if (sysEl) sysEl.innerHTML = '<span style="color:var(--accent-rose);">Error connecting to context service.</span>';
       }
     }
 
@@ -1266,6 +1479,9 @@ export function getAdminScripts(): string {
     }
 
     async function runIntelligentSchedulePreview(postIds) {
+      const taskId = window.TaskQueue.add('Calculating Intelligent Schedule', { type: 'manual', total: postIds.length });
+      window.TaskQueue.start(taskId, 'Calculating optimal publication slots for ' + postIds.length + ' posts...');
+
       const tbody = document.getElementById('intelligent-slots-table-body');
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Calculating intelligent proposals...</td></tr>';
@@ -1281,6 +1497,8 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (res.ok && data.success && Array.isArray(data.proposedSlots)) {
           activeProposedSlots = data.proposedSlots;
+          window.TaskQueue.complete(taskId, 'Calculated ' + activeProposedSlots.length + ' proposed schedule slots.');
+
           if (tbody) {
             if (activeProposedSlots.length > 0) {
               tbody.innerHTML = activeProposedSlots.map((slot) => {
@@ -1295,10 +1513,14 @@ export function getAdminScripts(): string {
               tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No valid schedule slots could be proposed for the selected posts.</td></tr>';
             }
           }
-        } else if (tbody) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to calculate schedule proposals.</td></tr>';
+        } else {
+          window.TaskQueue.fail(taskId, 'Schedule Calculation Failed', 'Unable to find available slots.');
+          if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to calculate schedule proposals.</td></tr>';
+          }
         }
       } catch (err) {
+        window.TaskQueue.fail(taskId, 'Connection Failure', 'Error calculating schedule proposals.');
         if (tbody) {
           tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Error calculating schedule proposals.</td></tr>';
         }
@@ -1307,6 +1529,9 @@ export function getAdminScripts(): string {
 
     async function executeCommitIntelligentSchedule() {
       if (!activeProposedSlots || activeProposedSlots.length === 0) return;
+      const taskId = window.TaskQueue.add('Committing Publication Schedule', { type: 'manual', total: activeProposedSlots.length });
+      window.TaskQueue.start(taskId, 'Saving ' + activeProposedSlots.length + ' proposed slots to database...');
+
       const commitBtn = document.getElementById('commit-intelligent-schedule-btn');
       if (commitBtn) commitBtn.textContent = 'Saving schedule...';
 
@@ -1320,14 +1545,14 @@ export function getAdminScripts(): string {
         if (res.ok && data.success) {
           closeModal('intelligent-schedule-modal');
           selectedPostIds.clear();
+          window.TaskQueue.complete(taskId, 'Successfully scheduled ' + data.committedCount + ' posts.');
           await loadContentData();
           await loadSchedulesData();
-          alert('Successfully committed ' + data.committedCount + ' posts to the publication schedule.');
         } else {
-          alert('Failed to commit schedule proposals.');
+          window.TaskQueue.fail(taskId, 'Commit Schedule Failed', safeStr(data.error, 'Server rejected schedule commit.'));
         }
       } catch (err) {
-        alert('Error committing schedule proposals.');
+        window.TaskQueue.fail(taskId, 'Connection Failure', 'Network error committing schedule.');
       } finally {
         if (commitBtn) commitBtn.textContent = 'Accept & Commit Schedule';
       }

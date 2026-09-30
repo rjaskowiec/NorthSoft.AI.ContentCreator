@@ -1266,6 +1266,95 @@ export function renderAdminHtml(): string {
         <button type="button" class="btn-primary" onclick="saveManualGuideline()">Save Guideline</button>
       </div>
     </div>
+  </div>
+
+  <!-- 11B. EDIT MANUAL GUIDELINE MODAL -->
+  <div id="edit-guideline-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:500px;">
+      <div class="modal-header">
+        <div class="modal-title">Edit Generator Guideline</div>
+        <button class="modal-close-btn" onclick="closeModal('edit-guideline-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-guideline-id" />
+        <div class="form-group">
+          <label class="form-label" for="edit-guideline-text-input">Guideline Instruction</label>
+          <textarea id="edit-guideline-text-input" class="form-input" rows="3"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('edit-guideline-modal')">Cancel</button>
+        <button type="button" class="btn-primary" onclick="submitUpdateManualGuideline()">Update Guideline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11C. GENERATOR CONTEXT EDITOR / PREVIEW MODAL -->
+  <div id="generator-context-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:850px; width:90%;">
+      <div class="modal-header">
+        <div class="modal-title">Generator Context &amp; Prompt Preview</div>
+        <button class="modal-close-btn" onclick="closeModal('generator-context-modal')">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
+          Inspect exact rules, admin guidelines, learned insights, and reference pools passed to the AI Writer Agent.
+        </p>
+
+        <!-- System Rules Section -->
+        <div style="margin-bottom:1.25rem;">
+          <h4 style="font-size:0.85rem; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">1. System Rules (Read-Only Safety Rules)</h4>
+          <div id="ctx-system-rules" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 1rem; font-size:0.825rem;">
+            Loading rules...
+          </div>
+        </div>
+
+        <!-- Manual Guidelines Section -->
+        <div style="margin-bottom:1.25rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <h4 style="font-size:0.85rem; color:var(--accent-emerald); text-transform:uppercase; letter-spacing:0.05em;">2. Manual Admin Guidelines (Editable)</h4>
+            <button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.6rem;" onclick="openAddGuidelineModal()">+ Add Guideline</button>
+          </div>
+          <div id="ctx-manual-guidelines" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 1rem; font-size:0.825rem;">
+            Loading guidelines...
+          </div>
+        </div>
+
+        <!-- Learned Guidelines Section -->
+        <div style="margin-bottom:1.25rem;">
+          <h4 style="font-size:0.85rem; color:var(--accent-cyan); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">3. Learned Performance Guidelines (Auto-Extracted)</h4>
+          <div id="ctx-learned-guidelines" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 1rem; font-size:0.825rem;">
+            Loading learned insights...
+          </div>
+        </div>
+
+        <!-- Active Reference Pools Section -->
+        <div style="margin-bottom:1.25rem;">
+          <h4 style="font-size:0.85rem; color:var(--text-main); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">4. Active Reference Pools (Structural Examples)</h4>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+            <div>
+              <strong style="color:var(--accent-emerald); font-size:0.8rem;">Active Strong Examples (Top Ranks)</strong>
+              <div id="ctx-strong-examples" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:0.6rem; font-size:0.8rem; margin-top:0.35rem;">None</div>
+            </div>
+            <div>
+              <strong style="color:var(--accent-rose); font-size:0.8rem;">Active Weak Examples (Patterns to Avoid)</strong>
+              <div id="ctx-weak-examples" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:0.6rem; font-size:0.8rem; margin-top:0.35rem;">None</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Final Raw Text Section -->
+        <div>
+          <h4 style="font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">5. Final Assembled Writer Prompt Instructions</h4>
+          <pre id="ctx-raw-instructions" style="background:#090d16; border:1px solid var(--border-color); border-radius:8px; padding:1rem; font-size:0.775rem; color:var(--text-muted); white-space:pre-wrap; font-family:monospace; max-height:220px; overflow-y:auto;"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary" onclick="closeModal('generator-context-modal')">Close Preview</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 12. INTELLIGENT SCHEDULE PREVIEW MODAL -->
   <div id="intelligent-schedule-modal" class="modal-backdrop">
     <div class="modal-box" style="max-width:750px;">
@@ -1297,6 +1386,20 @@ export function renderAdminHtml(): string {
         <button type="button" class="btn-secondary" onclick="closeModal('intelligent-schedule-modal')">Cancel</button>
         <button type="button" id="commit-intelligent-schedule-btn" class="btn-primary" onclick="executeCommitIntelligentSchedule()">Accept &amp; Commit Schedule</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 13. GLOBAL TASK QUEUE / ACTIVITY CENTER WIDGET -->
+  <div id="global-task-queue-widget" style="display:none;">
+    <div class="tq-header" onclick="toggleTaskQueueWidget()">
+      <div class="tq-header-title">
+        <span>⚡ Activity Center</span>
+        <span id="tq-header-badge" class="tq-header-badge">0 Active</span>
+      </div>
+      <button class="tq-toggle-btn" id="tq-toggle-icon">▲</button>
+    </div>
+    <div class="tq-body" id="tq-body-container">
+      <div style="text-align:center; color:var(--text-muted); font-size:0.8rem; padding:0.5rem;">No active operations</div>
     </div>
   </div>
 
