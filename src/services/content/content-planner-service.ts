@@ -538,9 +538,9 @@ export class ContentPlannerService {
           .bind(versionNumber, finalScore, existingPost ? originalRegenerationCount + 1 : originalRegenerationCount, new Date().toISOString(), postId!)
           .run();
 
-        // Update content_ideas status to used
+        // Update content_ideas status to post_generated
         await this.db
-          .prepare("UPDATE content_ideas SET status = 'used' WHERE id = ?")
+          .prepare("UPDATE content_ideas SET status = 'post_generated', updated_at = datetime('now') WHERE id = ?")
           .bind(topicId)
           .run();
 

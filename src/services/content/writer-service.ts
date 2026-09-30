@@ -9,6 +9,7 @@ import type { IAIProvider } from '../../ai/provider';
 import { parseAiJsonResponse } from '../../core/json-parser';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
 import { QuotaManager } from '../ai/quota-manager';
+import { PerformanceEngineService } from '../analytics/performance-engine';
 
 export interface FactualClaim {
   text: string;
@@ -120,11 +121,26 @@ Return ONLY a valid JSON object matching this schema:
   "callToAction": "Subtle call to action or engaging question at the end"
 }`;
 
+    const perfEngine = new PerformanceEngineService();
+    const perfProfile = await perfEngine.getActiveProfile(this.db).catch(() => null);
+
+    let performanceContext = '';
+    if (perfProfile && (perfProfile.successfulPatterns.length > 0 || perfProfile.failurePatterns.length > 0)) {
+      performanceContext =
+        '\n<<< CURRENT_PERFORMANCE_INSIGHTS >>>\n' +
+        'Derived from real social media publication engagement metrics. Use these patterns for guidance on hook, tone, and structure. Do NOT copy verbatim.\n' +
+        (perfProfile.successfulPatterns.length > 0 ? 'PATTERNS THAT CURRENTLY OUTPERFORM:\n' + perfProfile.successfulPatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
+        (perfProfile.failurePatterns.length > 0 ? 'PATTERNS THAT CURRENTLY UNDERPERFORM (AVOID):\n' + perfProfile.failurePatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
+        (perfProfile.successfulExamples.length > 0 ? 'HIGH-PERFORMING REPRESENTATIVE EXAMPLES (FOR INSPIRATION ONLY):\n' + perfProfile.successfulExamples.map((e) => `[Snippet]: ${e.snippet}`).join('\n') + '\n' : '') +
+        '<<< END_PERFORMANCE_INSIGHTS >>>\n';
+    }
+
     const researchContext =
       `Topic Title: ${topic.title}\n` +
       `Content Angle: ${topic.content_angle || topic.description}\n` +
       `Hook: ${topic.hook || topic.title}\n` +
       `Category/Pillar: ${topic.category}\n` +
+      performanceContext +
       `Sources:\n` +
       sources
         .map((s) => `[ID: ${s.id}] Title: ${s.title}\nURL: ${s.url}\nSummary: ${s.summary}`)

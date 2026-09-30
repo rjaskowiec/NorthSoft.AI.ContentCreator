@@ -1008,9 +1008,90 @@ export function getAdminScripts(): string {
     window.changeAuditPage = changeAuditPage;
     window.toggleAuditDetail = toggleAuditDetail;
 
+    async function loadPerformanceData() {
+      const summaryEl = document.getElementById('performance-engine-summary');
+      if (!summaryEl) return;
+      try {
+        const res = await guardedFetch('/api/admin/performance');
+        if (!res.ok) {
+          summaryEl.innerHTML = '<span style="color:var(--text-muted);">Performance Engine offline (HTTP ' + res.status + ')</span>';
+          return;
+        }
+        const data = await res.json();
+        const profile = data.profile || {};
+        const successPatterns = Array.isArray(profile.successful_patterns) ? profile.successful_patterns : [];
+        const failurePatterns = Array.isArray(profile.failure_patterns) ? profile.failure_patterns : [];
+
+        let html = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; margin-bottom:0.75rem;">';
+        html += '<div><strong>Evaluation State:</strong> <span class="status-badge ' + (profile.status === 'EVALUATED' ? 'status-healthy' : 'status-disabled') + '">' + escapeHtml(safeStr(profile.status || 'INSUFFICIENT_DATA')) + '</span></div>';
+        html += '<div><strong>Evaluated Posts:</strong> ' + Number(profile.total_posts_evaluated || 0) + '</div>';
+        html += '<div><strong>Median Engagement:</strong> ' + (Number(profile.median_engagement_rate || 0) * 100).toFixed(2) + '%</div>';
+        html += '<div><strong>Last Updated:</strong> ' + (profile.updated_at ? formatDateSafe(profile.updated_at) : 'Never') + '</div>';
+        html += '</div>';
+
+        if (successPatterns.length > 0 || failurePatterns.length > 0) {
+          html += '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:0.5rem; background:rgba(255,255,255,0.02); padding:0.75rem; border-radius:6px;">';
+          
+          html += '<div>';
+          html += '<div style="font-weight:600; color:var(--accent-emerald); margin-bottom:0.35rem;">✓ High-Performing Patterns</div>';
+          if (successPatterns.length > 0) {
+            html += '<ul style="margin:0; padding-left:1.2rem; font-size:0.8rem; color:var(--text-main);">';
+            for (let i = 0; i < successPatterns.length; i++) {
+              html += '<li>' + escapeHtml(safeStr(successPatterns[i])) + '</li>';
+            }
+            html += '</ul>';
+          } else {
+            html += '<div style="font-size:0.8rem; color:var(--text-muted);">Insufficient data for positive pattern extraction yet.</div>';
+          }
+          html += '</div>';
+
+          html += '<div>';
+          html += '<div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.35rem;">✕ Underperforming Patterns (Avoid)</div>';
+          if (failurePatterns.length > 0) {
+            html += '<ul style="margin:0; padding-left:1.2rem; font-size:0.8rem; color:var(--text-main);">';
+            for (let j = 0; j < failurePatterns.length; j++) {
+              html += '<li>' + escapeHtml(safeStr(failurePatterns[j])) + '</li>';
+            }
+            html += '</ul>';
+          } else {
+            html += '<div style="font-size:0.8rem; color:var(--text-muted);">No weak pattern triggers detected.</div>';
+          }
+          html += '</div>';
+
+          html += '</div>';
+        } else {
+          html += '<div style="font-size:0.85rem; color:var(--text-muted); margin-top:0.35rem;"><em>Collecting publication metrics from Facebook page. Dynamic guidelines will update automatically as post engagement data accumulates.</em></div>';
+        }
+
+        summaryEl.innerHTML = html;
+      } catch (err) {
+        summaryEl.innerHTML = '<span style="color:var(--accent-rose);">Failed to load performance profile.</span>';
+      }
+    }
+
+    async function reevaluatePerformanceEngine() {
+      const summaryEl = document.getElementById('performance-engine-summary');
+      if (summaryEl) summaryEl.innerHTML = '<em>Re-calculating Content Performance Profile...</em>';
+      try {
+        const res = await fetch('/api/admin/performance/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          await loadPerformanceData();
+        } else {
+          if (summaryEl) summaryEl.innerHTML = '<span style="color:var(--accent-rose);">Re-evaluation failed: ' + escapeHtml(safeStr(data.error)) + '</span>';
+        }
+      } catch (err) {
+        if (summaryEl) summaryEl.innerHTML = '<span style="color:var(--accent-rose);">Error connecting to Performance Engine service.</span>';
+      }
+    }
+
     // Load Research Tab Data
     async function loadResearchData(topicId) {
       try {
+        loadPerformanceData();
         const researchUrl = '/api/admin/research' + (topicId ? '?topicId=' + encodeURIComponent(topicId) : '');
         const res = await guardedFetch(researchUrl);
         if (!res.ok) {
@@ -1061,64 +1142,86 @@ export function getAdminScripts(): string {
             }
           }
 
-          diagContent.innerHTML = \`
-            <div><strong>Discovered:</strong> \${latestRun.items_discovered || latestRun.items_found || 0} raw items</div>
-            <div><strong>Normalized:</strong> \${latestRun.items_normalized || 0} unique</div>
-            <div><strong>Irrelevant:</strong> \${latestRun.rejected_irrelevant || 0}</div>
-            <div><strong>Low Quality:</strong> \${latestRun.rejected_low_quality || 0}</div>
-            <div><strong>Duplicates:</strong> \${latestRun.duplicates_found || 0}</div>
-            <div><strong>Final Candidates:</strong> \${latestRun.topics_created || 0}</div>
-            <div style="width:100%; font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Pillars: \${pillarStr}</div>
-          \`;
+          diagContent.innerHTML = '<div><strong>Discovered:</strong> ' + (latestRun.items_discovered || latestRun.items_found || 0) + ' raw items</div>' +
+            '<div><strong>Normalized:</strong> ' + (latestRun.items_normalized || 0) + ' unique</div>' +
+            '<div><strong>Irrelevant:</strong> ' + (latestRun.rejected_irrelevant || 0) + '</div>' +
+            '<div><strong>Low Quality:</strong> ' + (latestRun.rejected_low_quality || 0) + '</div>' +
+            '<div><strong>Duplicates:</strong> ' + (latestRun.duplicates_found || 0) + '</div>' +
+            '<div><strong>Final Candidates:</strong> ' + (latestRun.topics_created || 0) + '</div>' +
+            '<div style="width:100%; font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Pillars: ' + pillarStr + '</div>';
         }
 
-        // Topics Table
+        // Topics Table — Lifecycle Separated: Active Queue vs Used
         cachedTopics = Array.isArray(data.topics) ? data.topics : [];
         const topicsBody = document.getElementById('topics-table-body');
         if (topicsBody) {
           if (cachedTopics.length > 0) {
-            topicsBody.innerHTML = cachedTopics.map(t => {
-              if (!t) return '';
+            function isUsedStatus(s) { return ['published', 'used', 'rejected'].includes(safeLower(s)); }
+            const activeTopics = cachedTopics.filter(function(t) { return t && !isUsedStatus(t.status); });
+            const usedTopics = cachedTopics.filter(function(t) { return t && isUsedStatus(t.status); });
+
+            function renderRow(t) {
               const id = safeStr(t.id);
               const title = escapeHtml(safeStr(t.title, 'Untitled Topic'));
               const desc = escapeHtml(safeStr(t.description));
               const category = escapeHtml(safeStr(t.content_pillar || t.category, 'WEBSITE'));
               const status = safeStr(t.status || 'queued').toLowerCase();
               const statusUpper = safeUpper(t.status, 'QUEUED');
-              const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered') ? 'status-active' : status === 'used' ? 'status-healthy' : 'status-disabled';
+              const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered' || status === 'ready') 
+                ? 'status-active' 
+                : (status === 'post_generated' || status === 'scheduled')
+                ? 'status-active'
+                : (status === 'used' || status === 'published')
+                ? 'status-healthy' 
+                : 'status-disabled';
+
               const isChecked = selectedTopicIds.has(id) ? 'checked' : '';
               const hasPost = Number(t.post_count || 0) > 0;
               const sourceTitle = safeStr(t.source_title);
               const sourceUrl = safeStr(t.source_url);
-              const sourceLink = sourceUrl && /^https?:\\/\\//i.test(sourceUrl)
+              const sourceLink = sourceUrl && (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://'))
                 ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle || 'Source article') + '</a>'
                 : escapeHtml(sourceTitle);
 
-              return \`
-              <tr data-id="\${id}" id="topic-row-\${id}">
-                <td style="text-align:center;">
-                  <input type="checkbox" class="topic-select-checkbox" data-id="\${id}" \${isChecked} onchange="updateTopicSelectionState()" />
-                </td>
-                <td>
-                  <strong>\${title}</strong>
-                </td>
-                <td>
-                  \${desc ? \`<div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">\${desc}</div>\` : ''}
-                  \${sourceTitle ? \`<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>\${sourceLink}</div>\` : ''}
-                </td>
-                <td><span class="code-tag">\${category}</span></td>
-                <td>\${renderWorkflowStages(t)}\${hasPost && t.latest_post_id ? \`<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="openPostFromTopic('\${escapeHtml(safeStr(t.latest_post_id))}')">Open post</button>\` : ''}</td>
-                <td><span class="status-badge \${statusClass}">\${statusUpper}</span></td>
-                <td>
-                  <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
-                    <button class="btn-primary" title="\${hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic'}" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${id}')">\${hasPost ? 'Regenerate post' : 'Generate post'}</button>
-                    <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditTopicModal('\${id}')">Edit</button>
-                    <button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic('\${id}')">Delete</button>
-                  </div>
-                </td>
-              </tr>
-            \`;
-            }).join('');
+              return '<tr data-id="' + id + '" id="topic-row-' + id + '">' +
+                '<td style="text-align:center;">' +
+                  '<input type="checkbox" class="topic-select-checkbox" data-id="' + id + '" ' + isChecked + ' onchange="updateTopicSelectionState()" />' +
+                '</td>' +
+                '<td>' +
+                  '<strong>' + title + '</strong>' +
+                '</td>' +
+                '<td>' +
+                  (desc ? '<div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">' + desc + '</div>' : '') +
+                  (sourceTitle ? '<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + sourceLink + '</div>' : '') +
+                '</td>' +
+                '<td><span class="code-tag">' + category + '</span></td>' +
+                '<td>' + renderWorkflowStages(t) + (hasPost && t.latest_post_id ? '<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="openPostFromTopic(&quot;' + escapeHtml(safeStr(t.latest_post_id)) + '&quot;)">Open post</button>' : '') + '</td>' +
+                '<td><span class="status-badge ' + statusClass + '">' + statusUpper + '</span></td>' +
+                '<td>' +
+                  '<div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">' +
+                    '<button class="btn-primary" title="' + (hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic') + '" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic(&quot;' + id + '&quot;)">' + (hasPost ? 'Regenerate post' : 'Generate post') + '</button>' +
+                    '<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditTopicModal(&quot;' + id + '&quot;)">Edit</button>' +
+                    '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic(&quot;' + id + '&quot;)">Delete</button>' +
+                  '</div>' +
+                '</td>' +
+              '</tr>';
+            };
+
+            let bodyHtml = '';
+            if (activeTopics.length > 0) {
+              if (usedTopics.length > 0) {
+                bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.1); font-weight:600; color:var(--accent-blue); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">★ Work Queue (Active Topics)</td></tr>';
+              }
+              bodyHtml += activeTopics.map(renderRow).join('');
+            }
+            if (usedTopics.length > 0) {
+              if (activeTopics.length > 0) {
+                bodyHtml += '<tr><td colspan="7" style="background:rgba(255,255,255,0.03); font-weight:600; color:var(--text-muted); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">✓ Completed / Used Topics</td></tr>';
+              }
+              bodyHtml += usedTopics.map(renderRow).join('');
+            }
+
+            topicsBody.innerHTML = bodyHtml;
           } else {
             topicsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Topic</button></td></tr>';
           }
@@ -3884,6 +3987,8 @@ export function getAdminScripts(): string {
     window.loadPipelineData = loadPipelineData;
     window.loadManualPublisherData = loadManualPublisherData;
     window.loadResearchData = loadResearchData;
+    window.loadPerformanceData = loadPerformanceData;
+    window.reevaluatePerformanceEngine = reevaluatePerformanceEngine;
     window.openTopicFromPost = openTopicFromPost;
     window.openPostFromTopic = openPostFromTopic;
     window.loadContentData = loadContentData;

@@ -371,6 +371,12 @@ export class PublicationService {
         .bind(postId)
         .run();
 
+      // Update linked topic status to published
+      await this.db
+        .prepare(`UPDATE content_ideas SET status = 'published', updated_at = datetime('now') WHERE id = (SELECT idea_id FROM posts WHERE id = ?)`)
+        .bind(postId)
+        .run();
+
       // Update schedule status if linked
       if (options?.scheduleId) {
         await this.db

@@ -420,6 +420,20 @@ export function renderAdminHtml(): string {
 
             <div id="research-run-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
+            <!-- Content Performance Engine Card -->
+            <div class="panel" style="border-left: 4px solid var(--accent-emerald); margin-bottom:1.5rem;">
+              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                <div class="panel-title" style="display:flex; align-items:center; gap:0.5rem;">
+                  <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:var(--accent-emerald); stroke-width:2;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  Content Performance Engine (Dynamic Feedback)
+                </div>
+                <button class="btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.6rem;" onclick="reevaluatePerformanceEngine()">Re-calculate Profile</button>
+              </div>
+              <div id="performance-engine-summary" style="font-size:0.875rem; color:var(--text-main); line-height:1.5;">
+                Loading performance insights from Facebook analytics...
+              </div>
+            </div>
+
             <!-- Topic Bulk Action Toolbar -->
             <div id="topic-bulk-toolbar" class="bulk-toolbar" style="display:none;">
               <div class="bulk-toolbar-info">
