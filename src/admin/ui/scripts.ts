@@ -403,6 +403,8 @@ export function getAdminScripts(): string {
           await loadSchedulesData();
         } else if (tabName === 'publications') {
           await loadPublicationsData();
+        } else if (tabName === 'intelligence') {
+          await loadIntelligenceData();
         } else if (tabName === 'audit') {
           await loadAuditData();
         } else if (tabName === 'security') {
@@ -415,7 +417,7 @@ export function getAdminScripts(): string {
 
     window.addEventListener('hashchange', () => {
       const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-      const validTabs = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'security', 'audit'];
+      const validTabs = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'intelligence', 'security', 'audit'];
       if (hash && (validTabs.includes(hash) || hash === 'manual-publisher')) {
         switchTab(hash);
       }
@@ -1069,6 +1071,152 @@ export function getAdminScripts(): string {
       }
     }
 
+    async function loadIntelligenceData() {
+      try {
+        await loadPerformanceData();
+        const res = await guardedFetch('/api/admin/performance');
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const profile = data.activeProfile || {};
+        const metrics = profile.metricsSummary || {};
+
+        const evalCnt = document.getElementById('intel-eval-count');
+        if (evalCnt) evalCnt.textContent = Number(metrics.totalEvaluated || 0);
+
+        const medRate = document.getElementById('intel-median-rate');
+        if (medRate) medRate.textContent = ((Number(metrics.medianEngagementRate || 0)) * 100).toFixed(2) + '%';
+
+        const strongCnt = document.getElementById('intel-strong-count');
+        if (strongCnt) strongCnt.textContent = Array.isArray(data.strongPosts) ? data.strongPosts.length : Number(metrics.outperformingCount || 0);
+
+        const weakCnt = document.getElementById('intel-weak-count');
+        if (weakCnt) weakCnt.textContent = Array.isArray(data.weakPosts) ? data.weakPosts.length : Number(metrics.underperformingCount || 0);
+
+        // Render Guidelines List
+        const guideEl = document.getElementById('intel-guidelines-list');
+        if (guideEl) {
+          const guidelines = Array.isArray(data.guidelines) ? data.guidelines : [];
+          if (guidelines.length > 0) {
+            guideEl.innerHTML = guidelines.map((g) => {
+              const tier = safeUpper(g.tier || g.type, 'LEARNED');
+              const tierClass = tier === 'SYSTEM' ? 'status-disabled' : tier === 'MANUAL' ? 'status-active' : 'status-healthy';
+              const text = escapeHtml(safeStr(g.guideline_text || g.text));
+              const gId = safeStr(g.id);
+              return '<div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-card); padding:0.6rem 0.8rem; border-radius:6px; border:1px solid var(--border-color);">' +
+                '<div><span class="status-badge ' + tierClass + '" style="margin-right:0.5rem;">' + tier + '</span><span>' + text + '</span></div>' +
+                (tier === 'MANUAL' ? '<button class="btn-logout" style="font-size:0.7rem; padding:0.15rem 0.4rem;" onclick="deleteManualGuideline(&quot;' + gId + '&quot;)">Delete</button>' : '') +
+              '</div>';
+            }).join('');
+          } else {
+            guideEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem;">No active guidelines. Dynamic insights will populate as Facebook post data accumulates.</div>';
+          }
+        }
+
+        // Render Strong Examples Table
+        const strongTable = document.getElementById('intel-strong-table');
+        if (strongTable) {
+          const strongPosts = Array.isArray(data.strongPosts) ? data.strongPosts : [];
+          if (strongPosts.length > 0) {
+            strongTable.innerHTML = strongPosts.map((p) => {
+              return '<tr>' +
+                '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
+                '<td><span class="status-badge status-healthy">' + Number(p.success_score || p.score || 1).toFixed(2) + 'x median</span></td>' +
+                '<td>' + Number(p.percentile || 90).toFixed(0) + 'th percentile</td>' +
+                '<td>' + Number(p.exposure_views || 0) + ' views</td>' +
+                '<td>' + Number(p.weighted_engagement || 0).toFixed(1) + ' eng. pts</td>' +
+                '<td><span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(safeStr(p.reason_for_inclusion || 'Top performer')) + '</span></td>' +
+              '</tr>';
+            }).join('');
+          } else {
+            strongTable.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active strong examples.</td></tr>';
+          }
+        }
+
+        // Render Weak Examples Table
+        const weakTable = document.getElementById('intel-weak-table');
+        if (weakTable) {
+          const weakPosts = Array.isArray(data.weakPosts) ? data.weakPosts : [];
+          if (weakPosts.length > 0) {
+            weakTable.innerHTML = weakPosts.map((p) => {
+              return '<tr>' +
+                '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
+                '<td><span class="status-badge status-alert">' + Number(p.success_score || p.score || 0.5).toFixed(2) + 'x median</span></td>' +
+                '<td>' + Number(p.percentile || 10).toFixed(0) + 'th percentile</td>' +
+                '<td>' + Number(p.exposure_views || 0) + ' views</td>' +
+                '<td>' + Number(p.weighted_engagement || 0).toFixed(1) + ' eng. pts</td>' +
+                '<td><span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(safeStr(p.reason_for_inclusion || 'Underperforming')) + '</span></td>' +
+              '</tr>';
+            }).join('');
+          } else {
+            weakTable.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active weak examples.</td></tr>';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load Content Intelligence data:', err);
+      }
+    }
+
+    async function previewGeneratorContext() {
+      try {
+        const res = await guardedFetch('/api/admin/performance/preview-context');
+        if (!res.ok) return;
+        const data = await res.json();
+        const codeEl = document.getElementById('preview-context-code');
+        if (codeEl) {
+          codeEl.textContent = JSON.stringify(data.previewPayload || {}, null, 2);
+        }
+        openModal('preview-context-modal');
+      } catch (err) {
+        alert('Failed to load generator context preview.');
+      }
+    }
+
+    function openAddGuidelineModal() {
+      const input = document.getElementById('guideline-text-input');
+      if (input) input.value = '';
+      openModal('add-guideline-modal');
+    }
+
+    async function saveManualGuideline() {
+      const catEl = document.getElementById('guideline-category-select');
+      const textEl = document.getElementById('guideline-text-input');
+      const category = catEl ? safeStr(catEl.value) : 'DO_MORE';
+      const guidelineText = textEl ? safeStr(textEl.value).trim() : '';
+      if (!guidelineText) return;
+
+      try {
+        const res = await fetch('/api/admin/performance/guidelines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ category, guidelineText })
+        });
+        if (res.ok) {
+          closeModal('add-guideline-modal');
+          await loadIntelligenceData();
+        } else {
+          alert('Failed to save manual guideline.');
+        }
+      } catch (err) {
+        alert('Error saving guideline.');
+      }
+    }
+
+    async function deleteManualGuideline(id) {
+      if (!confirm('Are you sure you want to remove this manual guideline?')) return;
+      try {
+        const res = await fetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken }
+        });
+        if (res.ok) {
+          await loadIntelligenceData();
+        }
+      } catch (err) {
+        alert('Failed to delete guideline.');
+      }
+    }
+
     async function reevaluatePerformanceEngine() {
       const summaryEl = document.getElementById('performance-engine-summary');
       if (summaryEl) summaryEl.innerHTML = '<em>Re-calculating Content Performance Profile...</em>';
@@ -1079,7 +1227,7 @@ export function getAdminScripts(): string {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          await loadPerformanceData();
+          await loadIntelligenceData();
         } else {
           if (summaryEl) summaryEl.innerHTML = '<span style="color:var(--accent-rose);">Re-evaluation failed: ' + escapeHtml(safeStr(data.error)) + '</span>';
         }

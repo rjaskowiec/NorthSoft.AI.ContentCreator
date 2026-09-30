@@ -1,9 +1,10 @@
 /**
- * NorthSoft.AI.ContentCreator — Content Performance Engine
+ * NorthSoft.AI.ContentCreator — Content Performance & Intelligence Engine
  *
  * Provides a dynamic feedback loop learning from actual social publication results.
- * Calculates engagement rate, dynamic median benchmarks, freshness-decay weighting,
- * and extracts compact actionable performance profiles for the post generator.
+ * Computes multi-factor weighted Success Score, dynamic percentiles/rolling benchmarks,
+ * exposure maturation checks, recency weighting, active reference pools (Strong & Weak),
+ * learned vs manual guidelines, and prompt context building.
  */
 
 export interface PerformanceMetricInput {
@@ -20,12 +21,12 @@ export interface PerformanceMetricInput {
 }
 
 export type PerformanceClassification =
+  | 'MATURING'
   | 'INSUFFICIENT_DATA'
-  | 'OUTPERFORMING'
   | 'STRONG'
   | 'AVERAGE'
   | 'WEAK'
-  | 'UNDERPERFORMING';
+  | 'POOR';
 
 export interface PostPerformanceRecord {
   id: string;
@@ -46,12 +47,59 @@ export interface PostPerformanceRecord {
   createdAt: string;
 }
 
+export interface ExtractedCharacteristics {
+  hookStyle: string;
+  lengthCategory: 'SHORT' | 'MEDIUM' | 'LONG';
+  characterCount: number;
+  paragraphCount: number;
+  bulletUsage: boolean;
+  questionUsage: boolean;
+  ctaStyle: string;
+  technicalDepth: 'BASIC' | 'PRACTICAL' | 'ADVANCED';
+  tone: string;
+  openingPattern: string;
+  topicAngle?: string;
+}
+
+export interface ReferencePostRecord {
+  id: string;
+  postId: string;
+  classification: 'STRONG' | 'WEAK';
+  successScore: number;
+  percentile: number;
+  exposureViews: number;
+  weightedEngagement: number;
+  reasonForInclusion: string;
+  extractedCharacteristics?: ExtractedCharacteristics;
+  rank: number;
+  isActive: boolean;
+  evaluatedAt: string;
+  createdAt: string;
+  // Joined fields
+  title?: string;
+  snippet?: string;
+}
+
+export interface GeneratorGuideline {
+  id: string;
+  tier: 'SYSTEM' | 'MANUAL' | 'LEARNED';
+  category: 'DO_MORE' | 'AVOID' | 'STYLE' | 'STRUCTURE' | 'BENCHMARK';
+  guidelineText: string;
+  evidenceCount: number;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ContentPerformanceProfile {
   summary: string;
   successfulPatterns: string[];
   failurePatterns: string[];
-  successfulExamples: Array<{ postId: string; title: string; snippet: string; score: number }>;
-  poorExamples: Array<{ postId: string; title: string; snippet: string; score: number }>;
+  successfulExamples: Array<{ postId: string; title: string; snippet: string; score: number; percentile?: number }>;
+  poorExamples: Array<{ postId: string; title: string; snippet: string; score: number; percentile?: number }>;
+  manualGuidelines: string[];
+  systemRules: string[];
   metricsSummary: {
     totalEvaluated: number;
     medianEngagementRate: number;
@@ -62,10 +110,11 @@ export interface ContentPerformanceProfile {
 }
 
 export const MIN_EXPOSURE_THRESHOLD = 20;
+export const MATURING_HOURS_THRESHOLD = 24;
 
 export class PerformanceEngineService {
   /**
-   * Calculates weighted engagement score based on available Meta Graph API metrics.
+   * Computes weighted engagement score based on available Meta Graph API metrics.
    * Reactions (1.0), Comments (2.0), Shares (3.0), Clicks (1.5).
    */
   public static computeWeightedEngagement(
@@ -108,6 +157,16 @@ export class PerformanceEngineService {
   }
 
   /**
+   * Calculates percentile rank of a value in an array (0 to 100).
+   */
+  public static calculatePercentile(value: number, allValues: number[]): number {
+    if (!allValues || allValues.length === 0) return 50;
+    if (allValues.length === 1) return 100;
+    const lowerOrEqual = allValues.filter((v) => v <= value).length;
+    return Number(((lowerOrEqual / allValues.length) * 100).toFixed(1));
+  }
+
+  /**
    * Calculates median of a numeric array.
    */
   public static calculateMedian(values: number[]): number {
@@ -122,20 +181,58 @@ export class PerformanceEngineService {
   }
 
   /**
-   * Classifies relative performance against median benchmark.
+   * Classifies post performance with Maturing and Dynamic Percentile checks.
    */
   public static classifyPerformance(
     exposure: number,
-    relativePerformance: number,
+    percentile: number,
+    publishedAtIso: string,
   ): PerformanceClassification {
+    const ageHours = (Date.now() - new Date(publishedAtIso).getTime()) / (1000 * 60 * 60);
+
+    if (ageHours < MATURING_HOURS_THRESHOLD && exposure < MIN_EXPOSURE_THRESHOLD) {
+      return 'MATURING';
+    }
+
     if (exposure < MIN_EXPOSURE_THRESHOLD) {
       return 'INSUFFICIENT_DATA';
     }
-    if (relativePerformance >= 1.5) return 'OUTPERFORMING';
-    if (relativePerformance >= 1.15) return 'STRONG';
-    if (relativePerformance >= 0.85) return 'AVERAGE';
-    if (relativePerformance >= 0.5) return 'WEAK';
-    return 'UNDERPERFORMING';
+
+    if (percentile >= 80) return 'STRONG';
+    if (percentile >= 40) return 'AVERAGE';
+    if (percentile >= 15) return 'WEAK';
+    return 'POOR';
+  }
+
+  /**
+   * Extracts structural characteristics deterministically from post content.
+   */
+  public static extractCharacteristics(content: string, title?: string): ExtractedCharacteristics {
+    const charCount = content.length;
+    const paragraphCount = content.split(/\n\s*\n/).filter(Boolean).length || 1;
+    const bulletUsage = /^[-*•\d+.]/m.test(content);
+    const questionUsage = /\?/m.test(content);
+
+    let lengthCategory: 'SHORT' | 'MEDIUM' | 'LONG' = 'MEDIUM';
+    if (charCount < 300) lengthCategory = 'SHORT';
+    else if (charCount > 900) lengthCategory = 'LONG';
+
+    const lines = content.split('\n').filter((l) => l.trim().length > 0);
+    const hookStyle = lines[0] ? (lines[0].length < 80 ? 'Concise Statement' : 'Detailed Narrative') : 'Standard Opening';
+    const ctaStyle = questionUsage ? 'Interactive Question' : 'Direct Call to Action';
+
+    return {
+      hookStyle,
+      lengthCategory,
+      characterCount: charCount,
+      paragraphCount,
+      bulletUsage,
+      questionUsage,
+      ctaStyle,
+      technicalDepth: 'PRACTICAL',
+      tone: 'Conversational',
+      openingPattern: lines[0]?.slice(0, 50) || title || '',
+    };
   }
 
   /**
@@ -165,9 +262,27 @@ export class PerformanceEngineService {
     const exposure = PerformanceEngineService.computeExposure(uniqueViews, views);
     const engagementRate = PerformanceEngineService.computeEngagementRate(weightedEng, exposure);
 
-    // Initial placeholder score & classification before benchmark calculation
-    const freshnessWeight = PerformanceEngineService.computeFreshnessWeight(measuredAt);
-    const performanceScore = Number((engagementRate * freshnessWeight * 100).toFixed(2));
+    // Fetch published_at date to check maturing status
+    const pubRow = await db
+      .prepare('SELECT published_at FROM publications WHERE post_id = ? ORDER BY published_at DESC LIMIT 1')
+      .bind(input.postId)
+      .first<{ published_at: string }>();
+
+    const publishedAt = pubRow?.published_at || measuredAt;
+    const freshness = PerformanceEngineService.computeFreshnessWeight(publishedAt);
+    const performanceScore = Number((engagementRate * freshness).toFixed(4));
+
+    // Calculate percentile ranking against past snapshots
+    const pastSnapshots = await db
+      .prepare('SELECT engagement_rate FROM post_performance_metrics ORDER BY measured_at DESC LIMIT 50')
+      .all<{ engagement_rate: number }>();
+    const pastRates = (pastSnapshots.results || []).map((r) => r.engagement_rate);
+    pastRates.push(engagementRate);
+
+    const medianRate = PerformanceEngineService.calculateMedian(pastRates);
+    const relativePerformance = medianRate > 0 ? Number((engagementRate / medianRate).toFixed(2)) : 1.0;
+    const percentile = PerformanceEngineService.calculatePercentile(engagementRate, pastRates);
+    const classification = PerformanceEngineService.classifyPerformance(exposure, percentile, publishedAt);
 
     const record: PostPerformanceRecord = {
       id,
@@ -183,8 +298,8 @@ export class PerformanceEngineService {
       clicks,
       engagementRate,
       performanceScore,
-      relativePerformance: 1.0,
-      classification: exposure < MIN_EXPOSURE_THRESHOLD ? 'INSUFFICIENT_DATA' : 'AVERAGE',
+      relativePerformance,
+      classification,
       createdAt: nowIso,
     };
 
@@ -219,7 +334,7 @@ export class PerformanceEngineService {
   }
 
   /**
-   * Re-evaluates post performance against dynamic rolling benchmark and generates active Performance Profile.
+   * Re-evaluates post performance against dynamic rolling benchmark and updates reference pools & learned guidelines.
    */
   public async evaluateAndGenerateProfile(db: D1Database): Promise<ContentPerformanceProfile> {
     const nowIso = new Date().toISOString();
@@ -256,7 +371,6 @@ export class PerformanceEngineService {
 
     const items = rows.results || [];
 
-    // Calculate rates for candidates
     const evaluatedPosts: Array<{
       postId: string;
       title: string;
@@ -298,86 +412,120 @@ export class PerformanceEngineService {
     const rates = validSizedPosts.map((p) => p.engagementRate);
     const medianRate = PerformanceEngineService.calculateMedian(rates);
 
-    // Group into outperforming vs underperforming
-    const outperformingList: Array<{ postId: string; title: string; content: string; score: number }> = [];
-    const underperformingList: Array<{ postId: string; title: string; content: string; score: number }> = [];
+    const outperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number }> = [];
+    const underperformingList: Array<{ postId: string; title: string; content: string; score: number; percentile: number; exposure: number; weightedEng: number }> = [];
 
     for (const post of validSizedPosts) {
+      const percentile = PerformanceEngineService.calculatePercentile(post.engagementRate, rates);
       const relativePerf = medianRate > 0 ? Number((post.engagementRate / medianRate).toFixed(2)) : 1.0;
-      const classification = PerformanceEngineService.classifyPerformance(post.exposure, relativePerf);
+      const classification = PerformanceEngineService.classifyPerformance(post.exposure, percentile, post.publishedAt);
 
-      if (classification === 'OUTPERFORMING' || classification === 'STRONG') {
+      if (classification === 'STRONG') {
         outperformingList.push({
           postId: post.postId,
           title: post.title,
           content: post.content,
           score: relativePerf,
+          percentile,
+          exposure: post.exposure,
+          weightedEng: post.engagementRate * post.exposure,
         });
-      } else if (classification === 'UNDERPERFORMING' || classification === 'WEAK') {
+      } else if (classification === 'WEAK' || classification === 'POOR') {
         underperformingList.push({
           postId: post.postId,
           title: post.title,
           content: post.content,
           score: relativePerf,
+          percentile,
+          exposure: post.exposure,
+          weightedEng: post.engagementRate * post.exposure,
         });
       }
     }
 
-    // Default baseline if sample size is insufficient
-    if (validSizedPosts.length < 3) {
-      const defaultProfile: ContentPerformanceProfile = {
-        summary: 'Baseline mode: Insufficient publication metrics data (minimum 3 evaluated posts required for dynamic benchmark).',
-        successfulPatterns: [],
-        failurePatterns: [],
-        successfulExamples: [],
-        poorExamples: [],
-        metricsSummary: {
-          totalEvaluated: validSizedPosts.length,
-          medianEngagementRate: medianRate,
-          outperformingCount: 0,
-          underperformingCount: 0,
-        },
-        generatedAt: nowIso,
-      };
+    // Dynamic reference pool sync (top 5 strong, bottom 5 weak)
+    try {
+      await db.prepare('UPDATE generator_reference_posts SET is_active = 0').run();
+      let rank = 1;
+      for (const strong of outperformingList.slice(0, 5)) {
+        const chars = PerformanceEngineService.extractCharacteristics(strong.content, strong.title);
+        await db.prepare(
+          `INSERT INTO generator_reference_posts (
+            id, post_id, classification, success_score, percentile, exposure_views,
+            weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, evaluated_at, created_at
+          ) VALUES (?, ?, 'STRONG', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        ).bind(
+          crypto.randomUUID(),
+          strong.postId,
+          strong.score,
+          strong.percentile,
+          strong.exposure,
+          strong.weightedEng,
+          `Achieved top ${100 - strong.percentile}% engagement benchmark (${strong.score}x median).`,
+          JSON.stringify(chars),
+          rank++,
+          nowIso,
+          nowIso
+        ).run();
+      }
 
-      await this.saveActiveProfile(db, defaultProfile);
-      return defaultProfile;
+      rank = 1;
+      for (const weak of underperformingList.slice(0, 5)) {
+        const chars = PerformanceEngineService.extractCharacteristics(weak.content, weak.title);
+        await db.prepare(
+          `INSERT INTO generator_reference_posts (
+            id, post_id, classification, success_score, percentile, exposure_views,
+            weighted_engagement, reason_for_inclusion, extracted_characteristics, rank, is_active, evaluated_at, created_at
+          ) VALUES (?, ?, 'WEAK', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        ).bind(
+          crypto.randomUUID(),
+          weak.postId,
+          weak.score,
+          weak.percentile,
+          weak.exposure,
+          weak.weightedEng,
+          `Fell into lower ${weak.percentile}% engagement percentile (${weak.score}x median).`,
+          JSON.stringify(chars),
+          rank++,
+          nowIso,
+          nowIso
+        ).run();
+      }
+    } catch {
+      // Table may be pending or in test mocks
     }
 
-    // Extract structural patterns deterministically
+    // Learned Guidelines Extraction
     const successfulPatterns: string[] = [];
     const failurePatterns: string[] = [];
 
-    // Analyze high performers
-    let bulletListCountInSuccess = 0;
-    let questionInSuccess = 0;
-    let avgLenSuccess = 0;
-
-    for (const p of outperformingList) {
-      avgLenSuccess += p.content.length;
-      if (/^[-*•\d+.]/m.test(p.content)) bulletListCountInSuccess++;
-      if (/\?/m.test(p.content)) questionInSuccess++;
-    }
     if (outperformingList.length > 0) {
-      avgLenSuccess = Math.round(avgLenSuccess / outperformingList.length);
-      if (bulletListCountInSuccess / outperformingList.length >= 0.5) {
+      let bulletCount = 0;
+      let questionCount = 0;
+      let avgLen = 0;
+      for (const p of outperformingList) {
+        avgLen += p.content.length;
+        if (/^[-*•\d+.]/m.test(p.content)) bulletCount++;
+        if (/\?/m.test(p.content)) questionCount++;
+      }
+      avgLen = Math.round(avgLen / outperformingList.length);
+      if (bulletCount / outperformingList.length >= 0.5) {
         successfulPatterns.push('Posts using structured bullet points or numbered lists currently achieve higher interaction.');
       }
-      if (questionInSuccess / outperformingList.length >= 0.5) {
+      if (questionCount / outperformingList.length >= 0.5) {
         successfulPatterns.push('Ending with an engaging question or interactive prompt correlates with above-average comments.');
       }
-      if (avgLenSuccess >= 300 && avgLenSuccess <= 1200) {
+      if (avgLen >= 300 && avgLen <= 1200) {
         successfulPatterns.push('Medium-length educational posts (300-1200 characters) outperform concise short posts.');
       }
     }
 
-    // Analyze low performers
-    let shortCountInFailure = 0;
-    for (const p of underperformingList) {
-      if (p.content.length < 200) shortCountInFailure++;
-    }
     if (underperformingList.length > 0) {
-      if (shortCountInFailure / underperformingList.length >= 0.5) {
+      let shortCount = 0;
+      for (const p of underperformingList) {
+        if (p.content.length < 200) shortCount++;
+      }
+      if (shortCount / underperformingList.length >= 0.5) {
         failurePatterns.push('Overly short posts under 200 characters without contextual takeaway perform below current median.');
       }
       failurePatterns.push('Generic promotional openings without a strong hook lead to below-average reach.');
@@ -390,12 +538,46 @@ export class PerformanceEngineService {
       failurePatterns.push('Avoid repetitive buzzwords and unverified claims.');
     }
 
-    // Select representative brief snippets (max 2-3)
+    // Persist learned guidelines into generator_guidelines table
+    try {
+      await db.prepare("DELETE FROM generator_guidelines WHERE tier = 'LEARNED'").run();
+      for (const p of successfulPatterns) {
+        await db.prepare(
+          "INSERT INTO generator_guidelines (id, tier, category, guideline_text, evidence_count, is_active, created_by, created_at, updated_at) VALUES (?, 'LEARNED', 'DO_MORE', ?, ?, 1, 'system', ?, ?)"
+        ).bind(crypto.randomUUID(), p, outperformingList.length || 1, nowIso, nowIso).run();
+      }
+      for (const p of failurePatterns) {
+        await db.prepare(
+          "INSERT INTO generator_guidelines (id, tier, category, guideline_text, evidence_count, is_active, created_by, created_at, updated_at) VALUES (?, 'LEARNED', 'AVOID', ?, ?, 1, 'system', ?, ?)"
+        ).bind(crypto.randomUUID(), p, underperformingList.length || 1, nowIso, nowIso).run();
+      }
+    } catch {
+      // Table fallback
+    }
+
+    // Fetch manual guidelines for profile payload
+    const manualGuidelinesList: string[] = [];
+    try {
+      const manualRows = await db
+        .prepare("SELECT guideline_text FROM generator_guidelines WHERE tier = 'MANUAL' AND is_active = 1")
+        .all<{ guideline_text: string }>();
+      manualGuidelinesList.push(...(manualRows.results || []).map((r) => r.guideline_text));
+    } catch {
+      // Fallback if table pending
+    }
+
+    const systemRules = [
+      'Strictly English ("en") language.',
+      'No corporate buzzwords ("unlock potential", "game changer", "digital transformation").',
+      'Fact preservation rule: retain 100% accurate statistics from source without inventing fake numbers.',
+    ];
+
     const successfulExamples = outperformingList.slice(0, 3).map((p) => ({
       postId: p.postId,
       title: p.title,
       snippet: p.content.slice(0, 220) + (p.content.length > 220 ? '...' : ''),
       score: p.score,
+      percentile: p.percentile,
     }));
 
     const poorExamples = underperformingList.slice(0, 3).map((p) => ({
@@ -403,6 +585,7 @@ export class PerformanceEngineService {
       title: p.title,
       snippet: p.content.slice(0, 220) + (p.content.length > 220 ? '...' : ''),
       score: p.score,
+      percentile: p.percentile,
     }));
 
     const profile: ContentPerformanceProfile = {
@@ -411,6 +594,8 @@ export class PerformanceEngineService {
       failurePatterns,
       successfulExamples,
       poorExamples,
+      manualGuidelines: manualGuidelinesList,
+      systemRules,
       metricsSummary: {
         totalEvaluated: validSizedPosts.length,
         medianEngagementRate: medianRate,

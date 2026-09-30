@@ -149,6 +149,10 @@ export function renderAdminHtml(): string {
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
               Publications
             </a></li>
+            <li class="nav-item" id="nav-intelligence"><a href="#intelligence" onclick="switchTab('intelligence', event)">
+              <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+              Content Intelligence
+            </a></li>
           </ul>
 
           <div class="nav-section-title">SYSTEM</div>
@@ -652,6 +656,103 @@ export function renderAdminHtml(): string {
                 <button class="btn-secondary" onclick="loadMoreFacebookPublications()">Load more posts</button>
               </div>
             </div>
+          <!-- TAB: CONTENT INTELLIGENCE -->
+          <div id="tab-intelligence" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <h1 class="page-title">Content Intelligence</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Performance benchmarks, active post pools, and dynamic generator guidance.</p>
+              </div>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn-secondary" onclick="previewGeneratorContext()">Preview Context</button>
+                <button class="btn-primary" onclick="reevaluatePerformanceEngine()">Refresh Insights</button>
+              </div>
+            </div>
+
+            <!-- Intelligence Overview KPI Cards -->
+            <div class="section-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom:1.5rem;">
+              <div class="card">
+                <div class="card-label">Evaluated Posts</div>
+                <div class="card-val" id="intel-eval-count">0</div>
+                <div class="card-sub">Published post history</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Median Benchmark</div>
+                <div class="card-val" id="intel-median-rate" style="color:var(--accent-blue);">0.00%</div>
+                <div class="card-sub">Engagement rate threshold</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Strong Examples</div>
+                <div class="card-val" id="intel-strong-count" style="color:var(--accent-emerald);">0</div>
+                <div class="card-sub">Top performer pool</div>
+              </div>
+              <div class="card">
+                <div class="card-label">Weak Examples</div>
+                <div class="card-val" id="intel-weak-count" style="color:var(--accent-rose);">0</div>
+                <div class="card-sub">Below benchmark pool</div>
+              </div>
+            </div>
+
+            <!-- Learned & Manual Guidelines Panel -->
+            <div class="panel" style="margin-bottom:1.5rem;">
+              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <div class="panel-title">Current Guidelines</div>
+                <button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.55rem;" onclick="openAddGuidelineModal()">+ Add Manual Rule</button>
+              </div>
+              <div style="padding:1rem;">
+                <div id="intel-guidelines-list" style="display:flex; flex-direction:column; gap:0.5rem;">
+                  <div style="color:var(--text-muted); font-size:0.85rem;">Loading generator guidelines...</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Active Strong Posts Pool -->
+            <div class="panel" style="margin-bottom:1.5rem;">
+              <div class="panel-header">
+                <div class="panel-title" style="color:var(--accent-emerald);">★ Strong Examples (Active Pool)</div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Score</th>
+                      <th>Percentile</th>
+                      <th>Reach / Views</th>
+                      <th>Engagement</th>
+                      <th>Qualification Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="intel-strong-table">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active strong examples.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Active Weak Posts Pool -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title" style="color:var(--accent-rose);">⚠ Weak Examples (Avoid Patterns)</div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Score</th>
+                      <th>Percentile</th>
+                      <th>Reach / Views</th>
+                      <th>Engagement</th>
+                      <th>Qualification Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="intel-weak-table">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No active weak examples.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <!-- TAB 7: ACCOUNT & SECURITY -->
@@ -1111,23 +1212,50 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- 9. INSTANT PUBLISH CONFIRMATION MODAL -->
-  <div id="publish-modal" class="modal-backdrop">
-    <div class="modal-box" style="max-width:440px;">
+  <!-- 10. PREVIEW GENERATOR CONTEXT MODAL -->
+  <div id="preview-context-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:700px;">
       <div class="modal-header">
-        <div class="modal-title">Publish to Facebook</div>
-        <button class="modal-close-btn" onclick="closeModal('publish-modal')">&times;</button>
+        <div class="modal-title">Generator Context Preview</div>
+        <button class="modal-close-btn" onclick="closeModal('preview-context-modal')">&times;</button>
       </div>
-      <div class="modal-body">
-        <p style="font-size:0.9rem; color:var(--text-muted); line-height:1.5;">
-          This action will publish the selected post directly to your connected Facebook Page.
+      <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
+          Below is the exact structured prompt context injected into <code>WriterService</code> when generating new posts.
         </p>
-        <input type="hidden" id="publish-modal-post-id" value="" />
-        <input type="hidden" id="publish-modal-content-text" value="" />
+        <pre id="preview-context-code" style="background:#0f172a; color:#e2e8f0; padding:1rem; border-radius:6px; font-size:0.8rem; white-space:pre-wrap; word-break:break-word;"></pre>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn-logout" onclick="closeModal('publish-modal')">Cancel</button>
-        <button type="button" id="confirm-publish-btn" class="btn-primary" style="background: linear-gradient(135deg, #1877f2, #0056b3);" onclick="executeInstantPublication()">Publish</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('preview-context-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. ADD MANUAL GUIDELINE MODAL -->
+  <div id="add-guideline-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:500px;">
+      <div class="modal-header">
+        <div class="modal-title">Add Manual Generator Guideline</div>
+        <button class="modal-close-btn" onclick="closeModal('add-guideline-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="guideline-category-select">Category</label>
+          <select id="guideline-category-select" class="form-input">
+            <option value="DO_MORE">DO MORE OF (Recommended)</option>
+            <option value="AVOID">AVOID (Negative Guidance)</option>
+            <option value="STYLE">STYLE &amp; TONE</option>
+            <option value="STRUCTURE">STRUCTURE &amp; FORMAT</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="guideline-text-input">Guideline Instruction</label>
+          <textarea id="guideline-text-input" class="form-input" rows="3" placeholder="e.g. Always emphasize practical cost savings in the opening hook."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('add-guideline-modal')">Cancel</button>
+        <button type="button" class="btn-primary" onclick="saveManualGuideline()">Save Guideline</button>
       </div>
     </div>
   </div>

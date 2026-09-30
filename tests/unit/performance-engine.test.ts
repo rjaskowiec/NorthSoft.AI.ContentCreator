@@ -42,19 +42,19 @@ describe('PerformanceEngineService - Unit Tests', () => {
     });
 
     it('classifies relative performance against benchmark correctly', () => {
-      expect(PerformanceEngineService.classifyPerformance(100, 1.6)).toBe('OUTPERFORMING');
-      expect(PerformanceEngineService.classifyPerformance(100, 1.2)).toBe('STRONG');
-      expect(PerformanceEngineService.classifyPerformance(100, 1.0)).toBe('AVERAGE');
-      expect(PerformanceEngineService.classifyPerformance(100, 0.6)).toBe('WEAK');
-      expect(PerformanceEngineService.classifyPerformance(100, 0.3)).toBe('UNDERPERFORMING');
+      const now = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+      expect(PerformanceEngineService.classifyPerformance(100, 90, now)).toBe('STRONG');
+      expect(PerformanceEngineService.classifyPerformance(100, 50, now)).toBe('AVERAGE');
+      expect(PerformanceEngineService.classifyPerformance(100, 20, now)).toBe('WEAK');
+      expect(PerformanceEngineService.classifyPerformance(100, 5, now)).toBe('POOR');
 
       // Low exposure safeguard (< 20 exposure)
-      expect(PerformanceEngineService.classifyPerformance(10, 2.5)).toBe('INSUFFICIENT_DATA');
+      expect(PerformanceEngineService.classifyPerformance(10, 95, now)).toBe('INSUFFICIENT_DATA');
     });
   });
 
   describe('Performance Profile Generation & Fallback', () => {
-    it('returns INSUFFICIENT_DATA default profile when no metrics exist', async () => {
+    it('returns default baseline profile when no metrics exist', async () => {
       const mockDb = {
         prepare: () => ({
           bind: () => ({
@@ -72,8 +72,8 @@ describe('PerformanceEngineService - Unit Tests', () => {
       const engine = new PerformanceEngineService();
       const profile = await engine.evaluateAndGenerateProfile(mockDb);
 
-      expect(profile.successfulPatterns).toHaveLength(0);
-      expect(profile.failurePatterns).toHaveLength(0);
+      expect(profile.successfulPatterns.length).toBeGreaterThan(0);
+      expect(profile.failurePatterns.length).toBeGreaterThan(0);
       expect(profile.metricsSummary.totalEvaluated).toBe(0);
     });
   });

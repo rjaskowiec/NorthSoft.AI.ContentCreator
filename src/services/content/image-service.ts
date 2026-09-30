@@ -66,11 +66,10 @@ export class OpenverseImageService implements ImageService {
       throw new AppError('Blocked private IP or localhost access', 403, 'SECURITY_VIOLATION');
     }
 
-    // Since we are in Cloudflare Workers, fetch automatically handles redirects safely up to a limit (default 20).
-    // We can set redirect: 'follow'
+    // Since we are in Cloudflare Workers, set redirect: 'follow' (Worker fetch only accepts 'follow' or 'manual')
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
-      redirect: 'error',
+      redirect: 'follow',
       headers: {
         'User-Agent': 'NorthSoft.AI.ContentCreator/0.1.0',
         'Accept': 'image/jpeg, image/png, image/webp',
