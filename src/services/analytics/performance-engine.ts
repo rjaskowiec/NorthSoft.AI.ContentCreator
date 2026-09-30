@@ -169,13 +169,15 @@ export class PerformanceEngineService {
   }
 
   /**
-   * Calculates percentile rank of a value in an array (0 to 100).
+   * Calculates percentile rank of a value in an array (0 to 100) using mid-percentile rank.
+   * Prevents tied zero values from claiming misleading 100th percentile.
    */
   public static calculatePercentile(value: number, allValues: number[]): number {
     if (!allValues || allValues.length === 0) return 50;
     if (allValues.length === 1) return 100;
-    const lowerOrEqual = allValues.filter((v) => v <= value).length;
-    return Number(((lowerOrEqual / allValues.length) * 100).toFixed(1));
+    const strictlyLower = allValues.filter((v) => v < value).length;
+    const equalCount = allValues.filter((v) => v === value).length;
+    return Number((((strictlyLower + 0.5 * equalCount) / allValues.length) * 100).toFixed(1));
   }
 
   /**

@@ -3,6 +3,7 @@ import type { IAuditLogger } from '../../core/audit.js';
 import type { IMetaPublisher, MetaPublisherConfigStatus } from '../../publishing/meta-publisher.js';
 import type { IMailGatewayClient } from '../mail/mail-service.js';
 import { NotificationService } from '../notifications/notification-service.js';
+import { PerformanceEngineService } from '../analytics/performance-engine.js';
 
 export interface PublicationRecord {
   id: string;
@@ -915,6 +916,28 @@ export class PublicationService {
         const fbMsg = (res.post.message || '').trim();
         await this.db.prepare('UPDATE publications SET fb_is_hidden = ?, fb_deleted_at = NULL WHERE id = ?')
           .bind(res.post.isHidden ? 1 : 0, item.publication_id).run();
+
+        // Record metrics snapshot into post_performance_metrics table
+        if (res.post.views != null || res.post.reactions != null || res.post.comments != null || res.post.shares != null) {
+          try {
+            const engine = new PerformanceEngineService();
+            await engine.recordMetricSnapshot(this.db, {
+              postId: item.post_id,
+              publicationId: item.publication_id,
+              facebookPostId: item.facebook_post_id,
+              views: res.post.views ?? undefined,
+              uniqueViews: res.post.uniqueViews ?? undefined,
+              reactions: res.post.reactions ?? 0,
+              comments: res.post.comments ?? 0,
+              shares: res.post.shares ?? 0,
+              clicks: res.post.clicks ?? 0,
+              measuredAt: nowIso,
+            });
+          } catch (mErr) {
+            console.warn('[PublicationService] Failed to record performance metric snapshot during sync:', mErr);
+          }
+        }
+
         const fbHash = this.hashContent(fbMsg);
         const localHash = this.hashContent(item.local_content);
 

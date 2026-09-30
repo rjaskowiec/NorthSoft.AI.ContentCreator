@@ -35,57 +35,59 @@ performanceRouter.get('/performance', async (c) => {
   let strongPosts: any[] = [];
   let weakPosts: any[] = [];
   try {
-    const strongRes = await db
-      .prepare(
-        `SELECT grp.*, p.title as post_title, pv.content as post_content
-         FROM generator_reference_posts grp
-         JOIN posts p ON p.id = grp.post_id
-         JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
-         WHERE grp.classification = 'STRONG' AND grp.is_active = 1
-         ORDER BY grp.rank ASC`,
+    const refQuery = `
+      SELECT grp.*, p.title as post_title, pv.content as post_content,
+             pm.views as latest_views, pm.unique_views as latest_unique_views,
+             pm.reactions as latest_reactions, pm.comments as latest_comments,
+             pm.shares as latest_shares, pm.clicks as latest_clicks,
+             pm.engagement_rate as latest_engagement_rate,
+             pm.measured_at as metrics_measured_at
+      FROM generator_reference_posts grp
+      JOIN posts p ON p.id = grp.post_id
+      JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+      LEFT JOIN post_performance_metrics pm ON pm.id = (
+        SELECT id FROM post_performance_metrics WHERE post_id = grp.post_id ORDER BY measured_at DESC LIMIT 1
       )
-      .all();
-    strongPosts = strongRes.results || [];
+      WHERE grp.classification = ? AND grp.is_active = 1
+      ORDER BY grp.rank ASC`;
 
-    const weakRes = await db
-      .prepare(
-        `SELECT grp.*, p.title as post_title, pv.content as post_content
-         FROM generator_reference_posts grp
-         JOIN posts p ON p.id = grp.post_id
-         JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
-         WHERE grp.classification = 'WEAK' AND grp.is_active = 1
-         ORDER BY grp.rank ASC`,
-      )
-      .all();
-    weakPosts = weakRes.results || [];
+    const mapRefRecord = (r: any) => {
+      const isMeasured = r.metrics_measured_at != null;
+      const exposure = isMeasured
+        ? (r.latest_unique_views > 0 ? r.latest_unique_views : r.latest_views || 0)
+        : null;
+      const weightedEng = isMeasured
+        ? PerformanceEngineService.computeWeightedEngagement(
+            r.latest_reactions || 0,
+            r.latest_comments || 0,
+            r.latest_shares || 0,
+            r.latest_clicks || 0,
+          )
+        : null;
+
+      return {
+        ...r,
+        exposure_views: exposure,
+        weighted_engagement: weightedEng,
+        is_measured: isMeasured,
+      };
+    };
+
+    const strongRes = await db.prepare(refQuery).bind('STRONG').all();
+    strongPosts = (strongRes.results || []).map(mapRefRecord);
+
+    const weakRes = await db.prepare(refQuery).bind('WEAK').all();
+    weakPosts = (weakRes.results || []).map(mapRefRecord);
 
     // If published posts exist but either active reference pool is unpopulated, evaluate now
     const pubCnt = (await db.prepare("SELECT COUNT(*) as cnt FROM publications WHERE status = 'published'").first<{ cnt: number }>())?.cnt || 0;
     if (pubCnt > 0 && (strongPosts.length === 0 || weakPosts.length === 0 || profile.diagnostics?.evaluatedPostsCount !== pubCnt)) {
       profile = await engine.evaluateAndGenerateProfile(db);
-      const refetchedStrong = await db
-        .prepare(
-          `SELECT grp.*, p.title as post_title, pv.content as post_content
-           FROM generator_reference_posts grp
-           JOIN posts p ON p.id = grp.post_id
-           JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
-           WHERE grp.classification = 'STRONG' AND grp.is_active = 1
-           ORDER BY grp.rank ASC`,
-        )
-        .all();
-      strongPosts = refetchedStrong.results || [];
+      const refetchedStrong = await db.prepare(refQuery).bind('STRONG').all();
+      strongPosts = (refetchedStrong.results || []).map(mapRefRecord);
 
-      const refetchedWeak = await db
-        .prepare(
-          `SELECT grp.*, p.title as post_title, pv.content as post_content
-           FROM generator_reference_posts grp
-           JOIN posts p ON p.id = grp.post_id
-           JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
-           WHERE grp.classification = 'WEAK' AND grp.is_active = 1
-           ORDER BY grp.rank ASC`,
-        )
-        .all();
-      weakPosts = refetchedWeak.results || [];
+      const refetchedWeak = await db.prepare(refQuery).bind('WEAK').all();
+      weakPosts = (refetchedWeak.results || []).map(mapRefRecord);
     }
   } catch (err) {
     console.warn('Warning fetching generator_reference_posts:', err);

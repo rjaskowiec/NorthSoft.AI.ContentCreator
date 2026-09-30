@@ -338,7 +338,8 @@ export class FacebookPublisher implements IMetaPublisher {
     }
 
     try {
-      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}?fields=id,message,created_time,updated_time,permalink_url,full_picture,is_hidden&access_token=${encodeURIComponent(this.accessToken)}`;
+      const fields = 'id,message,created_time,updated_time,permalink_url,full_picture,is_hidden,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)';
+      const url = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(this.accessToken)}`;
       const res = await fetch(url, { method: 'GET' });
       const data = (await res.json()) as {
         id?: string;
@@ -348,6 +349,9 @@ export class FacebookPublisher implements IMetaPublisher {
         permalink_url?: string;
         full_picture?: string;
         is_hidden?: boolean;
+        shares?: { count?: number };
+        comments?: { summary?: { total_count?: number } };
+        reactions?: { summary?: { total_count?: number } };
         error?: { message?: string };
       };
 
@@ -358,6 +362,33 @@ export class FacebookPublisher implements IMetaPublisher {
           error: sanitizeSecretTokens(data.error?.message || `HTTP ${res.status}`),
         };
       }
+
+      let views: number | null = null;
+      let uniqueViews: number | null = null;
+
+      try {
+        const metrics = 'post_media_view,post_total_media_view_unique';
+        const insightsUrl = `${META_API.GRAPH_API_BASE_URL}/${this.apiVersion}/${encodeURIComponent(facebookPostId)}/insights?metric=${metrics}&period=lifetime&access_token=${encodeURIComponent(this.accessToken)}`;
+        const insightsRes = await fetch(insightsUrl, { method: 'GET' });
+        const insightsData = (await insightsRes.json()) as {
+          data?: Array<{ name?: string; values?: Array<{ value?: number }> }>;
+        };
+
+        if (insightsRes.ok && Array.isArray(insightsData.data)) {
+          for (const item of insightsData.data) {
+            const val = Number(item.values?.[0]?.value);
+            if (!Number.isFinite(val)) continue;
+            if (item.name === 'post_media_view') views = val;
+            if (item.name === 'post_total_media_view_unique') uniqueViews = val;
+          }
+        }
+      } catch {
+        // Insights optional fallback
+      }
+
+      const reactions = data.reactions?.summary?.total_count ?? 0;
+      const comments = data.comments?.summary?.total_count ?? 0;
+      const shares = data.shares?.count ?? 0;
 
       return {
         success: true,
@@ -370,6 +401,12 @@ export class FacebookPublisher implements IMetaPublisher {
           permalinkUrl: data.permalink_url,
           fullPicture: data.full_picture,
           isHidden: data.is_hidden === true,
+          views,
+          uniqueViews,
+          reactions,
+          comments,
+          shares,
+          clicks: 0,
         },
       };
     } catch (err: unknown) {

@@ -126,6 +126,12 @@ describe('PerformanceEngineService - Unit Tests', () => {
       expect(PerformanceEngineService.calculateMedian([1, 3, 5, 7])).toBe(4);
       expect(PerformanceEngineService.calculateMedian([])).toBe(0);
     });
+
+    it('calculates mid-percentile rank so tied zero values evaluate to 50th percentile rank', () => {
+      expect(PerformanceEngineService.calculatePercentile(0, [0, 0])).toBe(50);
+      expect(PerformanceEngineService.calculatePercentile(5, [1, 5, 5, 10])).toBe(50);
+      expect(PerformanceEngineService.calculatePercentile(10, [1, 5, 10])).toBe(83.3);
+    });
   });
 
   describe('Adaptive Cold-Start & Reference Pool Sync', () => {

@@ -1167,13 +1167,15 @@ export function getAdminScripts(): string {
           const strongPosts = Array.isArray(data.strongPosts) ? data.strongPosts : [];
           if (strongPosts.length > 0) {
             strongTable.innerHTML = strongPosts.map((p) => {
+              const viewsText = p.exposure_views != null ? Number(p.exposure_views) + ' views' : '<span style="color:var(--text-muted);">N/A</span>';
+              const engText = p.weighted_engagement != null ? Number(p.weighted_engagement).toFixed(1) + ' eng. pts' : '<span style="color:var(--text-muted);">N/A</span>';
               return '<tr>' +
                 '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
                 '<td>' + getConfBadgeHtml(p.confidence) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + Number(p.success_score || p.score || 1).toFixed(2) + 'x median</span></td>' +
-                '<td>' + Number(p.percentile || 90).toFixed(0) + 'th percentile</td>' +
-                '<td>' + Number(p.exposure_views || 0) + ' views</td>' +
-                '<td>' + Number(p.weighted_engagement || 0).toFixed(1) + ' eng. pts</td>' +
+                '<td>' + Number(p.percentile || 50).toFixed(0) + 'th percentile</td>' +
+                '<td>' + viewsText + '</td>' +
+                '<td>' + engText + '</td>' +
                 '<td><span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(safeStr(p.reason_for_inclusion || 'Top performer')) + '</span></td>' +
               '</tr>';
             }).join('');
@@ -1188,13 +1190,15 @@ export function getAdminScripts(): string {
           const weakPosts = Array.isArray(data.weakPosts) ? data.weakPosts : [];
           if (weakPosts.length > 0) {
             weakTable.innerHTML = weakPosts.map((p) => {
+              const viewsText = p.exposure_views != null ? Number(p.exposure_views) + ' views' : '<span style="color:var(--text-muted);">N/A</span>';
+              const engText = p.weighted_engagement != null ? Number(p.weighted_engagement).toFixed(1) + ' eng. pts' : '<span style="color:var(--text-muted);">N/A</span>';
               return '<tr>' +
                 '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
                 '<td>' + getConfBadgeHtml(p.confidence) + '</td>' +
                 '<td><span class="status-badge status-alert">' + Number(p.success_score || p.score || 0.5).toFixed(2) + 'x median</span></td>' +
-                '<td>' + Number(p.percentile || 10).toFixed(0) + 'th percentile</td>' +
-                '<td>' + Number(p.exposure_views || 0) + ' views</td>' +
-                '<td>' + Number(p.weighted_engagement || 0).toFixed(1) + ' eng. pts</td>' +
+                '<td>' + Number(p.percentile || 50).toFixed(0) + 'th percentile</td>' +
+                '<td>' + viewsText + '</td>' +
+                '<td>' + engText + '</td>' +
                 '<td><span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(safeStr(p.reason_for_inclusion || 'Underperforming')) + '</span></td>' +
               '</tr>';
             }).join('');

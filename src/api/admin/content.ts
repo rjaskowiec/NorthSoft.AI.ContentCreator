@@ -94,60 +94,63 @@ contentRouter.get('/content/posts', async (c) => {
   });
 });
 
-/** Search and visually verify an image for an existing post that has none. */
+/** Search and assign an image for an existing post using hierarchical fallback. */
 contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) => {
   const postId = c.req.param('id');
   const row = await c.env.DB.prepare(
-    `SELECT p.title, p.current_version, pv.content, pv.metadata FROM posts p
-     JOIN post_versions pv ON pv.post_id = p.id AND pv.version_number = p.current_version WHERE p.id = ?`,
-  ).bind(postId).first<{ title: string; current_version: number; content: string; metadata?: string | null }>();
+    `SELECT p.title, p.current_version, pv.content, ci.category FROM posts p
+     JOIN post_versions pv ON pv.post_id = p.id AND pv.version_number = p.current_version
+     LEFT JOIN content_ideas ci ON ci.id = p.idea_id WHERE p.id = ?`,
+  ).bind(postId).first<{ title: string; current_version: number; content: string; category?: string | null }>();
   if (!row) return c.json({ success: false, error: 'Post not found.' }, 404);
 
   const imageService = new OpenverseImageService(c.env);
-  let imageSearchQuery = `${row.title} ${row.content.slice(0, 180)}`;
+  const recentlyUsedRows = await c.env.DB.prepare('SELECT url FROM post_images ORDER BY created_at DESC LIMIT 50').all<{ url: string }>();
+  const recentlyUsedUrls = new Set((recentlyUsedRows.results || []).map((r) => r.url));
+
   try {
-    const metadata = JSON.parse(row.metadata || '{}') as { imageSearchQuery?: unknown };
-    if (typeof metadata.imageSearchQuery === 'string' && metadata.imageSearchQuery.trim()) {
-      imageSearchQuery = metadata.imageSearchQuery.trim();
+    const found = await imageService.findBestImage(
+      row.title,
+      row.category || 'Technology & Business',
+      row.content,
+      recentlyUsedUrls,
+    );
+
+    if (!found) {
+      return c.json({ success: false, error: 'No legal image passed category/semantic search hierarchy. Add one by URL or upload a file.' }, 422);
     }
-  } catch {
-    // Older versions may not have image search metadata.
-  }
-  let candidates;
-  try {
-    candidates = await imageService.searchImages(imageSearchQuery, 5);
+
+    const candidate = found.candidate;
+    const now = new Date().toISOString();
+    const confidence = Number((Math.min(1.0, found.score / 100)).toFixed(2));
+
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, row.current_version),
+      c.env.DB.prepare(
+        `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url,
+          license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason,
+          visual_verification_confidence, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, ?, ?)`,
+      ).bind(
+        crypto.randomUUID(), postId, row.current_version, candidate.url, candidate.title || 'Selected Illustration', candidate.sourceUrl,
+        candidate.id, candidate.author, candidate.authorUrl || null, candidate.license, candidate.licenseUrl,
+        now, found.reason, confidence, now,
+      ),
+    ]);
+
+    return c.json({
+      success: true,
+      imageUrl: candidate.url,
+      author: candidate.author,
+      license: candidate.license,
+      matchLevel: found.level,
+      score: found.score,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[ContentImageSearch] Openverse search failed', message);
-    return c.json({ success: false, error: 'Image search failed. Check the Worker logs for the provider response.' }, 502);
+    console.error('[ContentImageSearch] Image search failed:', message);
+    return c.json({ success: false, error: 'Image search failed. Check Worker logs for details.' }, 502);
   }
-
-  for (const candidate of candidates) {
-    try {
-      const bytes = await imageService.downloadImage(candidate.url);
-      const verification = await imageService.verifyImageWithVision(bytes, imageSearchQuery, row.content);
-      if (verification.decision !== 'accept' || !verification.matches_content || verification.confidence < 0.7) continue;
-      const now = new Date().toISOString();
-      await c.env.DB.batch([
-        c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, row.current_version),
-        c.env.DB.prepare(
-          `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url,
-            license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason,
-            visual_verification_confidence, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, ?, ?)`
-        ).bind(
-          crypto.randomUUID(), postId, row.current_version, candidate.url, candidate.title, candidate.sourceUrl,
-          candidate.id, candidate.author, candidate.authorUrl || null, candidate.license, candidate.licenseUrl,
-          now, verification.reason, verification.confidence, now,
-        ),
-      ]);
-      return c.json({ success: true, imageUrl: candidate.url, author: candidate.author, license: candidate.license });
-    } catch (err) {
-      console.warn(`[ContentImageSearch] Candidate rejected for post ${postId}`, err);
-    }
-  }
-
-  return c.json({ success: false, error: 'No matching free image passed visual verification. Add one by URL or upload a file.' }, 422);
 });
 
 /** Add or replace the current version's primary image using an HTTPS URL or a file upload. */

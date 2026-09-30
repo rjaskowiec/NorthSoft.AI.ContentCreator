@@ -122,6 +122,7 @@ export default {
       Promise.all([
         orchestrator.runPipeline('cron'),
         pubService.publishScheduledDuePosts(),
+        pubService.syncFacebookPostsToSystem(),
         NotificationService.sendWeeklyDigest(env.DB, mailClient),
       ]),
     );

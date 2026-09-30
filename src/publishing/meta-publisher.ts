@@ -101,6 +101,12 @@ export interface FacebookPostRecord {
   permalinkUrl?: string;
   fullPicture?: string;
   isHidden?: boolean;
+  views?: number | null;
+  uniqueViews?: number | null;
+  reactions?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  clicks?: number | null;
 }
 
 export interface FacebookPagePostsResult {
