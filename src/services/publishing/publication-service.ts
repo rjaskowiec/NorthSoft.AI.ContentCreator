@@ -1586,4 +1586,341 @@ export class PublicationService {
       return { success: true };
     }
   }
+
+  /**
+   * Changes the canonical assigned image of a post / publication to a selected Image Library asset.
+   * Handles both unpublished posts (updating local D1 reservation & links) and already-published posts
+   * (updating Facebook Graph API photo attachment first before committing local D1 and Image Library state).
+   */
+  public async changePublicationImage(
+    publicationOrPostId: string,
+    newCuratedImageId: string,
+    actor: 'admin' | 'system' = 'admin',
+  ): Promise<{
+    success: boolean;
+    isPublished?: boolean;
+    message?: string;
+    error?: string;
+    code?: string;
+  }> {
+    const nowIso = new Date().toISOString();
+
+    // 1. Resolve publication record or post record
+    let postId = publicationOrPostId;
+    let pubRecord = await this.getPublicationById(publicationOrPostId);
+    if (!pubRecord) {
+      const pubByPost = await this.db
+        .prepare(`SELECT id FROM publications WHERE post_id = ? ORDER BY created_at DESC LIMIT 1`)
+        .bind(publicationOrPostId)
+        .first<{ id: string }>();
+      if (pubByPost) {
+        pubRecord = await this.getPublicationById(pubByPost.id);
+        postId = pubRecord?.postId || publicationOrPostId;
+      }
+    } else {
+      postId = pubRecord.postId;
+    }
+
+    // 2. Fetch target post and current version
+    const postRow = await this.db
+      .prepare(`SELECT id, title, status, current_version FROM posts WHERE id = ?`)
+      .bind(postId)
+      .first<{ id: string; title: string; status: string; current_version: number }>();
+
+    if (!postRow) {
+      return { success: false, error: `Post ${postId} not found.`, code: 'POST_NOT_FOUND' };
+    }
+
+    // 3. Fetch target curated image from library
+    const newImg = await this.db
+      .prepare(`SELECT * FROM curated_images WHERE id = ?`)
+      .bind(newCuratedImageId)
+      .first<{
+        id: string;
+        title: string;
+        source_url: string | null;
+        r2_key: string | null;
+        status: string;
+        original_page_url: string | null;
+        author: string | null;
+        author_url: string | null;
+        license: string | null;
+        license_url: string | null;
+        description: string | null;
+      }>();
+
+    if (!newImg) {
+      return { success: false, error: `Image '${newCuratedImageId}' not found in Image Library.`, code: 'IMAGE_NOT_FOUND' };
+    }
+
+    if (newImg.status !== 'APPROVED') {
+      return {
+        success: false,
+        error: `Cannot assign image '${newImg.title}' because its status is '${newImg.status}'. Only APPROVED images can be selected.`,
+        code: 'IMAGE_NOT_APPROVED',
+      };
+    }
+
+    const newImageUrl = (newImg.source_url || newImg.r2_key || '').trim();
+    if (!newImageUrl) {
+      return { success: false, error: `Selected image has no valid source URL.`, code: 'INVALID_IMAGE_URL' };
+    }
+
+    // Pre-validate image URL reachability
+    const urlVal = await validateImageUrl(newImageUrl).catch(() => ({ valid: true }));
+    if (!urlVal.valid) {
+      return {
+        success: false,
+        error: `Selected image URL is not accessible: ${urlVal.error || 'HTTP error'}`,
+        code: 'IMAGE_NOT_ACCESSIBLE',
+      };
+    }
+
+    // 4. Fetch current post_images link for current version
+    const currentPi = await this.db
+      .prepare(`SELECT curated_image_id, url FROM post_images WHERE post_id = ? AND version_number = ?`)
+      .bind(postId, postRow.current_version)
+      .first<{ curated_image_id: string | null; url: string }>();
+
+    const oldCuratedImageId = currentPi?.curated_image_id || null;
+
+    // Idempotency check: if the post already has this exact curated_image_id
+    if (oldCuratedImageId === newCuratedImageId) {
+      return {
+        success: true,
+        isPublished: pubRecord?.status === 'published',
+        message: 'Selected image is already assigned to this post.',
+      };
+    }
+
+    await this.auditLogger?.log({
+      eventType: 'PUBLICATION_IMAGE_CHANGE_STARTED',
+      entityType: 'post',
+      entityId: postId,
+      actor,
+      details: {
+        publicationId: pubRecord?.id,
+        previousImageId: oldCuratedImageId,
+        newImageId: newCuratedImageId,
+        previousImageUrl: currentPi?.url,
+        newImageUrl,
+        isPublished: pubRecord?.status === 'published',
+      },
+    });
+
+    const isPublishedOnFb = pubRecord?.status === 'published' && Boolean(pubRecord.facebookPostId);
+
+    // 5. SCENARIO A: Post is ALREADY PUBLISHED on Facebook
+    if (isPublishedOnFb && pubRecord?.facebookPostId) {
+      const fbPostId = pubRecord.facebookPostId;
+
+      if (!this.publisher.updatePostImage) {
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_IMAGE_CHANGE_FAILED',
+          entityType: 'post',
+          entityId: postId,
+          actor,
+          details: { reason: 'PUBLISHER_UNSUPPORTED', facebookPostId: fbPostId },
+        });
+        return {
+          success: false,
+          error: 'The Facebook publisher does not support image updates for published posts.',
+          code: 'UNSUPPORTED_OPERATION',
+        };
+      }
+
+      // Execute Meta API call FIRST before mutating local database
+      const metaRes = await this.publisher.updatePostImage(fbPostId, newImageUrl);
+
+      if (!metaRes.success) {
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_IMAGE_CHANGE_FAILED',
+          entityType: 'post',
+          entityId: postId,
+          actor,
+          details: {
+            reason: 'META_API_REJECTED',
+            facebookPostId: fbPostId,
+            error: metaRes.error,
+            httpStatus: metaRes.httpStatus,
+          },
+        });
+
+        return {
+          success: false,
+          error: `The image could not be changed on Facebook. The existing image remains unchanged. (${metaRes.error || 'Meta API error'})`,
+          code: 'META_UPDATE_FAILED',
+        };
+      }
+
+      // Meta API Succeeded! Now commit local D1 changes atomically:
+      if (currentPi) {
+        await this.db
+          .prepare(
+            `UPDATE post_images
+             SET curated_image_id = ?, url = ?, selection_source = 'MANUAL', verified_at = ?
+             WHERE post_id = ? AND version_number = ?`,
+          )
+          .bind(newCuratedImageId, newImageUrl, nowIso, postId, postRow.current_version)
+          .run();
+      } else {
+        await this.db
+          .prepare(
+            `INSERT INTO post_images (
+              id, post_id, version_number, url, alt_text, source_url, source_id,
+              curated_image_id, selection_source, created_at, verified_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            postId,
+            postRow.current_version,
+            newImageUrl,
+            newImg.title || 'Post Image',
+            newImg.original_page_url || newImageUrl,
+            newImg.id,
+            newCuratedImageId,
+            nowIso,
+            nowIso,
+          )
+          .run();
+      }
+
+      // Update publication pushed_image_url and fb_image_url
+      await this.db
+        .prepare(
+          `UPDATE publications
+           SET pushed_image_url = ?, fb_image_url = ?, sync_status = 'SYNCED', updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(newImageUrl, newImageUrl, nowIso, pubRecord.id)
+        .run();
+
+      // Image Library: mark new image as published
+      await this.db
+        .prepare(
+          `UPDATE curated_images
+           SET usage_count = usage_count + 1,
+               last_used_at = ?,
+               used_in_post_id = ?,
+               reserved_post_id = NULL,
+               updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(nowIso, postId, nowIso, newCuratedImageId)
+        .run();
+
+      // Image Library: release old image if no longer used by other published posts
+      if (oldCuratedImageId) {
+        const otherPubsRes = await this.db
+          .prepare(
+            `SELECT COUNT(*) as cnt
+             FROM publications pub
+             JOIN post_images pi ON pi.post_id = pub.post_id
+             WHERE pi.curated_image_id = ? AND pub.status = 'published' AND pub.post_id != ?`,
+          )
+          .bind(oldCuratedImageId, postId)
+          .first<{ cnt: number }>();
+
+        const otherCount = otherPubsRes?.cnt || 0;
+        if (otherCount === 0) {
+          await this.db
+            .prepare(
+              `UPDATE curated_images
+               SET usage_count = MAX(0, usage_count - 1), used_in_post_id = NULL, updated_at = ?
+               WHERE id = ?`,
+            )
+            .bind(nowIso, oldCuratedImageId)
+            .run();
+        } else {
+          await this.db
+            .prepare(
+              `UPDATE curated_images SET usage_count = MAX(0, usage_count - 1), updated_at = ? WHERE id = ?`,
+            )
+            .bind(nowIso, oldCuratedImageId)
+            .run();
+        }
+      }
+
+      await this.auditLogger?.log({
+        eventType: 'PUBLICATION_IMAGE_CHANGE_SUCCEEDED',
+        entityType: 'post',
+        entityId: postId,
+        actor,
+        details: {
+          publicationId: pubRecord.id,
+          facebookPostId: fbPostId,
+          previousImageId: oldCuratedImageId,
+          newImageId: newCuratedImageId,
+          newImageUrl,
+          isPublished: true,
+        },
+      });
+
+      return {
+        success: true,
+        isPublished: true,
+        message: 'Image updated successfully on Facebook.',
+      };
+    }
+
+    // 6. SCENARIO B: Post is UNPUBLISHED (draft, approved, scheduled, failed, etc.)
+    await this.db.batch([
+      this.db
+        .prepare('UPDATE curated_images SET reserved_post_id = NULL WHERE reserved_post_id = ? AND id != ?')
+        .bind(postId, newCuratedImageId),
+      this.db
+        .prepare('UPDATE curated_images SET reserved_post_id = ?, updated_at = ? WHERE id = ?')
+        .bind(postId, nowIso, newCuratedImageId),
+      this.db
+        .prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?')
+        .bind(postId, postRow.current_version),
+      this.db
+        .prepare(
+          `INSERT INTO post_images (
+            id, post_id, version_number, url, alt_text, source_url, source_id,
+            author, author_url, license, license_url, verified_at, verification_status,
+            visual_verification_status, curated_image_id, selection_source, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, 'MANUAL', ?
+          )`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          postId,
+          postRow.current_version,
+          newImageUrl,
+          newImg.title || newImg.description || 'Post Image',
+          newImg.original_page_url || newImageUrl,
+          newImg.id,
+          newImg.author,
+          newImg.author_url,
+          newImg.license || 'Curated Library',
+          newImg.license_url,
+          nowIso,
+          newCuratedImageId,
+          nowIso,
+        ),
+    ]);
+
+    await this.auditLogger?.log({
+      eventType: 'PUBLICATION_IMAGE_CHANGE_SUCCEEDED',
+      entityType: 'post',
+      entityId: postId,
+      actor,
+      details: {
+        publicationId: pubRecord?.id,
+        previousImageId: oldCuratedImageId,
+        newImageId: newCuratedImageId,
+        newImageUrl,
+        isPublished: false,
+      },
+    });
+
+    return {
+      success: true,
+      isPublished: false,
+      message: 'Image changed successfully. The new image will be used when this post is published.',
+    };
+  }
 }

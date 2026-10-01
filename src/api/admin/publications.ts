@@ -134,6 +134,56 @@ publicationsRouter.post('/publications/:id/retry', csrfProtection, async (c) => 
 });
 
 /**
+ * POST /api/admin/publications/:id/image
+ * PATCH /api/admin/publications/:id/image
+ * Changes the assigned publication image to an approved item from Image Library.
+ * Protected by requireAdmin and csrfProtection.
+ */
+const handlePublicationImageChange = async (c: any) => {
+  const db = c.env.DB;
+  const id = c.req.param('id') || '';
+  const auditLogger = new D1AuditLogger(db);
+  const publisher = new FacebookPublisher(c.env);
+  const mailClient = new NorthSoftMailGatewayClient(c.env);
+  const pubService = new PublicationService(db, publisher, auditLogger, mailClient);
+
+  let body: { imageId?: string; image_id?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, error: 'Invalid JSON payload in request body.' }, 400);
+  }
+
+  const imageId = (body.imageId || body.image_id || '').trim();
+  if (!imageId) {
+    return c.json({ success: false, error: 'Image ID (imageId) is required.' }, 400);
+  }
+
+  const result = await pubService.changePublicationImage(id, imageId, 'admin');
+
+  if (!result.success) {
+    return c.json(
+      {
+        success: false,
+        error: result.error || 'Failed to change publication image.',
+        code: result.code || 'IMAGE_CHANGE_FAILED',
+      },
+      result.code === 'IMAGE_NOT_FOUND' || result.code === 'POST_NOT_FOUND' ? 404 : 400,
+    );
+  }
+
+  return c.json({
+    success: true,
+    isPublished: result.isPublished,
+    message: result.message,
+  });
+};
+
+publicationsRouter.post('/publications/:id/image', csrfProtection, handlePublicationImageChange);
+publicationsRouter.patch('/publications/:id/image', csrfProtection, handlePublicationImageChange);
+
+
+/**
  * POST /api/admin/publications/manual
  * Creates a manual post version (MANUAL_ADMIN_APPROVED) and executes immediate publication
  * through the existing PublicationService & MetaPublisher pipeline.

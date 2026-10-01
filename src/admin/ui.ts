@@ -1220,6 +1220,7 @@ export function renderAdminHtml(): string {
           <input type="file" id="fb-post-image-file" class="form-input" accept="image/jpeg,image/png,image/webp" style="margin-top:0.5rem;" />
           <label style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;"><input type="checkbox" id="fb-post-remove-image" /> Remove image</label>
           <button type="button" class="btn-secondary" style="margin-top:0.5rem;" onclick="saveFacebookPostImage()">Save image</button>
+          <button type="button" class="btn-primary" style="margin-top:0.5rem; margin-left:0.5rem;" onclick="openDraftImageSelectorModalForPublication()">Choose from Image Library</button>
         </div>
         <a id="fb-post-detail-link" href="#" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook →</a>
         <div id="fb-post-detail-error" class="alert-error" style="display:none; margin-top:1rem;"></div>

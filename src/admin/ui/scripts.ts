@@ -5303,14 +5303,33 @@ export function getAdminScripts(): string {
       }
     }
 
-    // Draft Illustration Selector Modal Handlers
+    // Draft & Publication Illustration Selector Modal Handlers
     let currentDraftPostId = null;
+    let currentPublicationId = null;
     let draftApprovedImages = [];
 
     async function openDraftImageSelectorModal(postId) {
       currentDraftPostId = postId;
+      currentPublicationId = null;
       selectedDraftImageId = null;
       document.getElementById('draft-selector-post-id').value = postId;
+      document.getElementById('draft-selector-search').value = '';
+      document.getElementById('draft-selector-category').value = '';
+      const commitBtn = document.getElementById('confirm-assign-draft-img-btn');
+      if (commitBtn) commitBtn.disabled = true;
+
+      openModal('draft-image-selector-modal');
+      await fetchDraftApprovedImages();
+    }
+
+    async function openDraftImageSelectorModalForPublication() {
+      const textarea = document.getElementById('fb-post-detail-content');
+      const fbPostId = safeStr(textarea.dataset.facebookPostId);
+      const internalId = safeStr(textarea.dataset.internalPostId);
+      currentPublicationId = fbPostId || internalId;
+      currentDraftPostId = internalId || fbPostId;
+      selectedDraftImageId = null;
+      document.getElementById('draft-selector-post-id').value = currentPublicationId;
       document.getElementById('draft-selector-search').value = '';
       document.getElementById('draft-selector-category').value = '';
       const commitBtn = document.getElementById('confirm-assign-draft-img-btn');
@@ -5328,7 +5347,10 @@ export function getAdminScripts(): string {
         const search = document.getElementById('draft-selector-search').value.trim();
         const category = document.getElementById('draft-selector-category').value.trim();
 
-        const url = '/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/image-library?search=' + encodeURIComponent(search) + '&category=' + encodeURIComponent(category);
+        const url = currentDraftPostId
+          ? '/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/image-library?search=' + encodeURIComponent(search) + '&category=' + encodeURIComponent(category)
+          : '/api/admin/content/images?status=APPROVED&search=' + encodeURIComponent(search) + '&category=' + encodeURIComponent(category);
+
         const res = await guardedFetch(url);
         if (!res.ok) {
           if (grid) grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load approved images.</div>';
@@ -5386,23 +5408,40 @@ export function getAdminScripts(): string {
     }
 
     async function confirmAssignDraftIllustration() {
-      if (!currentDraftPostId || !selectedDraftImageId) return;
+      if (!selectedDraftImageId) return;
 
       try {
-        const res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/assign-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ imageId: selectedDraftImageId }),
-        });
+        let res;
+        if (currentPublicationId) {
+          res = await guardedFetch('/api/admin/publications/' + encodeURIComponent(currentPublicationId) + '/image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ imageId: selectedDraftImageId }),
+          });
+        } else if (currentDraftPostId) {
+          res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/assign-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ imageId: selectedDraftImageId }),
+          });
+        }
+        if (!res) return;
+
         const data = await res.json();
         if (data.success) {
           closeModal('draft-image-selector-modal');
-          loadContentData();
+          if (currentPublicationId) {
+            closeModal('facebook-post-modal');
+            showPublicationAlert(safeStr(data.message, 'Publication image updated successfully.'), true);
+            await loadFacebookPublications(false);
+          } else {
+            loadContentData();
+          }
         } else {
-          alert(safeStr(data.error, 'Failed to assign illustration to draft.'));
+          alert(safeStr(data.error || data.message, 'Failed to assign image.'));
         }
       } catch (err) {
-        console.error('Error assigning draft illustration:', err);
+        console.error('Error assigning image:', err);
       }
     }
 
