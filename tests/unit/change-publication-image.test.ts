@@ -44,7 +44,7 @@ class MockD1Database {
             }
             if (sql.includes('FROM publications') || sql.includes('publications pub')) {
               const id = args[0];
-              if (id === 'pub-published' || id === 'post-published') {
+              if (id === 'pub-published' || id === 'post-published' || id === '107455558114139_1444523667778333') {
                 return {
                   id: 'pub-published',
                   post_id: 'post-published',
@@ -183,5 +183,15 @@ describe('PublicationService — changePublicationImage', () => {
     expect(res.success).toBe(false);
     expect(res.code).toBe('META_UPDATE_FAILED');
     expect(res.error).toContain('could not be changed on Facebook');
+  });
+
+  it('should resolve publication record when facebook_post_id is passed as ID', async () => {
+    db.store.set('post_image_post-published', 'img-A');
+    const pubService = new PublicationService(db as any, mockPublisher);
+    const res = await pubService.changePublicationImage('107455558114139_1444523667778333', 'img-B');
+
+    expect(res.success).toBe(true);
+    expect(res.isPublished).toBe(true);
+    expect(mockPublisher.updatePostImage).toHaveBeenCalled();
   });
 });

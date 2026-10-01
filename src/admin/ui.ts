@@ -195,63 +195,73 @@ export function renderAdminHtml(): string {
 
           <!-- TAB 1: DASHBOARD OVERVIEW -->
           <div id="tab-dashboard" class="tab-section active-tab">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Dashboard</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">System overview and status.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Operational overview and live publication status.</p>
               </div>
-              <div style="display:flex; gap:0.75rem;">
+              <div style="display:flex; gap:0.75rem; align-items:center;">
+                <div id="dash-op-status-badge">
+                  <span class="status-badge status-healthy">● OPERATIONAL</span>
+                </div>
                 <button class="btn-primary" onclick="switchTab('pipeline', event)">
                   Pipeline Control &rarr;
                 </button>
               </div>
             </div>
 
-            <!-- System Health Overview Cards -->
-            <div class="section-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-              <div class="card">
-                <div class="card-label">Pipeline Engine</div>
-                <div class="card-val" id="dash-pipeline-status" style="font-size:1.1rem; color:var(--accent-emerald);">● READY</div>
-                <div class="card-sub">Research &amp; Generation</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Automation Master</div>
-                <div class="card-val" id="dash-automation-status" style="font-size:1.1rem; color:var(--accent-blue);">● ACTIVE</div>
-                <div class="card-sub">Daily at 08:00 UTC</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Facebook Integration</div>
-                <div class="card-val" id="dash-fb-status" style="font-size:1.1rem; color:var(--accent-emerald);">● CONNECTED</div>
-                <div class="card-sub">Page ID: 107455558114139</div>
-              </div>
-              <div class="card">
-                <div class="card-label">Next Scheduled Post</div>
-                <div class="card-val" id="cnt-next-pub" style="font-size:1rem; color:var(--text-main);">Tomorrow, 08:00 UTC</div>
-                <div class="card-sub">Automated Queue</div>
-              </div>
-            </div>
+            <!-- Attention Alerts Section (Shown only if issues exist) -->
+            <div id="dash-attention-container" style="display:none; margin-bottom:1.5rem;"></div>
 
-            <!-- Content Workflow Overview KPI Cards -->
-            <div class="section-grid" id="pipeline-grid">
-              <div class="card">
-                <div class="card-label">Topics Available</div>
-                <div class="card-val" id="cnt-ideas">0</div>
-                <div class="card-sub">Discovered research ideas</div>
+            <!-- Primary Operational Metrics Grid -->
+            <div class="section-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom:1.5rem;">
+              <div class="card" style="border-top:3px solid var(--accent-cyan);">
+                <div class="card-label">Next Publication</div>
+                <div class="card-val" id="cnt-next-pub" style="font-size:1.05rem; color:var(--text-main); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  No posts scheduled
+                </div>
+                <div class="card-sub" id="cnt-next-pub-sub" style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">
+                  Scheduled queue is empty
+                </div>
               </div>
+
               <div class="card">
-                <div class="card-label">Drafts Ready</div>
+                <div class="card-label">Scheduled Queue</div>
+                <div class="card-val" id="cnt-scheduled" style="color:var(--accent-blue);">0</div>
+                <div class="card-sub" id="cnt-scheduled-sub">Upcoming publications</div>
+              </div>
+
+              <div class="card">
+                <div class="card-label">Drafts Awaiting Review</div>
                 <div class="card-val" id="cnt-drafts">0</div>
                 <div class="card-sub">Pending QA / review</div>
               </div>
-              <div class="card">
-                <div class="card-label">Scheduled Posts</div>
-                <div class="card-val" id="cnt-scheduled" style="color:var(--accent-blue);">0</div>
-                <div class="card-sub">Queued for publication</div>
-              </div>
+
               <div class="card">
                 <div class="card-label">Published Posts</div>
                 <div class="card-val" id="cnt-published" style="color:var(--accent-emerald);">0</div>
-                <div class="card-sub">Live on Facebook</div>
+                <div class="card-sub">Successfully published</div>
+              </div>
+            </div>
+
+            <!-- Integrations & Automation Overview Cards -->
+            <div class="section-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom:1.5rem;">
+              <div class="card">
+                <div class="card-label">Facebook Connection</div>
+                <div class="card-val" id="dash-fb-status" style="font-size:1.05rem; color:var(--accent-emerald);">● CONNECTED</div>
+                <div class="card-sub" id="dash-fb-sub">Page configured &amp; active</div>
+              </div>
+
+              <div class="card">
+                <div class="card-label">Automation Master</div>
+                <div class="card-val" id="dash-automation-status" style="font-size:1.05rem; color:var(--accent-blue);">● ACTIVE</div>
+                <div class="card-sub" id="dash-automation-sub">Cron: Every 5 minutes</div>
+              </div>
+
+              <div class="card">
+                <div class="card-label">Research Topics</div>
+                <div class="card-val" id="cnt-ideas">0</div>
+                <div class="card-sub">Discovered &amp; available</div>
               </div>
             </div>
 
@@ -268,13 +278,13 @@ export function renderAdminHtml(): string {
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
                 <div id="dashboard-automation-text" style="font-size:0.925rem; color:var(--text-main);">
-                  System is operational. No pipeline run currently in progress. <strong>Next scheduled publication:</strong> Tomorrow, 08:00 UTC.
+                  All systems are running normally. No pipeline run currently in progress.
                 </div>
                 <button class="btn-secondary" onclick="switchTab('pipeline', event)">Manage Pipeline &rarr;</button>
               </div>
             </div>
 
-            <!-- Recent Activity Log Preview -->
+            <!-- Recent System Activity -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Recent System Activity</div>

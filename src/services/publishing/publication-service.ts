@@ -1605,7 +1605,7 @@ export class PublicationService {
   }> {
     const nowIso = new Date().toISOString();
 
-    // 1. Resolve publication record or post record
+    // 1. Resolve publication record or post record by publicationId, postId, or facebookPostId
     let postId = publicationOrPostId;
     let pubRecord = await this.getPublicationById(publicationOrPostId);
     if (!pubRecord) {
@@ -1616,6 +1616,20 @@ export class PublicationService {
       if (pubByPost) {
         pubRecord = await this.getPublicationById(pubByPost.id);
         postId = pubRecord?.postId || publicationOrPostId;
+      } else {
+        const shortFbId = publicationOrPostId.includes('_') ? publicationOrPostId.split('_').pop()! : publicationOrPostId;
+        const pubByFb = await this.db
+          .prepare(
+            `SELECT id FROM publications
+             WHERE (facebook_post_id = ? OR facebook_post_id = ?)
+             ORDER BY created_at DESC LIMIT 1`,
+          )
+          .bind(publicationOrPostId, shortFbId)
+          .first<{ id: string }>();
+        if (pubByFb) {
+          pubRecord = await this.getPublicationById(pubByFb.id);
+          postId = pubRecord?.postId || publicationOrPostId;
+        }
       }
     } else {
       postId = pubRecord.postId;

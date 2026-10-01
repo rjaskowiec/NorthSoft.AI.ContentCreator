@@ -737,6 +737,33 @@ export function getAdminScripts(): string {
       }
     });
 
+    function formatScheduleDateHuman(isoString) {
+      if (!isoString) return '—';
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return isoString;
+
+      const now = new Date();
+      const isToday = date.getUTCFullYear() === now.getUTCFullYear() &&
+                      date.getUTCMonth() === now.getUTCMonth() &&
+                      date.getUTCDate() === now.getUTCDate();
+
+      const tomorrow = new Date(now);
+      tomorrow.setUTCDate(now.getUTCDate() + 1);
+      const isTomorrow = date.getUTCFullYear() === tomorrow.getUTCFullYear() &&
+                         date.getUTCMonth() === tomorrow.getUTCMonth() &&
+                         date.getUTCDate() === tomorrow.getUTCDate();
+
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      const timeStr = hours + ':' + minutes + ' UTC';
+
+      if (isToday) return 'Today, ' + timeStr;
+      if (isTomorrow) return 'Tomorrow, ' + timeStr;
+
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return months[date.getUTCMonth()] + ' ' + date.getUTCDate() + ', ' + timeStr;
+    }
+
     // Load Dashboard Overview Data
     async function loadDashboardData() {
       try {
@@ -748,9 +775,102 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         const sys = data.systemStatus || {};
-        const metaStatus = sys.metaPublisherStatus || {};
 
-        // Environment Tag
+        // 1. Overall Operational Status Badge
+        const opBadge = document.getElementById('dash-op-status-badge');
+        if (opBadge) {
+          const opSt = data.operationalStatus || 'operational';
+          if (opSt === 'operational') {
+            opBadge.innerHTML = '<span class="status-badge status-healthy">● OPERATIONAL</span>';
+          } else if (opSt === 'degraded') {
+            opBadge.innerHTML = '<span class="status-badge status-active">● DEGRADED</span>';
+          } else {
+            opBadge.innerHTML = '<span class="status-badge status-alert">● ATTENTION REQUIRED</span>';
+          }
+        }
+
+        // 2. Attention Alerts Container
+        const attContainer = document.getElementById('dash-attention-container');
+        if (attContainer) {
+          const items = Array.isArray(data.attentionItems) ? data.attentionItems : [];
+          if (items.length > 0) {
+            attContainer.style.display = 'block';
+            attContainer.innerHTML = items.map(item => {
+              const alertClass = item.type === 'error' ? 'alert-error' : 'alert-warning';
+              return '<div class="' + alertClass + '" style="margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">' +
+                '<div><strong>' + escapeHtml(item.title) + ':</strong> ' + escapeHtml(item.message) + '</div>' +
+              '</div>';
+            }).join('');
+          } else {
+            attContainer.style.display = 'none';
+            attContainer.innerHTML = '';
+          }
+        }
+
+        // 3. Next Publication Card (Real D1 Schedule Date!)
+        const nextPub = data.nextPublication || {};
+        const nextPubEl = document.getElementById('cnt-next-pub');
+        const nextPubSub = document.getElementById('cnt-next-pub-sub');
+
+        if (nextPubEl && nextPubSub) {
+          if (nextPub.scheduledAt) {
+            const dateFormatted = formatScheduleDateHuman(nextPub.scheduledAt);
+            if (nextPub.isOverdue) {
+              nextPubEl.style.color = 'var(--accent-rose)';
+              nextPubEl.innerHTML = '⚠️ Overdue (' + escapeHtml(dateFormatted) + ')';
+            } else {
+              nextPubEl.style.color = 'var(--text-main)';
+              nextPubEl.innerHTML = escapeHtml(dateFormatted);
+            }
+            const titleSnippet = nextPub.postTitle ? safeStr(nextPub.postTitle).slice(0, 40) + '...' : 'Post queued';
+            const remainingStr = nextPub.remainingCount > 1 ? ' (+' + (nextPub.remainingCount - 1) + ' upcoming)' : '';
+            nextPubSub.textContent = '"' + titleSnippet + '"' + remainingStr;
+          } else {
+            nextPubEl.style.color = 'var(--text-muted)';
+            nextPubEl.textContent = 'No posts scheduled';
+            nextPubSub.textContent = 'Scheduled queue is empty';
+          }
+        }
+
+        // 4. Facebook Integration Card
+        const fbData = data.facebook || {};
+        const fbStatusEl = document.getElementById('dash-fb-status');
+        const fbSubEl = document.getElementById('dash-fb-sub');
+        if (fbStatusEl && fbSubEl) {
+          if (fbData.status === 'Connected') {
+            fbStatusEl.style.color = 'var(--accent-emerald)';
+            fbStatusEl.innerHTML = '● CONNECTED';
+            fbSubEl.textContent = fbData.lastPublishedAt
+              ? 'Last published ' + formatDateSafe(fbData.lastPublishedAt)
+              : 'Page configured & active';
+          } else if (fbData.status === 'Disabled') {
+            fbStatusEl.style.color = 'var(--accent-amber)';
+            fbStatusEl.innerHTML = '○ DISABLED';
+            fbSubEl.textContent = 'Publishing disabled in config';
+          } else {
+            fbStatusEl.style.color = 'var(--accent-rose)';
+            fbStatusEl.innerHTML = '✕ NOT CONFIGURED';
+            fbSubEl.textContent = 'Missing Meta credentials';
+          }
+        }
+
+        // 5. Automation Master Card
+        const autoData = data.automation || {};
+        const autoStatusEl = document.getElementById('dash-automation-status');
+        const autoSubEl = document.getElementById('dash-automation-sub');
+        if (autoStatusEl && autoSubEl) {
+          if (autoData.status === 'Active') {
+            autoStatusEl.style.color = 'var(--accent-blue)';
+            autoStatusEl.innerHTML = '● ACTIVE';
+            autoSubEl.textContent = autoData.schedule || 'Cron: Every 5 minutes';
+          } else {
+            autoStatusEl.style.color = 'var(--text-muted)';
+            autoStatusEl.innerHTML = '○ INACTIVE';
+            autoSubEl.textContent = 'Automation disabled';
+          }
+        }
+
+        // 6. Environment Tag
         const envBadge = document.getElementById('env-badge');
         if (envBadge) {
           const env = safeLower(sys.environment, 'staging');
@@ -758,31 +878,7 @@ export function getAdminScripts(): string {
           envBadge.className = 'env-tag env-' + env;
         }
 
-        // Truthful System Status Cards
-        const workerEl = document.getElementById('val-worker');
-        if (workerEl) workerEl.innerHTML = '<span class="status-badge status-healthy">' + escapeHtml(safeStr(sys.worker, 'Healthy')) + '</span>';
-
-        const dbEl = document.getElementById('val-db');
-        if (dbEl) dbEl.innerHTML = '<span class="status-badge ' + (sys.database === 'Connected' ? 'status-healthy' : 'status-alert') + '">' + escapeHtml(safeStr(sys.database, 'Connected')) + '</span>';
-
-        const aiEl = document.getElementById('val-ai');
-        if (aiEl) aiEl.innerHTML = '<span class="status-badge status-active">' + escapeHtml(safeStr(sys.aiProvider, 'Workers AI')) + '</span>';
-
-        const isFbConfigured = Boolean(metaStatus.configured || (metaStatus.pageIdConfigured && metaStatus.tokenConfigured));
-        const fbConfigEl = document.getElementById('val-fb-config');
-        if (fbConfigEl) fbConfigEl.innerHTML = '<span class="status-badge ' + (isFbConfigured ? 'status-healthy' : 'status-disabled') + '">' + (isFbConfigured ? 'Configured' : 'Not configured') + '</span>';
-
-        const isPubEnabled = Boolean(sys.publishing === 'Enabled' || metaStatus.publishEnabled);
-        const fbPubEl = document.getElementById('val-fb-publishing');
-        if (fbPubEl) fbPubEl.innerHTML = '<span class="status-badge ' + (isPubEnabled ? 'status-healthy' : 'status-disabled') + '">' + (isPubEnabled ? 'Enabled' : 'Disabled') + '</span>';
-
-        const railPubStatus = document.getElementById('fb-rail-pub-status');
-        if (railPubStatus) {
-          railPubStatus.className = 'fb-rail-status-chip ' + (isPubEnabled ? 'status-healthy' : 'status-disabled');
-          railPubStatus.innerHTML = isPubEnabled ? '● Pub: Enabled' : '○ Pub: Disabled';
-        }
-
-        // Pipeline Counts
+        // 7. Pipeline Counts
         const pipe = data.pipeline || {};
         const cntIdeas = document.getElementById('cnt-ideas');
         if (cntIdeas) cntIdeas.textContent = Number(pipe.discoveredTopics || pipe.ideas || 0);
@@ -804,6 +900,16 @@ export function getAdminScripts(): string {
 
         const cntBlocked = document.getElementById('cnt-blocked');
         if (cntBlocked) cntBlocked.textContent = Number(pipe.rejected || pipe.blocked || 0);
+
+        // 8. Current Activity Text
+        const autoTextEl = document.getElementById('dashboard-automation-text');
+        if (autoTextEl) {
+          if (nextPub.scheduledAt) {
+            autoTextEl.innerHTML = 'All systems operational. Next publication: <strong>' + escapeHtml(formatScheduleDateHuman(nextPub.scheduledAt)) + '</strong>.';
+          } else {
+            autoTextEl.innerHTML = 'All systems operational. Queue is currently empty.';
+          }
+        }
 
         // Cloudflare Verified Telemetry & Application Execution Metrics
         if (data.aiUsage) {
