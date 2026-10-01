@@ -348,6 +348,31 @@ export class PublicationService {
     });
 
     // 7. INVOKE META PUBLISHER (0 AI calls, exact approved post content)
+    // 6.5. PUBLISHING SAFETY CHECK: Ensure image belongs to approved library and is valid
+    if (postRow.image_url) {
+      const imgCheck = await this.db
+        .prepare('SELECT ci.status FROM post_images pi JOIN curated_images ci ON ci.id = pi.curated_image_id WHERE pi.post_id = ?')
+        .bind(postId)
+        .first<{ status: string }>();
+
+      if (imgCheck && imgCheck.status !== 'APPROVED') {
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_BLOCKED',
+          entityType: 'post',
+          entityId: postId,
+          actor,
+          details: { reason: 'IMAGE_NOT_APPROVED', imageStatus: imgCheck.status },
+        });
+
+        return {
+          success: false,
+          code: 'IMAGE_NOT_APPROVED',
+          message: `Publication blocked: Image attached to post ${postId} has status '${imgCheck.status}'. Only APPROVED images can be published to Facebook.`,
+          retryable: false,
+        };
+      }
+    }
+
     const pubResult = await this.publisher.publish({
       postId,
       postVersionId: postRow.version_id,
@@ -368,6 +393,20 @@ export class PublicationService {
         )
         .bind(pubResult.externalPostId, publishedAt, publicationId)
         .run();
+
+      // Mark curated image as permanently consumed/published
+      const postImgRow = await this.db
+        .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ?')
+        .bind(postId)
+        .first<{ curated_image_id?: string }>();
+
+      if (postImgRow?.curated_image_id) {
+        const { ImageLibraryService } = await import('../content/image-library-service');
+        const imgLib = new ImageLibraryService(this.db, this.auditLogger);
+        await imgLib.markImageAsPublished(postImgRow.curated_image_id, postId).catch((err) => {
+          console.warn('[PublicationService] Failed to mark curated image as published:', err);
+        });
+      }
 
       // Update post status to published
       await this.db

@@ -137,6 +137,10 @@ export function renderAdminHtml(): string {
               <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Content Drafts
             </a></li>
+            <li class="nav-item" id="nav-images"><a href="#images" onclick="switchTab('images', event)">
+              <svg viewBox="0 0 24 24" class="nav-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              Image Library
+            </a></li>
           </ul>
 
           <div class="nav-section-title">PUBLISHING</div>
@@ -559,6 +563,76 @@ export function renderAdminHtml(): string {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+
+          <!-- TAB: IMAGE LIBRARY -->
+          <div id="tab-images" class="tab-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <h1 class="page-title">Curated Image Library</h1>
+                <p class="page-subtitle" style="margin-bottom:0;">Review candidate illustrations, edit metadata, and manage administrator-approved image assets.</p>
+              </div>
+              <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                <button class="btn-secondary" onclick="triggerCandidateDiscovery()">
+                  Discover Candidates
+                </button>
+                <button class="btn-primary" onclick="openAddImageModal()">
+                  + Add Image
+                </button>
+              </div>
+            </div>
+
+            <div id="images-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
+
+            <!-- Status Tabs Bar -->
+            <div style="display:flex; gap:0.5rem; margin-bottom:1.25rem; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem; flex-wrap:wrap;">
+              <button class="btn-tab active" id="img-tab-pending" onclick="setImageStatusTab('PENDING')">
+                Pending Review <span class="badge-count" id="img-count-pending">0</span>
+              </button>
+              <button class="btn-tab" id="img-tab-approved" onclick="setImageStatusTab('APPROVED')">
+                Approved Pool <span class="badge-count" id="img-count-approved">0</span>
+              </button>
+              <button class="btn-tab" id="img-tab-rejected" onclick="setImageStatusTab('REJECTED')">
+                Rejected <span class="badge-count" id="img-count-rejected">0</span>
+              </button>
+              <button class="btn-tab" id="img-tab-used" onclick="setImageStatusTab('USED')">
+                Used Assets <span class="badge-count" id="img-count-used">0</span>
+              </button>
+              <button class="btn-tab" id="img-tab-all" onclick="setImageStatusTab('ALL')">
+                All Assets <span class="badge-count" id="img-count-all">0</span>
+              </button>
+            </div>
+
+            <!-- Filters & Search Bar -->
+            <div style="display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; align-items:center; justify-space-between;">
+              <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
+                <select id="image-category-filter" class="bulk-select-status" style="width:190px;" onchange="loadImagesData()">
+                  <option value="">All Categories</option>
+                  <option value="AI">AI & Machine Learning</option>
+                  <option value="Website">Website & WebDev</option>
+                  <option value="Marketing">Marketing & SEO</option>
+                  <option value="Sales">Sales & Growth</option>
+                  <option value="Small Business">Small Business</option>
+                  <option value="Customer Experience">Customer Experience</option>
+                  <option value="Cybersecurity">Cybersecurity & Cloud</option>
+                  <option value="Technology">Technology & Software</option>
+                  <option value="General">General</option>
+                </select>
+                <input type="text" id="image-search-input" class="bulk-select-status" style="width:260px; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Search keywords, title, description..." onkeyup="debounceImageSearch()" />
+              </div>
+
+              <div id="image-bulk-toolbar" style="display:none; gap:0.5rem; align-items:center;">
+                <span id="image-selected-count" style="font-size:0.85rem; color:var(--text-muted);">0 selected</span>
+                <button class="btn-primary" style="font-size:0.8rem; padding:0.35rem 0.7rem;" onclick="executeImageBulkAction('approve')">Approve</button>
+                <button class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.7rem; color:var(--accent-amber);" onclick="executeImageBulkAction('reject')">Reject</button>
+                <button class="btn-logout" style="font-size:0.8rem; padding:0.35rem 0.7rem;" onclick="executeImageBulkAction('delete')">Delete</button>
+              </div>
+            </div>
+
+            <!-- Image Grid Container -->
+            <div id="image-library-grid" class="image-library-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:1.25rem;">
+              <div style="grid-column: 1 / -1; text-align:center; color:var(--text-muted); padding:3rem;">Loading Image Library...</div>
             </div>
           </div>
 
@@ -1403,6 +1477,219 @@ export function renderAdminHtml(): string {
       <div class="modal-footer">
         <button type="button" class="btn-secondary" onclick="closeModal('intelligent-schedule-modal')">Cancel</button>
         <button type="button" id="commit-intelligent-schedule-btn" class="btn-primary" onclick="executeCommitIntelligentSchedule()">Accept &amp; Commit Schedule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 14. ADD IMAGE MODAL -->
+  <div id="add-image-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:620px;">
+      <div class="modal-header">
+        <div class="modal-title">+ Add Image to Library</div>
+        <button class="modal-close-btn" onclick="closeModal('add-image-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex; gap:0.5rem; margin-bottom:1.25rem; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+          <button type="button" class="btn-tab active" id="add-img-type-file-btn" onclick="setAddImageSourceType('file')">Upload File</button>
+          <button type="button" class="btn-tab" id="add-img-type-url-btn" onclick="setAddImageSourceType('url')">HTTPS URL</button>
+        </div>
+
+        <form id="add-image-form" onsubmit="submitAddImageForm(event)">
+          <div id="add-img-file-group" style="margin-bottom:1rem;">
+            <label class="form-label">Image File (JPEG, PNG, WebP &lt; 10MB)</label>
+            <input type="file" id="add-img-file-input" accept="image/jpeg,image/png,image/webp" class="bulk-select-status" style="width:100%; padding:0.5rem;" />
+          </div>
+
+          <div id="add-img-url-group" style="margin-bottom:1rem; display:none;">
+            <label class="form-label">Image HTTPS URL</label>
+            <input type="url" id="add-img-url-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="https://example.com/image.jpg" />
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div>
+              <label class="form-label">Title / Name *</label>
+              <input type="text" id="add-img-title-input" required class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="e.g. Cybersecurity Network" />
+            </div>
+            <div>
+              <label class="form-label">Category *</label>
+              <select id="add-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
+                <option value="AI">AI & Machine Learning</option>
+                <option value="Website">Website & WebDev</option>
+                <option value="Marketing">Marketing & SEO</option>
+                <option value="Sales">Sales & Growth</option>
+                <option value="Small Business">Small Business</option>
+                <option value="Customer Experience">Customer Experience</option>
+                <option value="Cybersecurity">Cybersecurity & Cloud</option>
+                <option value="Technology" selected>Technology & Software</option>
+                <option value="General">General</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-bottom:1rem;">
+            <label class="form-label">Keywords / Tags (comma-separated)</label>
+            <input type="text" id="add-img-keywords-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="security, cloud, data protection, network" />
+          </div>
+
+          <div style="margin-bottom:1rem;">
+            <label class="form-label">Semantic Description ("what this image represents")</label>
+            <textarea id="add-img-description-input" rows="2" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Abstract visualization of computer security and data locks"></textarea>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div>
+              <label class="form-label">Author / Creator</label>
+              <input type="text" id="add-img-author-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Creator name" />
+            </div>
+            <div>
+              <label class="form-label">License</label>
+              <input type="text" id="add-img-license-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="CC BY, Unsplash, Custom" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.25rem;">
+            <div>
+              <label class="form-label">Initial Status</label>
+              <select id="add-img-status-select" class="bulk-select-status" style="width:100%; padding:0.5rem;">
+                <option value="APPROVED" selected>APPROVED (Publishable)</option>
+                <option value="PENDING">PENDING (Review needed)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Notes</label>
+              <input type="text" id="add-img-notes-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Internal notes..." />
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding:0; margin-top:1rem;">
+            <button type="button" class="btn-secondary" onclick="closeModal('add-image-modal')">Cancel</button>
+            <button type="submit" class="btn-primary">Save to Library</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 15. EDIT IMAGE METADATA MODAL -->
+  <div id="edit-image-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:620px;">
+      <div class="modal-header">
+        <div class="modal-title">Edit Image Metadata</div>
+        <button class="modal-close-btn" onclick="closeModal('edit-image-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="edit-image-form" onsubmit="submitEditImageForm(event)">
+          <input type="hidden" id="edit-img-id" />
+          
+          <div style="display:flex; gap:1rem; margin-bottom:1rem; align-items:center;">
+            <img id="edit-img-preview" src="" alt="Preview" style="width:100px; height:75px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color);" />
+            <div style="font-size:0.8rem; color:var(--text-muted);">
+              <div><strong id="edit-img-source-type">DISCOVERED</strong></div>
+              <div id="edit-img-url-display" style="max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div>
+              <label class="form-label">Title / Name *</label>
+              <input type="text" id="edit-img-title-input" required class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" />
+            </div>
+            <div>
+              <label class="form-label">Category *</label>
+              <select id="edit-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
+                <option value="AI">AI & Machine Learning</option>
+                <option value="Website">Website & WebDev</option>
+                <option value="Marketing">Marketing & SEO</option>
+                <option value="Sales">Sales & Growth</option>
+                <option value="Small Business">Small Business</option>
+                <option value="Customer Experience">Customer Experience</option>
+                <option value="Cybersecurity">Cybersecurity & Cloud</option>
+                <option value="Technology">Technology & Software</option>
+                <option value="General">General</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-bottom:1rem;">
+            <label class="form-label">Keywords / Tags (comma-separated)</label>
+            <input type="text" id="edit-img-keywords-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" />
+          </div>
+
+          <div style="margin-bottom:1rem;">
+            <label class="form-label">Semantic Description ("what this image represents")</label>
+            <textarea id="edit-img-description-input" rows="2" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);"></textarea>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div>
+              <label class="form-label">Author / Creator</label>
+              <input type="text" id="edit-img-author-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" />
+            </div>
+            <div>
+              <label class="form-label">License</label>
+              <input type="text" id="edit-img-license-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.25rem;">
+            <div>
+              <label class="form-label">Review Status *</label>
+              <select id="edit-img-status-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
+                <option value="APPROVED">APPROVED (Publishable)</option>
+                <option value="PENDING">PENDING (In Review)</option>
+                <option value="REJECTED">REJECTED (Do Not Use)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Notes</label>
+              <input type="text" id="edit-img-notes-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" />
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding:0; margin-top:1rem;">
+            <button type="button" class="btn-secondary" onclick="closeModal('edit-image-modal')">Cancel</button>
+            <button type="submit" class="btn-primary">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 16. DRAFT ILLUSTRATION SELECTOR MODAL -->
+  <div id="draft-image-selector-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:850px;">
+      <div class="modal-header">
+        <div class="modal-title">Select Illustration from Approved Library</div>
+        <button class="modal-close-btn" onclick="closeModal('draft-image-selector-modal')">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
+        <input type="hidden" id="draft-selector-post-id" />
+        <div style="display:flex; gap:0.75rem; margin-bottom:1rem; flex-wrap:wrap;">
+          <input type="text" id="draft-selector-search" class="bulk-select-status" style="flex:1; min-width:220px; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Search approved images by title, keywords..." onkeyup="filterDraftImageSelector()" />
+          <select id="draft-selector-category" class="bulk-select-status" style="width:180px;" onchange="filterDraftImageSelector()">
+            <option value="">All Categories</option>
+            <option value="AI">AI & Machine Learning</option>
+            <option value="Website">Website & WebDev</option>
+            <option value="Marketing">Marketing & SEO</option>
+            <option value="Sales">Sales & Growth</option>
+            <option value="Small Business">Small Business</option>
+            <option value="Customer Experience">Customer Experience</option>
+            <option value="Cybersecurity">Cybersecurity & Cloud</option>
+            <option value="Technology">Technology & Software</option>
+            <option value="General">General</option>
+          </select>
+        </div>
+
+        <div id="draft-selector-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:1rem;">
+          <div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-muted);">Loading approved illustrations...</div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+        <button type="button" class="btn-logout" style="font-size:0.8rem;" onclick="removeDraftIllustration()">Remove Image</button>
+        <div>
+          <button type="button" class="btn-secondary" onclick="closeModal('draft-image-selector-modal')">Cancel</button>
+          <button type="button" id="confirm-assign-draft-img-btn" class="btn-primary" disabled onclick="confirmAssignDraftIllustration()">Use Selected Illustration</button>
+        </div>
       </div>
     </div>
   </div>

@@ -1614,6 +1614,95 @@ export function getAdminCss(): string {
       background: linear-gradient(90deg, #3b82f6, #06b6d4);
       transition: width 0.2s ease;
     }
+
+    /* IMAGE LIBRARY STYLES */
+    .image-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .image-card:hover {
+      border-color: var(--border-color-hover);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+    .image-card-preview {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      background: #090d16;
+    }
+    .image-card-body {
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      flex: 1;
+    }
+    .image-card-title {
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .image-card-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .image-card-actions {
+      display: flex;
+      gap: 0.35rem;
+      margin-top: auto;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    .badge-count {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-main);
+      font-size: 0.7rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      margin-left: 0.25rem;
+    }
+    .btn-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.4rem 0.75rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-tab.active {
+      background: rgba(24, 119, 242, 0.15);
+      color: var(--accent-blue);
+    }
+    .image-select-card {
+      cursor: pointer;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--bg-card);
+      transition: all 0.15s ease;
+    }
+    .image-select-card:hover {
+      border-color: var(--accent-blue);
+    }
+    .image-select-card.selected {
+      border-color: var(--accent-emerald);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.3);
+    }
   `;
 }
 

@@ -168,6 +168,7 @@ authRoutes.post('/login', async (c) => {
       status: userRow.status,
     },
     csrfToken: createdSession.csrfSecret,
+    sessionToken: createdSession.rawToken,
   });
 });
 
@@ -237,6 +238,7 @@ authRoutes.get('/session', async (c) => {
       lastLoginAt: result.user.last_login_at,
     },
     csrfToken: result.session.csrf_secret,
+    sessionToken: token,
   });
 });
 

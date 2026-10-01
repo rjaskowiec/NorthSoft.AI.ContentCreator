@@ -12,7 +12,6 @@ import { evaluatePipelineGate } from '../../core/quality-gate';
 import { ContentQualityGate } from './content-quality-gate';
 import { getAIProvider } from '../../ai/factory';
 import { OpenverseImageService } from './image-service';
-import type { ImageCandidate } from './image-service.interface';
 import { PolicyReviewService } from './policy-service';
 import { QualityReviewerService } from './qa-service';
 import { StaticValidator } from './static-validator';
@@ -241,32 +240,40 @@ export class ContentPlannerService {
         imageSearchQuery: lastDraft.imageSearchQuery,
       });
 
-      // 4b. Find Best Image via Hierarchical Search & Metadata Scoring
-      const imageService = new OpenverseImageService(this.env);
-      let selectedImage: ImageCandidate | undefined;
-      let selectionReason = 'No image candidate passed search hierarchy.';
-      let selectionConfidence = 0.5;
+      // 4b. Image Selection via Curated Image Library (Only APPROVED images may be used)
+      const { ImageLibraryService } = await import('./image-library-service');
+      const imgLibrary = new ImageLibraryService(this.db, this.auditLogger);
+      const openverseService = new OpenverseImageService(this.env);
 
+      // Try finding an approved image in the library
+      let approvedMatch = await imgLibrary.findBestApprovedImage(
+        topicRow.title,
+        topicRow.category || 'Technology & Business',
+        lastDraft.body,
+        postId,
+      );
+
+      // Background Candidate Discovery: Collect candidates into PENDING library if needed
       try {
-        const recentlyUsedRows = await this.db
-          .prepare('SELECT url FROM post_images ORDER BY created_at DESC LIMIT 50')
-          .all<{ url: string }>()
-          .catch(() => ({ results: [] }));
-        const recentlyUsedUrls = new Set(((recentlyUsedRows?.results) || []).map((r) => r.url));
-
-        const found = await imageService.findBestImage(
-          topicRow.title,
-          topicRow.category || 'Technology & Business',
-          lastDraft.body,
-          recentlyUsedUrls,
-        );
-        if (found) {
-          selectedImage = found.candidate;
-          selectionReason = found.reason;
-          selectionConfidence = Number((Math.min(1.0, found.score / 100)).toFixed(2));
+        const query = lastDraft.imageSearchQuery || topicRow.title;
+        const candidates = await openverseService.searchImages(query, 5);
+        for (const cand of candidates) {
+          await imgLibrary.addCandidate({
+            title: cand.title,
+            sourceUrl: cand.url,
+            originalPageUrl: cand.sourceUrl,
+            author: cand.author,
+            authorUrl: cand.authorUrl,
+            license: cand.license,
+            licenseUrl: cand.licenseUrl,
+            category: topicRow.category || 'Technology',
+            keywords: (cand.tags || []).join(', '),
+            description: `Auto-discovered for topic: ${topicRow.title}`,
+            discoveryQuery: query,
+          });
         }
-      } catch (searchErr) {
-        console.warn('[ContentPlanner] Hierarchical image discovery failed:', searchErr);
+      } catch (discErr) {
+        console.warn('[ContentPlanner] Candidate discovery failed:', discErr);
       }
 
       // Persist Post & Version in D1 atomically
@@ -300,38 +307,12 @@ export class ContentPlannerService {
             ),
         ];
 
-        if (selectedImage) {
-          statements.push(
-            this.db
-              .prepare(
-                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url, license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              )
-              .bind(
-                crypto.randomUUID(),
-                postId,
-                versionNumber,
-                selectedImage.url,
-                selectedImage.title || 'Selected Illustration',
-                selectedImage.sourceUrl,
-                selectedImage.id,
-                selectedImage.author,
-                selectedImage.authorUrl || null,
-                selectedImage.license,
-                selectedImage.licenseUrl || 'https://creativecommons.org/',
-                versionCreatedAt,
-                'verified',
-                'accept',
-                selectionReason,
-                selectionConfidence,
-                versionCreatedAt,
-              ),
-          );
-        }
-
         await executeBatch(statements);
-
         postExists = true;
+
+        if (approvedMatch) {
+          await imgLibrary.reserveImageForDraft(approvedMatch.image.id, postId, false);
+        }
 
         await this.auditLogger.log({
           eventType: 'POST_GENERATION_STARTED',
@@ -367,36 +348,11 @@ export class ContentPlannerService {
           );
         }
 
-        if (selectedImage) {
-          statements.push(
-            this.db
-              .prepare(
-                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url, license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason, visual_verification_confidence, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              )
-              .bind(
-                crypto.randomUUID(),
-                postId!,
-                versionNumber,
-                selectedImage.url,
-                selectedImage.title || 'Selected Illustration',
-                selectedImage.sourceUrl,
-                selectedImage.id,
-                selectedImage.author,
-                selectedImage.authorUrl || null,
-                selectedImage.license,
-                selectedImage.licenseUrl || 'https://creativecommons.org/',
-                versionCreatedAt,
-                'verified',
-                'accept',
-                selectionReason,
-                selectionConfidence,
-                versionCreatedAt,
-              ),
-          );
-        }
-
         await executeBatch(statements);
+
+        if (approvedMatch && postId) {
+          await imgLibrary.reserveImageForDraft(approvedMatch.image.id, postId, false);
+        }
       }
 
       await this.auditLogger.log({

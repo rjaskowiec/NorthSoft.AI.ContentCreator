@@ -5,6 +5,7 @@
 export function getAdminScripts(): string {
   return `
     let csrfToken = '';
+    let sessionToken = (function() { try { return localStorage.getItem('admin_session_token') || ''; } catch(e) { return ''; } })();
     let currentTab = 'dashboard';
     let selectedTopicIds = new Set();
     let selectedPostIds = new Set();
@@ -248,9 +249,22 @@ export function getAdminScripts(): string {
         return activeInFlightRequests.get(key).then(res => typeof res.clone === 'function' ? res.clone() : res);
       }
 
+      const opts = { ...options };
+      opts.credentials = opts.credentials || 'same-origin';
+      opts.headers = { ...(opts.headers || {}) };
+      if (csrfToken && !opts.headers['x-csrf-token']) {
+        opts.headers['x-csrf-token'] = csrfToken;
+      }
+      if (sessionToken && !opts.headers['x-session-token']) {
+        opts.headers['x-session-token'] = sessionToken;
+      }
+
       const fetchPromise = (async () => {
         try {
-          const res = await fetch(url, options);
+          const res = await fetch(url, opts);
+          if (res.status === 401 && !url.includes('/api/auth/session') && !url.includes('/api/auth/login')) {
+            showLoginForm();
+          }
           return typeof res.clone === 'function' ? res.clone() : res;
         } finally {
           activeInFlightRequests.delete(key);
@@ -289,6 +303,10 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (data && data.authenticated) {
           csrfToken = safeStr(data.csrfToken);
+          if (data.sessionToken) {
+            sessionToken = safeStr(data.sessionToken);
+            try { localStorage.setItem('admin_session_token', sessionToken); } catch (e) {}
+          }
           showDashboard(data.user || {});
           if (!initialSessionLoaded) {
             initialSessionLoaded = true;
@@ -311,7 +329,7 @@ export function getAdminScripts(): string {
       }
     }
 
-    const VALID_TABS = ['dashboard', 'pipeline', 'research', 'content', 'schedules', 'publications', 'intelligence', 'security', 'audit'];
+    const VALID_TABS = ['dashboard', 'pipeline', 'research', 'content', 'images', 'schedules', 'publications', 'intelligence', 'security', 'audit'];
 
     function getHashTabName() {
       let h = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
@@ -425,6 +443,8 @@ export function getAdminScripts(): string {
           await loadResearchData();
         } else if (tabName === 'content') {
           await loadContentData();
+        } else if (tabName === 'images') {
+          await loadImagesData();
         } else if (tabName === 'schedules') {
           await loadSchedulesData();
         } else if (tabName === 'publications') {
@@ -1973,12 +1993,41 @@ export function getAdminScripts(): string {
               const pIdeaId = safeStr(p.idea_id);
               const pBody = safeStr(p.latest_body || p.body);
               const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
-              const topicLabel = escapeHtml(safeStr(p.topic_title, pIdeaId ? 'Linked topic' : 'No linked topic'));
+              const topicLabel = escapeHtml(safeStr(p.topic_title || p.title, pIdeaId ? 'Linked topic' : 'No linked topic'));
               const sourceTitle = safeStr(p.source_title);
               const sourceUrl = safeStr(p.article_source_url);
-              const sourceLink = sourceTitle && sourceUrl && /^https?:\\/\\//i.test(sourceUrl)
-                ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle) + '</a>'
-                : escapeHtml(sourceTitle);
+              const topicCat = safeStr(p.topic_category || p.content_pillar);
+              const topicSourceType = safeStr(p.topic_source_type);
+
+              let inspirationHtml = '';
+              if (pIdeaId) {
+                if (sourceTitle && sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle) + '</a></div>';
+                } else if (sourceTitle) {
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(sourceTitle) + '</div>';
+                } else if (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceUrl) + '</a></div>';
+                } else if (topicSourceType === 'manual') {
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual topic</span></div>';
+                } else if (topicCat) {
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(topicCat) + ' research</div>';
+                }
+              }
+
+              const selSource = safeStr(p.selection_source, 'AUTO');
+              const imgBadge = selSource === 'MANUAL' 
+                ? '<span class="status-badge status-healthy" style="font-size:0.65rem; padding:0.1rem 0.35rem;" title="Manually selected illustration">MANUAL</span>' 
+                : '<span class="status-badge status-active" style="font-size:0.65rem; padding:0.1rem 0.35rem;" title="Automatically selected from approved library">AUTO</span>';
+
+              let imageColHtml = '';
+              if (p.image_url) {
+                imageColHtml = '<div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">' +
+                  '<a href="' + escapeHtml(p.image_source_url || p.image_url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(p.license || 'Post image') + '"><img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:56px;height:40px;object-fit:cover;border-radius:4px;"/></a>' +
+                  '<div>' + imgBadge + '<br/><button class="btn-secondary" style="padding:0.1rem 0.4rem;font-size:0.7rem;margin-top:0.2rem;" onclick="openDraftImageSelectorModal(\\x27' + pId + '\\x27)">Change</button></div>' +
+                  '</div>';
+              } else {
+                imageColHtml = '<div style="margin-top:0.35rem;"><span class="status-badge status-alert" style="font-size:0.7rem;">⚠️ Image Required</span> <button class="btn-secondary" style="padding:0.15rem 0.4rem;font-size:0.7rem;margin-left:0.3rem;" onclick="openDraftImageSelectorModal(\\x27' + pId + '\\x27)">Select Image</button></div>';
+              }
 
               return \`
               <tr data-id="\${pId}" id="post-row-\${pId}">
@@ -1987,11 +2036,12 @@ export function getAdminScripts(): string {
                 </td>
                 <td>
                   \${pIdeaId ? \`<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>\` : '<span>' + topicLabel + '</span>'}
-                  \${sourceTitle ? \`<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>\${sourceLink}</div>\` : ''}
+                  \${topicCat ? \`<span style="font-size:0.675rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px; margin-left:0.35rem;">\${escapeHtml(topicCat)}</span>\` : ''}
+                  \${inspirationHtml}
                 </td>
                 <td>
                   <div style="font-size:0.85rem; color:var(--text-main); max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
-                  \${p.image_url ? \`<a href="\${escapeHtml(p.image_source_url || p.image_url)}" target="_blank" rel="noopener noreferrer" title="\${escapeHtml(p.license || 'Post image')}"><img src="\${escapeHtml(p.image_url)}" alt="Post image" style="width:56px;height:40px;object-fit:cover;border-radius:4px;margin-top:0.35rem;"/></a>\` : \`<button class="btn-secondary" style="padding:0.15rem 0.4rem;font-size:0.7rem;margin-top:0.3rem;" onclick="findImageForPost('\${pId}')">Add image</button>\`}
+                  \${imageColHtml}
                 </td>
                 <td>\${renderWorkflowStages(p)}</td>
                 <td>
@@ -3871,69 +3921,80 @@ export function getAdminScripts(): string {
       const payload = id ? { body: content, status } : { content, status };
 
       try {
-        const res = await fetch(url, {
+        const res = await guardedFetch(url, {
           method,
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        if (res.ok) {
-          const saved = await res.json().catch(() => ({}));
-          const postId = id || saved.postId;
-          let imageWasEdited = false;
-          if (postId && imageFile) {
-            const imageForm = new FormData();
-            imageForm.append('file', imageFile);
-            const imageRes = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
-              method: 'POST', headers: { 'x-csrf-token': csrfToken }, body: imageForm
-            });
-            if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image upload failed.'));
-            imageWasEdited = true;
-          } else if (postId && imageUrl) {
-            const imageRes = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
-              method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-              body: JSON.stringify({ url: imageUrl })
-            });
-            if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image save failed.'));
-            imageWasEdited = true;
-          } else if (postId && removeImage) {
-            const imageRes = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
-              method: 'DELETE', headers: { 'x-csrf-token': csrfToken }
-            });
-            if (!imageRes.ok) throw new Error('Image removal failed.');
-            imageWasEdited = true;
-          }
-          const p = cachedPosts.find(item => item && item.id === id);
-          if (p && (p.status === 'published' || p.facebook_post_id)) {
-            // Push to Facebook immediately
-            const fbRes = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-              body: JSON.stringify({ content })
-            });
-            
-            if (fbRes.ok) {
-              alert('Saved locally and pushed to Facebook successfully.');
-            } else {
-              const fbData = await fbRes.json();
-              if (fbData.conflict) {
-                alert('Saved locally, but a CONFLICT was detected with Facebook! Please resolve it using the "Resolve Conflict" button.');
-              } else {
-                alert('Saved locally, but failed to push to Facebook: ' + safeStr(fbData.error));
-              }
-            }
-          }
-          if (imageWasEdited && p && (p.status === 'published' || p.facebook_post_id)) {
-            const imageSync = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update-image', {
-              method: 'POST', headers: { 'x-csrf-token': csrfToken }
-            });
-            if (!imageSync.ok) {
-              const syncData = await imageSync.json().catch(() => ({}));
-              alert('Image saved in the app, but Facebook did not confirm the image update: ' + safeStr(syncData.error, 'Unknown Meta API error.'));
-            }
-          }
-          closeModal('post-modal');
-          loadContentData();
+
+        if (res.status === 401) {
+          alert('Session expired. Please sign in again.');
+          showLoginForm();
+          return;
         }
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          alert('Failed to save post draft: ' + safeStr(errData.message || errData.error || ('Server returned HTTP ' + res.status)));
+          return;
+        }
+
+        const saved = await res.json().catch(() => ({}));
+        const postId = id || saved.postId;
+        let imageWasEdited = false;
+        if (postId && imageFile) {
+          const imageForm = new FormData();
+          imageForm.append('file', imageFile);
+          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
+            method: 'POST', body: imageForm
+          });
+          if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image upload failed.'));
+          imageWasEdited = true;
+        } else if (postId && imageUrl) {
+          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: imageUrl })
+          });
+          if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image save failed.'));
+          imageWasEdited = true;
+        } else if (postId && removeImage) {
+          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
+            method: 'DELETE'
+          });
+          if (!imageRes.ok) throw new Error('Image removal failed.');
+          imageWasEdited = true;
+        }
+        const p = cachedPosts.find(item => item && item.id === id);
+        if (p && (p.status === 'published' || p.facebook_post_id)) {
+          // Push to Facebook immediately
+          const fbRes = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+          });
+          
+          if (fbRes.ok) {
+            alert('Saved locally and pushed to Facebook successfully.');
+          } else {
+            const fbData = await fbRes.json().catch(() => ({}));
+            if (fbData.conflict) {
+              alert('Saved locally, but a CONFLICT was detected with Facebook! Please resolve it using the "Resolve Conflict" button.');
+            } else {
+              alert('Saved locally, but failed to push to Facebook: ' + safeStr(fbData.error || fbData.message));
+            }
+          }
+        }
+        if (imageWasEdited && p && (p.status === 'published' || p.facebook_post_id)) {
+          const imageSync = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update-image', {
+            method: 'POST'
+          });
+          if (!imageSync.ok) {
+            const syncData = await imageSync.json().catch(() => ({}));
+            alert('Image saved in the app, but Facebook did not confirm the image update: ' + safeStr(syncData.error, 'Unknown Meta API error.'));
+          }
+        }
+        closeModal('post-modal');
+        loadContentData();
       } catch (err) {
         console.error('Failed to save post:', err);
         alert(err instanceof Error ? err.message : 'Failed to save post.');
@@ -4553,6 +4614,520 @@ export function getAdminScripts(): string {
       gridEl.innerHTML = html;
     }
 
+    // Image Library Frontend State & Logic
+    let currentImageStatusTab = 'PENDING';
+    let currentImageCategoryFilter = '';
+    let currentImageSearchQuery = '';
+    let cachedImages = [];
+    let selectedImageIds = new Set();
+    let addImageSourceType = 'file';
+    let selectedDraftImageId = null;
+    let imageSearchDebounceTimer = null;
+
+    function setImageStatusTab(status) {
+      currentImageStatusTab = status;
+      ['pending', 'approved', 'rejected', 'used', 'all'].forEach(tab => {
+        const btn = document.getElementById('img-tab-' + tab);
+        if (btn) btn.classList.remove('active');
+      });
+      const activeBtn = document.getElementById('img-tab-' + status.toLowerCase());
+      if (activeBtn) activeBtn.classList.add('active');
+      loadImagesData();
+    }
+
+    function debounceImageSearch() {
+      if (imageSearchDebounceTimer) clearTimeout(imageSearchDebounceTimer);
+      imageSearchDebounceTimer = setTimeout(() => {
+        const searchInput = document.getElementById('image-search-input');
+        currentImageSearchQuery = searchInput ? searchInput.value.trim() : '';
+        loadImagesData();
+      }, 300);
+    }
+
+    async function loadImagesData() {
+      try {
+        const catSelect = document.getElementById('image-category-filter');
+        currentImageCategoryFilter = catSelect ? catSelect.value.trim() : '';
+
+        const url = '/api/admin/images?status=' + encodeURIComponent(currentImageStatusTab) +
+          '&category=' + encodeURIComponent(currentImageCategoryFilter) +
+          '&search=' + encodeURIComponent(currentImageSearchQuery) +
+          '&limit=40';
+
+        const res = await guardedFetch(url);
+        if (!res.ok) {
+          console.error('Failed to load images:', res.status);
+          return;
+        }
+
+        const data = await res.json();
+        cachedImages = Array.isArray(data.images) ? data.images : [];
+
+        // Update counts
+        if (data.counts) {
+          const p = document.getElementById('img-count-pending');
+          const a = document.getElementById('img-count-approved');
+          const r = document.getElementById('img-count-rejected');
+          const u = document.getElementById('img-count-used');
+          const all = document.getElementById('img-count-all');
+          if (p) p.textContent = data.counts.pending || 0;
+          if (a) a.textContent = data.counts.approved || 0;
+          if (r) r.textContent = data.counts.rejected || 0;
+          if (u) u.textContent = data.counts.used || 0;
+          if (all) all.textContent = data.counts.total || 0;
+        }
+
+        renderImageLibraryGrid(cachedImages);
+      } catch (err) {
+        console.error('Failed to load image library data:', err);
+      }
+    }
+
+    function renderImageLibraryGrid(images) {
+      const gridEl = document.getElementById('image-library-grid');
+      if (!gridEl) return;
+
+      if (!images || images.length === 0) {
+        gridEl.innerHTML = '<div style="grid-column: 1 / -1; text-align:center; color:var(--text-muted); padding:3rem;">No images found in this filter view.</div>';
+        return;
+      }
+
+      gridEl.innerHTML = images.map(img => {
+        const imgId = safeStr(img.id);
+        const title = escapeHtml(safeStr(img.title, 'Untitled Image'));
+        const sourceUrl = safeStr(img.source_url || img.r2_key);
+        const category = escapeHtml(safeStr(img.category, 'General'));
+        const keywords = escapeHtml(safeStr(img.keywords, '—'));
+        const author = escapeHtml(safeStr(img.author, 'Unknown'));
+        const license = escapeHtml(safeStr(img.license, 'Custom'));
+        const status = safeUpper(img.status, 'PENDING');
+        const usageCount = Number(img.usage_count || 0);
+
+        let statusBadgeClass = 'status-disabled';
+        if (status === 'APPROVED') statusBadgeClass = 'status-healthy';
+        else if (status === 'PENDING') statusBadgeClass = 'status-active';
+        else if (status === 'REJECTED') statusBadgeClass = 'status-alert';
+
+        const isChecked = selectedImageIds.has(imgId) ? 'checked' : '';
+
+        return '<div class="image-card" id="img-card-' + imgId + '">' +
+            '<div style="position:relative;">' +
+              '<input type="checkbox" class="img-select-checkbox" data-id="' + imgId + '" ' + isChecked + ' onchange="updateImageSelectionState()" style="position:absolute; top:8px; left:8px; z-index:2;" />' +
+              '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer">' +
+                '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" class="image-card-preview" />' +
+              '</a>' +
+              '<span class="status-badge ' + statusBadgeClass + '" style="position:absolute; top:8px; right:8px; font-size:0.65rem;">' + status + '</span>' +
+            '</div>' +
+            '<div class="image-card-body">' +
+              '<div class="image-card-title" title="' + title + '">' + title + '</div>' +
+              '<div class="image-card-meta">' +
+                '<span style="background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px; font-weight:600;">' + category + '</span>' +
+                '<span style="color:var(--text-muted);">By ' + author + ' (' + license + ')</span>' +
+              '</div>' +
+              '<div style="font-size:0.75rem; color:var(--text-subtle); max-height:36px; overflow:hidden; text-overflow:ellipsis;">' +
+                keywords +
+              '</div>' +
+              '<div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">' +
+                (usageCount > 0 ? '<span style="color:var(--accent-emerald);">Used ' + usageCount + ' time(s)</span>' : '<span style="color:var(--accent-blue);">Unused asset</span>') +
+                (img.reserved_post_id ? ' &bull; <span style="color:var(--accent-amber);">Reserved</span>' : '') +
+              '</div>' +
+              '<div class="image-card-actions">' +
+                (status !== 'APPROVED' ? '<button class="btn-primary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="quickApproveImage(\\x27' + imgId + '\\x27)">Approve</button>' : '') +
+                (status !== 'REJECTED' ? '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--accent-amber);" onclick="quickRejectImage(\\x27' + imgId + '\\x27)">Reject</button>' : '') +
+                '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="openEditImageModal(\\x27' + imgId + '\\x27)">Edit</button>' +
+                '<button class="btn-logout" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="deleteImage(\\x27' + imgId + '\\x27)">Delete</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    async function triggerCandidateDiscovery() {
+      try {
+        const query = prompt('Enter candidate topic or search query for Openverse collection:', 'cybersecurity technology');
+        if (!query) return;
+
+        const res = await guardedFetch('/api/admin/images/candidate-discovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ query }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Candidate discovery completed! Discovered ' + (data.totalDiscovered || 0) + ' images.');
+          setImageStatusTab('PENDING');
+        } else {
+          alert(safeStr(data.error, 'Candidate discovery failed.'));
+        }
+      } catch (err) {
+        console.error('Candidate discovery error:', err);
+      }
+    }
+
+    function openAddImageModal() {
+      setAddImageSourceType('file');
+      openModal('add-image-modal');
+    }
+
+    function setAddImageSourceType(type) {
+      addImageSourceType = type;
+      const fileBtn = document.getElementById('add-img-type-file-btn');
+      const urlBtn = document.getElementById('add-img-type-url-btn');
+      const fileGrp = document.getElementById('add-img-file-group');
+      const urlGrp = document.getElementById('add-img-url-group');
+
+      if (type === 'file') {
+        if (fileBtn) fileBtn.classList.add('active');
+        if (urlBtn) urlBtn.classList.remove('active');
+        if (fileGrp) fileGrp.style.display = 'block';
+        if (urlGrp) urlGrp.style.display = 'none';
+      } else {
+        if (urlBtn) urlBtn.classList.add('active');
+        if (fileBtn) fileBtn.classList.remove('active');
+        if (urlGrp) urlGrp.style.display = 'block';
+        if (fileGrp) fileGrp.style.display = 'none';
+      }
+    }
+
+    async function submitAddImageForm(e) {
+      if (e) e.preventDefault();
+      try {
+        const title = document.getElementById('add-img-title-input').value;
+        const category = document.getElementById('add-img-category-select').value;
+        const keywords = document.getElementById('add-img-keywords-input').value;
+        const description = document.getElementById('add-img-description-input').value;
+        const author = document.getElementById('add-img-author-input').value;
+        const license = document.getElementById('add-img-license-input').value;
+        const status = document.getElementById('add-img-status-select').value;
+        const notes = document.getElementById('add-img-notes-input').value;
+
+        let res;
+        if (addImageSourceType === 'file') {
+          const fileInput = document.getElementById('add-img-file-input');
+          if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            alert('Please select an image file to upload.');
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append('file', fileInput.files[0]);
+          formData.append('title', title);
+          formData.append('category', category);
+          formData.append('keywords', keywords);
+          formData.append('description', description);
+          formData.append('author', author);
+          formData.append('license', license);
+          formData.append('status', status);
+          formData.append('notes', notes);
+
+          res = await fetch('/api/admin/images', {
+            method: 'POST',
+            headers: { 'x-csrf-token': csrfToken },
+            body: formData,
+          });
+        } else {
+          const urlInput = document.getElementById('add-img-url-input');
+          const url = urlInput ? urlInput.value.trim() : '';
+          if (!url) {
+            alert('Please enter a valid HTTPS image URL.');
+            return;
+          }
+
+          res = await guardedFetch('/api/admin/images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({
+              title,
+              url,
+              category,
+              keywords,
+              description,
+              author,
+              license,
+              status,
+              notes,
+            }),
+          });
+        }
+
+        const data = await res.json();
+        if (data.success) {
+          closeModal('add-image-modal');
+          loadImagesData();
+        } else {
+          alert(safeStr(data.error, 'Failed to add image.'));
+        }
+      } catch (err) {
+        console.error('Error adding image:', err);
+      }
+    }
+
+    function openEditImageModal(imageId) {
+      const img = cachedImages.find(i => i && i.id === imageId);
+      if (!img) return;
+
+      document.getElementById('edit-img-id').value = img.id;
+      document.getElementById('edit-img-title-input').value = safeStr(img.title);
+      document.getElementById('edit-img-category-select').value = safeStr(img.category, 'General');
+      document.getElementById('edit-img-keywords-input').value = safeStr(img.keywords);
+      document.getElementById('edit-img-description-input').value = safeStr(img.description);
+      document.getElementById('edit-img-author-input').value = safeStr(img.author);
+      document.getElementById('edit-img-license-input').value = safeStr(img.license);
+      document.getElementById('edit-img-status-select').value = safeStr(img.status, 'PENDING');
+      document.getElementById('edit-img-notes-input').value = safeStr(img.notes);
+
+      const preview = document.getElementById('edit-img-preview');
+      const srcType = document.getElementById('edit-img-source-type');
+      const urlDisp = document.getElementById('edit-img-url-display');
+      if (preview) preview.src = safeStr(img.source_url || img.r2_key);
+      if (srcType) srcType.textContent = safeStr(img.source_type, 'DISCOVERED');
+      if (urlDisp) urlDisp.textContent = safeStr(img.source_url);
+
+      openModal('edit-image-modal');
+    }
+
+    async function submitEditImageForm(e) {
+      if (e) e.preventDefault();
+      try {
+        const id = document.getElementById('edit-img-id').value;
+        const title = document.getElementById('edit-img-title-input').value;
+        const category = document.getElementById('edit-img-category-select').value;
+        const keywords = document.getElementById('edit-img-keywords-input').value;
+        const description = document.getElementById('edit-img-description-input').value;
+        const author = document.getElementById('edit-img-author-input').value;
+        const license = document.getElementById('edit-img-license-input').value;
+        const status = document.getElementById('edit-img-status-select').value;
+        const notes = document.getElementById('edit-img-notes-input').value;
+
+        const res = await guardedFetch('/api/admin/images/' + encodeURIComponent(id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({
+            title, category, keywords, description, author, license, status, notes
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          closeModal('edit-image-modal');
+          loadImagesData();
+        } else {
+          alert(safeStr(data.error, 'Failed to update image metadata.'));
+        }
+      } catch (err) {
+        console.error('Error updating image metadata:', err);
+      }
+    }
+
+    async function quickApproveImage(imageId) {
+      try {
+        const res = await guardedFetch('/api/admin/images/' + encodeURIComponent(imageId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ status: 'APPROVED' }),
+        });
+        if (res.ok) loadImagesData();
+      } catch (err) {
+        console.error('Failed to approve image:', err);
+      }
+    }
+
+    async function quickRejectImage(imageId) {
+      try {
+        const res = await guardedFetch('/api/admin/images/' + encodeURIComponent(imageId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ status: 'REJECTED' }),
+        });
+        if (res.ok) loadImagesData();
+      } catch (err) {
+        console.error('Failed to reject image:', err);
+      }
+    }
+
+    async function deleteImage(imageId) {
+      if (!confirm('Are you sure you want to delete this image from the library?')) return;
+      try {
+        const res = await guardedFetch('/api/admin/images/' + encodeURIComponent(imageId), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken },
+        });
+        if (res.ok) loadImagesData();
+      } catch (err) {
+        console.error('Failed to delete image:', err);
+      }
+    }
+
+    function toggleSelectAllImages(chk) {
+      selectedImageIds.clear();
+      if (chk && chk.checked) {
+        cachedImages.forEach(i => { if (i && i.id) selectedImageIds.add(i.id); });
+      }
+      document.querySelectorAll('.img-select-checkbox').forEach(el => {
+        el.checked = chk ? chk.checked : false;
+      });
+      updateImageSelectionState();
+    }
+
+    function updateImageSelectionState() {
+      const selected = document.querySelectorAll('.img-select-checkbox:checked');
+      selectedImageIds.clear();
+      selected.forEach(el => selectedImageIds.add(el.getAttribute('data-id')));
+
+      const bulkBar = document.getElementById('image-bulk-toolbar');
+      const countEl = document.getElementById('image-selected-count');
+      if (countEl) countEl.textContent = selectedImageIds.size + ' selected';
+      if (bulkBar) bulkBar.style.display = selectedImageIds.size > 0 ? 'flex' : 'none';
+    }
+
+    async function executeImageBulkAction(action) {
+      if (selectedImageIds.size === 0) return;
+      if (action === 'delete' && !confirm('Delete ' + selectedImageIds.size + ' selected images?')) return;
+
+      try {
+        const res = await guardedFetch('/api/admin/images/bulk-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({
+            ids: Array.from(selectedImageIds),
+            action
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          selectedImageIds.clear();
+          loadImagesData();
+        } else {
+          alert(safeStr(data.error, 'Bulk action failed.'));
+        }
+      } catch (err) {
+        console.error('Bulk image action error:', err);
+      }
+    }
+
+    // Draft Illustration Selector Modal Handlers
+    let currentDraftPostId = null;
+    let draftApprovedImages = [];
+
+    async function openDraftImageSelectorModal(postId) {
+      currentDraftPostId = postId;
+      selectedDraftImageId = null;
+      document.getElementById('draft-selector-post-id').value = postId;
+      document.getElementById('draft-selector-search').value = '';
+      document.getElementById('draft-selector-category').value = '';
+      const commitBtn = document.getElementById('confirm-assign-draft-img-btn');
+      if (commitBtn) commitBtn.disabled = true;
+
+      openModal('draft-image-selector-modal');
+      await fetchDraftApprovedImages();
+    }
+
+    async function fetchDraftApprovedImages() {
+      const grid = document.getElementById('draft-selector-grid');
+      if (grid) grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-muted);">Loading approved illustrations...</div>';
+
+      try {
+        const search = document.getElementById('draft-selector-search').value.trim();
+        const category = document.getElementById('draft-selector-category').value.trim();
+
+        const url = '/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/image-library?search=' + encodeURIComponent(search) + '&category=' + encodeURIComponent(category);
+        const res = await guardedFetch(url);
+        if (!res.ok) {
+          if (grid) grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load approved images.</div>';
+          return;
+        }
+
+        const data = await res.json();
+        draftApprovedImages = Array.isArray(data.images) ? data.images : [];
+        renderDraftSelectorGrid(draftApprovedImages);
+      } catch (err) {
+        console.error('Error fetching draft approved images:', err);
+      }
+    }
+
+    function filterDraftImageSelector() {
+      fetchDraftApprovedImages();
+    }
+
+    function renderDraftSelectorGrid(images) {
+      const grid = document.getElementById('draft-selector-grid');
+      if (!grid) return;
+
+      if (!images || images.length === 0) {
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:2rem;">No approved images available. Add or approve images in the Image Library.</div>';
+        return;
+      }
+
+      grid.innerHTML = images.map(img => {
+        const id = safeStr(img.id);
+        const title = escapeHtml(safeStr(img.title, 'Illustration'));
+        const category = escapeHtml(safeStr(img.category, 'General'));
+        const keywords = escapeHtml(safeStr(img.keywords, '—'));
+        const sourceUrl = safeStr(img.source_url || img.r2_key);
+        const isSelected = selectedDraftImageId === id ? 'selected' : '';
+
+        return '<div class="image-select-card ' + isSelected + '" id="draft-img-card-' + id + '" onclick="selectDraftIllustration(\\x27' + id + '\\x27)">' +
+            '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" style="width:100%; height:110px; object-fit:cover;" />' +
+            '<div style="padding:0.5rem;">' +
+              '<div style="font-size:0.8rem; font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="' + title + '">' + title + '</div>' +
+              '<div style="font-size:0.75rem; color:var(--accent-cyan); font-weight:500;">' + category + '</div>' +
+              '<div style="font-size:0.675rem; color:var(--text-muted); max-height:28px; overflow:hidden; text-overflow:ellipsis;">' + keywords + '</div>' +
+            '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    function selectDraftIllustration(imageId) {
+      selectedDraftImageId = imageId;
+      document.querySelectorAll('.image-select-card').forEach(el => el.classList.remove('selected'));
+      const card = document.getElementById('draft-img-card-' + imageId);
+      if (card) card.classList.add('selected');
+
+      const commitBtn = document.getElementById('confirm-assign-draft-img-btn');
+      if (commitBtn) commitBtn.disabled = false;
+    }
+
+    async function confirmAssignDraftIllustration() {
+      if (!currentDraftPostId || !selectedDraftImageId) return;
+
+      try {
+        const res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/assign-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ imageId: selectedDraftImageId }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          closeModal('draft-image-selector-modal');
+          loadContentData();
+        } else {
+          alert(safeStr(data.error, 'Failed to assign illustration to draft.'));
+        }
+      } catch (err) {
+        console.error('Error assigning draft illustration:', err);
+      }
+    }
+
+    async function removeDraftIllustration() {
+      if (!currentDraftPostId) return;
+
+      try {
+        const res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/assign-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ action: 'remove' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          closeModal('draft-image-selector-modal');
+          loadContentData();
+        } else {
+          alert(safeStr(data.error, 'Failed to remove illustration from draft.'));
+        }
+      } catch (err) {
+        console.error('Error removing draft illustration:', err);
+      }
+    }
+
     // Attach all client functions to window object for global availability
     window.switchTab = switchTab;
     window.showDashboard = showDashboard;
@@ -4641,6 +5216,25 @@ export function getAdminScripts(): string {
     window.unschedulePost = unschedulePost;
     window.resolvePostConflict = resolvePostConflict;
     window.syncFacebook = syncFacebook;
-
+    window.setImageStatusTab = setImageStatusTab;
+    window.loadImagesData = loadImagesData;
+    window.debounceImageSearch = debounceImageSearch;
+    window.triggerCandidateDiscovery = triggerCandidateDiscovery;
+    window.openAddImageModal = openAddImageModal;
+    window.setAddImageSourceType = setAddImageSourceType;
+    window.submitAddImageForm = submitAddImageForm;
+    window.openEditImageModal = openEditImageModal;
+    window.submitEditImageForm = submitEditImageForm;
+    window.quickApproveImage = quickApproveImage;
+    window.quickRejectImage = quickRejectImage;
+    window.deleteImage = deleteImage;
+    window.toggleSelectAllImages = toggleSelectAllImages;
+    window.updateImageSelectionState = updateImageSelectionState;
+    window.executeImageBulkAction = executeImageBulkAction;
+    window.openDraftImageSelectorModal = openDraftImageSelectorModal;
+    window.filterDraftImageSelector = filterDraftImageSelector;
+    window.selectDraftIllustration = selectDraftIllustration;
+    window.confirmAssignDraftIllustration = confirmAssignDraftIllustration;
+    window.removeDraftIllustration = removeDraftIllustration;
   `;
 }

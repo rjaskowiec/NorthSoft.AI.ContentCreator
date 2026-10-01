@@ -17,6 +17,7 @@ import { performanceRouter } from './performance';
 import { publicationsRouter } from './publications';
 import { researchRouter } from './research';
 import { settingsRouter } from './settings';
+import { imagesRouter } from './images';
 
 export const adminRoutes = new Hono<AppEnv>();
 
@@ -33,3 +34,4 @@ adminRoutes.route('/', publicationsRouter);
 adminRoutes.route('/', facebookRouter);
 adminRoutes.route('/', performanceRouter);
 adminRoutes.route('/', settingsRouter);
+adminRoutes.route('/', imagesRouter);

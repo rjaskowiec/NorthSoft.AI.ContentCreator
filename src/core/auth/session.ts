@@ -263,5 +263,11 @@ export function getSessionTokenFromCookie(c: Context): string | null {
     return authHeader.substring(7).trim();
   }
 
+  // Header fallback for client scripts
+  const customHeader = c.req.header('x-session-token');
+  if (customHeader) {
+    return customHeader.trim();
+  }
+
   return null;
 }

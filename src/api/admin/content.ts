@@ -66,10 +66,12 @@ contentRouter.get('/content/posts', async (c) => {
   const postsRes = await db
     .prepare(
       `SELECT p.id, p.idea_id, p.title, p.status, p.current_version, p.quality_score, p.quality_decision, p.created_at, p.updated_at, p.sync_status,
-              ci.title as topic_title, ci.source_title, ci.source_url as article_source_url,
+              ci.title as topic_title, ci.source_title, ci.source_url as article_source_url, ci.category as topic_category,
+              ci.content_pillar, ci.content_angle, ci.description as topic_description, ci.source_type as topic_source_type,
               v.content as latest_body, v.ai_provider, v.ai_model,
               pi.url as image_url, pi.source_url as image_source_url, pi.source_id, pi.author, pi.author_url, pi.license, pi.license_url,
               pi.alt_text, pi.verification_status, pi.visual_verification_status, pi.visual_verification_reason,
+              pi.selection_source, pi.curated_image_id,
               (SELECT s.id FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as schedule_id,
               (SELECT s.scheduled_at FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as scheduled_at,
               (SELECT s.status FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as schedule_status,
@@ -83,7 +85,7 @@ contentRouter.get('/content/posts', async (c) => {
          AND (p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED')
          AND (v.ai_provider IS NULL OR v.ai_provider != 'facebook')
        ORDER BY p.created_at DESC
-       LIMIT 20`,
+       LIMIT 50`,
     )
     .bind(requestedPostId, requestedPostId)
     .all().catch((err) => {
@@ -224,11 +226,16 @@ contentRouter.post('/content/posts/:id/image', csrfProtection, async (c) => {
   return c.json({ success: true, imageUrl, message: 'Image saved.' });
 });
 
-/** Remove the current version's primary image. */
+/** Remove the current version's primary image and release reservation. */
 contentRouter.delete('/content/posts/:id/image', csrfProtection, async (c) => {
-  const postId = c.req.param('id');
+  const postId = c.req.param('id') || '';
   const post = await c.env.DB.prepare('SELECT current_version FROM posts WHERE id = ?').bind(postId).first<{ current_version: number }>();
   if (!post) return c.json({ success: false, error: 'Post not found.' }, 404);
+
+  const { ImageLibraryService } = await import('../../services/content/image-library-service');
+  const imgLib = new ImageLibraryService(c.env.DB);
+  await imgLib.releaseDraftReservation(postId);
+
   await c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, post.current_version).run();
   const publication = await c.env.DB.prepare("SELECT id FROM publications WHERE post_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 1")
     .bind(postId).first<{ id: string }>();
@@ -239,6 +246,69 @@ contentRouter.delete('/content/posts/:id/image', csrfProtection, async (c) => {
     ]);
   }
   return c.json({ success: true, message: 'Image removed from the current local version.' });
+});
+
+/**
+ * GET /api/admin/content/posts/:id/image-library
+ * Returns APPROVED images suitable for assignment to a draft post.
+ */
+contentRouter.get('/content/posts/:id/image-library', async (c) => {
+  const postId = c.req.param('id') || '';
+  const search = (c.req.query('search') || '').trim();
+  const category = (c.req.query('category') || '').trim();
+  const limit = parseInt(c.req.query('limit') || '24', 10);
+  const offset = parseInt(c.req.query('offset') || '0', 10);
+
+  const { ImageLibraryService } = await import('../../services/content/image-library-service');
+  const imgLib = new ImageLibraryService(c.env.DB);
+
+  const result = await imgLib.listImages({
+    status: 'APPROVED',
+    category,
+    search,
+    limit,
+    offset,
+  });
+
+  return c.json({
+    success: true,
+    postId,
+    images: result.images,
+    total: result.total,
+  });
+});
+
+/**
+ * POST /api/admin/content/posts/:id/assign-image
+ * Manually assigns or removes an approved library image for a post draft.
+ */
+contentRouter.post('/content/posts/:id/assign-image', csrfProtection, async (c) => {
+  const postId = c.req.param('id') || '';
+  const body = (await c.req.json().catch(() => ({}))) as { imageId?: string; action?: 'assign' | 'remove' };
+
+  const post = await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(postId).first();
+  if (!post) return c.json({ success: false, error: 'Post draft not found.' }, 404);
+
+  const { ImageLibraryService } = await import('../../services/content/image-library-service');
+  const imgLib = new ImageLibraryService(c.env.DB);
+
+  if (body.action === 'remove' || !body.imageId) {
+    await imgLib.releaseDraftReservation(postId);
+    await c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ?').bind(postId).run();
+    return c.json({ success: true, message: 'Illustration removed from draft.' });
+  }
+
+  try {
+    await imgLib.reserveImageForDraft(body.imageId, postId, true);
+    return c.json({
+      success: true,
+      imageId: body.imageId,
+      message: 'Approved illustration assigned to draft post.',
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return c.json({ success: false, error: errorMsg }, 400);
+  }
 });
 
 /**
@@ -285,7 +355,7 @@ contentRouter.post('/content/manual-topic-post', csrfProtection, async (c) => {
 
 /**
  * POST /api/admin/content/manual-post
- * Creates a post manually without AI generation.
+ * Creates a post manually without AI generation. Always creates manual content_idea record.
  */
 contentRouter.post('/content/manual-post', csrfProtection, async (c) => {
   const db = c.env.DB;
@@ -304,19 +374,17 @@ contentRouter.post('/content/manual-post', csrfProtection, async (c) => {
   const title = topicTitle || (content.length > 50 ? content.slice(0, 47) + '...' : content);
   const status = (body.status || 'draft').trim();
 
-  let ideaId: string | null = null;
   const nowIso = new Date().toISOString();
+  const ideaId = crypto.randomUUID();
 
-  if (topicTitle) {
-    ideaId = crypto.randomUUID();
-    await db
-      .prepare(
-        `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
-         VALUES (?, ?, ?, 'SMALL_BUSINESS', 'manual', 50, 'used', ?, ?)`,
-      )
-      .bind(ideaId, topicTitle, content.slice(0, 150), nowIso, nowIso)
-      .run();
-  }
+  // Always create manual content_idea row so provenance is retained
+  await db
+    .prepare(
+      `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'SMALL_BUSINESS', 'manual', 50, 'used', ?, ?)`,
+    )
+    .bind(ideaId, topicTitle || title, content.slice(0, 150), nowIso, nowIso)
+    .run();
 
   const postId = crypto.randomUUID();
   const versionId = crypto.randomUUID();
@@ -385,6 +453,12 @@ contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => 
   }
 
   try {
+    const { ImageLibraryService } = await import('../../services/content/image-library-service');
+    const imgLib = new ImageLibraryService(db);
+    for (const id of ids) {
+      await imgLib.releaseDraftReservation(id).catch(() => {});
+    }
+
     const placeholders = ids.map(() => '?').join(',');
     await db.batch([
       db.prepare(`DELETE FROM publications WHERE post_id IN (${placeholders})`).bind(...ids),
@@ -392,6 +466,7 @@ contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => 
       db.prepare(`DELETE FROM quality_checks WHERE post_id IN (${placeholders})`).bind(...ids),
       db.prepare(`DELETE FROM post_sources WHERE post_id IN (${placeholders})`).bind(...ids),
       db.prepare(`UPDATE content_topic_history SET post_id = NULL WHERE post_id IN (${placeholders})`).bind(...ids),
+      db.prepare(`DELETE FROM post_images WHERE post_id IN (${placeholders})`).bind(...ids),
       db.prepare(`DELETE FROM post_versions WHERE post_id IN (${placeholders})`).bind(...ids),
       db.prepare(`DELETE FROM posts WHERE id IN (${placeholders})`).bind(...ids),
     ]);
@@ -478,12 +553,17 @@ contentRouter.delete('/content/posts/:id', csrfProtection, async (c) => {
   }
 
   try {
+    const { ImageLibraryService } = await import('../../services/content/image-library-service');
+    const imgLib = new ImageLibraryService(db);
+    await imgLib.releaseDraftReservation(id).catch(() => {});
+
     await db.batch([
       db.prepare('DELETE FROM publications WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM post_sources WHERE post_id = ?').bind(id),
       db.prepare('UPDATE content_topic_history SET post_id = NULL WHERE post_id = ?').bind(id),
+      db.prepare('DELETE FROM post_images WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM posts WHERE id = ?').bind(id),
     ]);
