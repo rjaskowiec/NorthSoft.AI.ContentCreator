@@ -44,12 +44,12 @@ dashboardRouter.get('/dashboard', async (c) => {
       .prepare(
         `SELECT
            (SELECT COUNT(*) FROM content_ideas WHERE status = 'discovered') as ideas,
-           (SELECT COUNT(*) FROM posts WHERE status = 'draft') as drafts,
-           (SELECT COUNT(*) FROM posts WHERE status IN ('qa_pending', 'policy_pending', 'review_pending')) as awaitingQa,
-           (SELECT COUNT(*) FROM posts WHERE status = 'approved') as approved,
+           (SELECT COUNT(*) FROM posts WHERE status = 'draft' AND (quality_decision IS NULL OR quality_decision != 'IMPORTED')) as drafts,
+           (SELECT COUNT(*) FROM posts WHERE status IN ('qa_pending', 'policy_pending', 'review_pending') AND (quality_decision IS NULL OR quality_decision != 'IMPORTED')) as awaitingQa,
+           (SELECT COUNT(*) FROM posts WHERE status = 'approved' AND (quality_decision IS NULL OR quality_decision != 'IMPORTED')) as approved,
            (SELECT COUNT(*) FROM schedules WHERE status = 'pending') as scheduled,
-           (SELECT COUNT(*) FROM posts WHERE status = 'published') as published,
-           (SELECT COUNT(*) FROM posts WHERE status IN ('rejected', 'blocked')) as blocked`,
+           (SELECT COUNT(*) FROM posts WHERE status = 'published' AND (quality_decision IS NULL OR quality_decision != 'IMPORTED')) as published,
+           (SELECT COUNT(*) FROM posts WHERE status IN ('rejected', 'blocked') AND (quality_decision IS NULL OR quality_decision != 'IMPORTED')) as blocked`,
       )
       .first<{
         ideas: number;

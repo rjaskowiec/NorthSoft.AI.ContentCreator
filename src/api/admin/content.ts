@@ -80,6 +80,8 @@ contentRouter.get('/content/posts', async (c) => {
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
        LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
        WHERE (? = '' OR p.id = ?)
+         AND (p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED')
+         AND (v.ai_provider IS NULL OR v.ai_provider != 'facebook')
        ORDER BY p.created_at DESC
        LIMIT 20`,
     )
