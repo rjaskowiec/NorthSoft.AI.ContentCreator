@@ -1,8 +1,8 @@
 /**
  * NorthSoft.AI.ContentCreator — Master Content Planner & Generation Orchestrator
  *
- * Orchestrates the complete Phase 3B pipeline:
- * Topic Selection → Writer AI → Static Validation → Independent QA → Policy Review → Quality Gate → Bounded Regeneration → D1 Persistence.
+ * Orchestrates the automated content generation pipeline:
+ * Topic Selection → Content Writer → Static Validation → Quality Review → Policy Review → Quality Gate → Bounded Regeneration → Database Persistence.
  *
  * Enforces zero-cost neuron budget checks before generation, post versioning, and auditable status transitions.
  */
@@ -246,7 +246,7 @@ export class ContentPlannerService {
       const openverseService = new OpenverseImageService(this.env);
 
       // Try finding an approved image in the library
-      let approvedMatch = await imgLibrary.findBestApprovedImage(
+      const approvedMatch = await imgLibrary.findBestApprovedImage(
         topicRow.title,
         topicRow.category || 'Technology & Business',
         lastDraft.body,

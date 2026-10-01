@@ -111,7 +111,7 @@ export function evaluateQualityGate(result: QualityGateResult): QualityDecision 
 }
 
 /**
- * Pipeline Quality Gate evaluation for Phase 3B.
+ * Evaluates full content generation pipeline quality decision.
  * Combines Static Validation, Content Quality Gate, QA Review, Policy Review, and Quota compliance.
  */
 export function evaluatePipelineGate(input: {

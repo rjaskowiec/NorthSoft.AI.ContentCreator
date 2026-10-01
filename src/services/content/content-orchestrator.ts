@@ -7,9 +7,9 @@
  *
  * Obeying mandatory invariants:
  *  - ContentCreator Daily Neuron hard limit = 7,500 Neurons/day
- *  - Customer AI has priority; ContentCreator defers if capacity is low
- *  - ZERO paid AI fallback
- *  - ZERO Facebook publishing in this phase (output is SCHEDULED internally)
+ *  - System AI tasks defer if Cloudflare AI capacity is low
+ *  - Zero paid AI fallback
+ *  - Posts are saved to draft or queued for scheduling upon approval
  */
 
 import { getAIProvider } from '../../ai/factory';
