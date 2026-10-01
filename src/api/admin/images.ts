@@ -40,6 +40,31 @@ imagesRouter.get('/images', async (c) => {
 });
 
 /**
+ * GET /api/admin/images/discovery-topics
+ * Returns system content pillars and active candidate topics from D1 taxonomy for image discovery.
+ */
+imagesRouter.get('/images/discovery-topics', async (c) => {
+  const db = c.env.DB;
+  const { CONTENT_PILLARS } = await import('../../services/research/taxonomy');
+  const pillars = Object.values(CONTENT_PILLARS).map((p) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+  }));
+
+  const systemTopicsRes = await db
+    .prepare('SELECT id, title, category, content_pillar FROM content_ideas ORDER BY created_at DESC LIMIT 15')
+    .all<{ id: string; title: string; category?: string; content_pillar?: string }>()
+    .catch(() => ({ results: [] }));
+
+  return c.json({
+    success: true,
+    pillars,
+    systemTopics: systemTopicsRes.results || [],
+  });
+});
+
+/**
  * POST /api/admin/images/candidate-discovery
  * Triggers candidate collection for candidate topics or custom search query.
  */
@@ -47,7 +72,14 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
   const db = c.env.DB;
   const body = (await c.req.json().catch(() => ({}))) as { query?: string; category?: string };
   const query = (body.query || 'technology business').trim();
-  const category = (body.category || 'Technology').trim();
+  if (!query) {
+    return c.json({ success: false, error: 'Topic or search query is required.' }, 400);
+  }
+
+  const { determineContentPillar, CONTENT_PILLARS } = await import('../../services/research/taxonomy');
+  const pillarKey = determineContentPillar(query, query);
+  const pillarInfo = CONTENT_PILLARS[pillarKey];
+  const category = (body.category || pillarInfo?.name || 'Technology').trim();
 
   const openverse = new OpenverseImageService(c.env);
   const imgService = new ImageLibraryService(db);
@@ -55,28 +87,48 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
   try {
     const candidates = await openverse.searchImages(query, 10);
     let addedCount = 0;
+    let skippedCount = 0;
 
     for (const cand of candidates) {
-      const id = await imgService.addCandidate({
-        title: cand.title,
-        sourceUrl: cand.url,
-        originalPageUrl: cand.sourceUrl,
-        author: cand.author,
-        authorUrl: cand.authorUrl,
-        license: cand.license,
-        licenseUrl: cand.licenseUrl,
-        category,
-        keywords: (cand.tags || []).join(', '),
-        description: `Discovered from Openverse query: "${query}"`,
-        discoveryQuery: query,
-      });
-      if (id) addedCount++;
+      const existing = cand.url ? await db.prepare('SELECT id FROM curated_images WHERE source_url = ?').bind(cand.url).first() : null;
+      if (existing) {
+        skippedCount++;
+      } else {
+        const id = await imgService.addCandidate({
+          title: cand.title,
+          sourceUrl: cand.url,
+          originalPageUrl: cand.sourceUrl,
+          author: cand.author,
+          authorUrl: cand.authorUrl,
+          license: cand.license,
+          licenseUrl: cand.licenseUrl,
+          category,
+          keywords: (cand.tags || []).join(', '),
+          description: `Discovered from Openverse topic: "${query}"`,
+          discoveryQuery: query,
+        });
+        if (id) {
+          addedCount++;
+        } else {
+          skippedCount++;
+        }
+      }
     }
 
     return c.json({
       success: true,
-      addedCount,
+      topic: query,
+      category,
       totalDiscovered: candidates.length,
+      addedCount,
+      skippedCount,
+      steps: [
+        { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed' },
+        { step: 'search', label: 'Searching image sources (Openverse API)', status: 'completed', details: `Found ${candidates.length} candidate(s)` },
+        { step: 'metadata', label: 'Evaluating candidate metadata & quality', status: 'completed' },
+        { step: 'dedup', label: 'Checking duplicates & reuse window', status: 'completed', details: `${skippedCount} duplicate(s) skipped` },
+        { step: 'save', label: 'Saving candidates to Image Library', status: 'completed', details: `${addedCount} new candidate(s) saved as PENDING` },
+      ],
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

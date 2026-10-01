@@ -4742,26 +4742,295 @@ export function getAdminScripts(): string {
       }).join('');
     }
 
-    async function triggerCandidateDiscovery() {
-      try {
-        const query = prompt('Enter candidate topic or search query for Openverse collection:', 'cybersecurity technology');
-        if (!query) return;
+    let isCandidateDiscoveryRunning = false;
 
-        const res = await guardedFetch('/api/admin/images/candidate-discovery', {
+    async function openDiscoverImageModal() {
+      if (isCandidateDiscoveryRunning) return;
+      resetDiscoverModalForm();
+      openModal('discover-image-modal');
+
+      const selectEl = document.getElementById('discover-topic-select');
+      if (selectEl) {
+        selectEl.innerHTML = '<option value="">-- Loading system topics &amp; categories... --</option>';
+      }
+
+      try {
+        const res = await guardedFetch('/api/admin/images/discovery-topics');
+        const data = await res.json();
+
+        if (data.success && selectEl) {
+          let html = '<option value="">-- Select a topic / category --</option>';
+
+          if (data.pillars && data.pillars.length > 0) {
+            html += '<optgroup label="Standard Content Pillars">';
+            data.pillars.forEach((p) => {
+              html += '<option value="pillar:' + escapeHtml(p.id) + '" data-query="' + escapeHtml(p.name) + '" data-category="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + '</option>';
+            });
+            html += '</optgroup>';
+          }
+
+          if (data.systemTopics && data.systemTopics.length > 0) {
+            html += '<optgroup label="Active System Research Topics">';
+            data.systemTopics.forEach((t) => {
+              const cat = t.category || t.content_pillar || 'Technology & Business';
+              html += '<option value="topic:' + escapeHtml(t.id) + '" data-query="' + escapeHtml(t.title) + '" data-category="' + escapeHtml(cat) + '">' + escapeHtml(t.title) + '</option>';
+            });
+            html += '</optgroup>';
+          }
+
+          html += '<optgroup label="Custom Search">';
+          html += '<option value="__CUSTOM__">✏️ Custom topic...</option>';
+          html += '</optgroup>';
+
+          selectEl.innerHTML = html;
+
+          if (data.pillars && data.pillars[0]) {
+            selectEl.value = 'pillar:' + data.pillars[0].id;
+            handleDiscoverTopicSelectChange();
+          }
+        }
+      } catch (err) {
+        console.error('[DiscoverModal] Failed to fetch topics:', err);
+        if (selectEl) {
+          selectEl.innerHTML = '<option value="pillar:AI" data-query="AI &amp; Business Automation" data-category="AI &amp; Business Automation">AI &amp; Business Automation</option><option value="pillar:WEBSITE" data-query="Websites &amp; Landing Pages" data-category="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option><option value="pillar:MARKETING" data-query="Marketing &amp; Customer Acquisition" data-category="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option><option value="pillar:SALES" data-query="Sales &amp; Conversion Process" data-category="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option><option value="pillar:SMALL_BUSINESS" data-query="Small Business Productivity &amp; Ops" data-category="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option><option value="pillar:CUSTOMER_EXPERIENCE" data-query="Customer Experience &amp; Trust" data-category="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option><option value="pillar:LOCAL_BUSINESS" data-query="Local Business &amp; Regional Context" data-category="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option><option value="__CUSTOM__">✏️ Custom topic...</option>';
+          selectEl.value = 'pillar:AI';
+          handleDiscoverTopicSelectChange();
+        }
+      }
+    }
+
+    function handleDiscoverTopicSelectChange() {
+      const selectEl = document.getElementById('discover-topic-select');
+      const customGrp = document.getElementById('discover-custom-topic-group');
+      const categorySelect = document.getElementById('discover-category-select');
+      if (!selectEl) return;
+
+      const val = selectEl.value;
+      if (val === '__CUSTOM__') {
+        if (customGrp) customGrp.style.display = 'block';
+        const customInput = document.getElementById('discover-custom-topic-input');
+        if (customInput) customInput.focus();
+      } else {
+        if (customGrp) customGrp.style.display = 'none';
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        if (selectedOpt && categorySelect) {
+          const cat = selectedOpt.getAttribute('data-category');
+          if (cat) {
+            for (let i = 0; i < categorySelect.options.length; i++) {
+              if (categorySelect.options[i].value.toLowerCase().includes(cat.toLowerCase()) || cat.toLowerCase().includes(categorySelect.options[i].value.toLowerCase())) {
+                categorySelect.selectedIndex = i;
+                break;
+              }
+            }
+          }
+        }
+      }
+      validateDiscoverForm();
+    }
+
+    function validateDiscoverForm() {
+      const selectEl = document.getElementById('discover-topic-select');
+      const customInput = document.getElementById('discover-custom-topic-input');
+      const btn = document.getElementById('start-discovery-btn');
+      if (!btn) return;
+
+      const val = selectEl ? selectEl.value : '';
+      if (!val) {
+        btn.disabled = true;
+        return;
+      }
+
+      if (val === '__CUSTOM__') {
+        const customTxt = customInput ? customInput.value.trim() : '';
+        btn.disabled = customTxt.length === 0;
+      } else {
+        btn.disabled = false;
+      }
+    }
+
+    function resetDiscoverModalForm() {
+      setDiscoverModalView('form');
+      const customGrp = document.getElementById('discover-custom-topic-group');
+      if (customGrp) customGrp.style.display = 'none';
+      const customInput = document.getElementById('discover-custom-topic-input');
+      if (customInput) customInput.value = '';
+      validateDiscoverForm();
+    }
+
+    function setDiscoverModalView(viewName) {
+      const formV = document.getElementById('discover-view-form');
+      const formF = document.getElementById('discover-footer-form');
+      const progV = document.getElementById('discover-view-progress');
+      const progF = document.getElementById('discover-footer-progress');
+      const resV = document.getElementById('discover-view-result');
+      const resF = document.getElementById('discover-footer-result');
+      const errV = document.getElementById('discover-view-error');
+      const errF = document.getElementById('discover-footer-error');
+      const empV = document.getElementById('discover-view-empty');
+      const empF = document.getElementById('discover-footer-empty');
+
+      if (formV) formV.style.display = viewName === 'form' ? 'block' : 'none';
+      if (formF) formF.style.display = viewName === 'form' ? 'flex' : 'none';
+
+      if (progV) progV.style.display = viewName === 'progress' ? 'block' : 'none';
+      if (progF) progF.style.display = viewName === 'progress' ? 'flex' : 'none';
+
+      if (resV) resV.style.display = viewName === 'result' ? 'block' : 'none';
+      if (resF) resF.style.display = viewName === 'result' ? 'flex' : 'none';
+
+      if (errV) errV.style.display = viewName === 'error' ? 'block' : 'none';
+      if (errF) errF.style.display = viewName === 'error' ? 'flex' : 'none';
+
+      if (empV) empV.style.display = viewName === 'empty' ? 'block' : 'none';
+      if (empF) empF.style.display = viewName === 'empty' ? 'flex' : 'none';
+    }
+
+    function updateDiscoverStep(stepNum, status, detailText) {
+      const stepItem = document.getElementById('disc-step-' + stepNum);
+      const stepIcon = document.getElementById('disc-step-icon-' + stepNum);
+      const stepSub = document.getElementById('disc-step-sub-' + stepNum);
+
+      if (!stepItem || !stepIcon) return;
+
+      if (status === 'active') {
+        stepItem.style.opacity = '1';
+        stepIcon.style.background = 'var(--accent-blue)';
+        stepIcon.style.color = '#fff';
+        stepIcon.textContent = '●';
+      } else if (status === 'completed') {
+        stepItem.style.opacity = '1';
+        stepIcon.style.background = 'var(--accent-emerald)';
+        stepIcon.style.color = '#fff';
+        stepIcon.textContent = '✓';
+      } else {
+        stepItem.style.opacity = '0.5';
+        stepIcon.style.background = 'rgba(255,255,255,0.1)';
+        stepIcon.style.color = 'var(--text-muted)';
+        stepIcon.textContent = '○';
+      }
+
+      if (detailText && stepSub) {
+        stepSub.textContent = detailText;
+      }
+    }
+
+    async function startCandidateDiscovery() {
+      if (isCandidateDiscoveryRunning) return;
+
+      const selectEl = document.getElementById('discover-topic-select');
+      const customInput = document.getElementById('discover-custom-topic-input');
+      const categorySelect = document.getElementById('discover-category-select');
+
+      let query = '';
+      let category = categorySelect ? categorySelect.value : 'Technology & Business';
+
+      const selVal = selectEl ? selectEl.value : '';
+      if (selVal === '__CUSTOM__') {
+        query = customInput ? customInput.value.trim() : '';
+      } else if (selectEl && selectEl.selectedIndex >= 0) {
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        query = selectedOpt.getAttribute('data-query') || selectedOpt.text;
+      }
+
+      if (!query) {
+        alert('Please enter or select a topic for candidate discovery.');
+        return;
+      }
+
+      isCandidateDiscoveryRunning = true;
+
+      const discHeaderBtn = document.getElementById('discover-candidates-btn');
+      const startModalBtn = document.getElementById('start-discovery-btn');
+      if (discHeaderBtn) discHeaderBtn.disabled = true;
+      if (startModalBtn) startModalBtn.disabled = true;
+
+      setDiscoverModalView('progress');
+
+      const topicTitleEl = document.getElementById('discover-progress-topic');
+      const detailBox = document.getElementById('discover-live-detail-box');
+      if (topicTitleEl) topicTitleEl.textContent = '"' + query + '"';
+
+      for (let i = 1; i <= 5; i++) {
+        updateDiscoverStep(i, i === 1 ? 'active' : 'pending');
+      }
+
+      try {
+        if (detailBox) detailBox.textContent = 'Initializing search strategy for "' + query + '"...';
+        await new Promise((r) => setTimeout(r, 400));
+
+        updateDiscoverStep(1, 'completed');
+        updateDiscoverStep(2, 'active');
+        if (detailBox) detailBox.textContent = 'Querying Openverse API for open-license candidates...';
+
+        const resPromise = guardedFetch('/api/admin/images/candidate-discovery', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query, category }),
         });
+
+        await new Promise((r) => setTimeout(r, 450));
+        updateDiscoverStep(2, 'completed');
+        updateDiscoverStep(3, 'active');
+        if (detailBox) detailBox.textContent = 'Evaluating candidate metadata & license compliance...';
+
+        const res = await resPromise;
         const data = await res.json();
-        if (data.success) {
-          alert('Candidate discovery completed! Discovered ' + (data.totalDiscovered || 0) + ' images.');
-          setImageStatusTab('PENDING');
+
+        if (!data.success) {
+          throw new Error(safeStr(data.error, 'Candidate discovery failed.'));
+        }
+
+        updateDiscoverStep(3, 'completed');
+        updateDiscoverStep(4, 'active', (data.skippedCount || 0) + ' duplicate(s) skipped');
+        if (detailBox) detailBox.textContent = 'Filtering duplicates & checking 90-day reuse window...';
+        await new Promise((r) => setTimeout(r, 300));
+
+        updateDiscoverStep(4, 'completed');
+        updateDiscoverStep(5, 'active', (data.addedCount || 0) + ' candidate(s) saved as PENDING');
+        if (detailBox) detailBox.textContent = 'Saving candidate records to Image Library...';
+        await new Promise((r) => setTimeout(r, 300));
+
+        updateDiscoverStep(5, 'completed');
+
+        const total = data.totalDiscovered ?? 0;
+        const added = data.addedCount ?? 0;
+        const skipped = data.skippedCount ?? 0;
+
+        if (total === 0 || (added === 0 && skipped === 0)) {
+          const emptyTopicEl = document.getElementById('discover-empty-topic-name');
+          if (emptyTopicEl) emptyTopicEl.textContent = '"' + query + '"';
+          setDiscoverModalView('empty');
         } else {
-          alert(safeStr(data.error, 'Candidate discovery failed.'));
+          const topicNameEl = document.getElementById('discover-result-topic-name');
+          const totalEl = document.getElementById('discover-stat-total');
+          const addedEl = document.getElementById('discover-stat-added');
+          const skippedEl = document.getElementById('discover-stat-skipped');
+
+          if (topicNameEl) topicNameEl.textContent = query;
+          if (totalEl) totalEl.textContent = String(total);
+          if (addedEl) addedEl.textContent = String(added);
+          if (skippedEl) skippedEl.textContent = String(skipped);
+
+          setDiscoverModalView('result');
         }
       } catch (err) {
         console.error('Candidate discovery error:', err);
+        const errReasonEl = document.getElementById('discover-error-reason');
+        if (errReasonEl) {
+          errReasonEl.textContent = err instanceof Error ? err.message : String(err);
+        }
+        setDiscoverModalView('error');
+      } finally {
+        isCandidateDiscoveryRunning = false;
+        if (discHeaderBtn) discHeaderBtn.disabled = false;
+        if (startModalBtn) startModalBtn.disabled = false;
       }
+    }
+
+    function closeDiscoverModalAndViewPending() {
+      closeModal('discover-image-modal');
+      setImageStatusTab('PENDING');
+      refreshImageLibrary();
     }
 
     function openAddImageModal() {
@@ -5219,7 +5488,12 @@ export function getAdminScripts(): string {
     window.setImageStatusTab = setImageStatusTab;
     window.loadImagesData = loadImagesData;
     window.debounceImageSearch = debounceImageSearch;
-    window.triggerCandidateDiscovery = triggerCandidateDiscovery;
+    window.openDiscoverImageModal = openDiscoverImageModal;
+    window.handleDiscoverTopicSelectChange = handleDiscoverTopicSelectChange;
+    window.validateDiscoverForm = validateDiscoverForm;
+    window.startCandidateDiscovery = startCandidateDiscovery;
+    window.resetDiscoverModalForm = resetDiscoverModalForm;
+    window.closeDiscoverModalAndViewPending = closeDiscoverModalAndViewPending;
     window.openAddImageModal = openAddImageModal;
     window.setAddImageSourceType = setAddImageSourceType;
     window.submitAddImageForm = submitAddImageForm;

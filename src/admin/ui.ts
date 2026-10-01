@@ -574,10 +574,10 @@ export function renderAdminHtml(): string {
                 <p class="page-subtitle" style="margin-bottom:0;">Review candidate illustrations, edit metadata, and manage administrator-approved image assets.</p>
               </div>
               <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-                <button class="btn-secondary" onclick="triggerCandidateDiscovery()">
+                <button id="discover-candidates-btn" class="btn-secondary" onclick="openDiscoverImageModal()">
                   Discover Candidates
                 </button>
-                <button class="btn-primary" onclick="openAddImageModal()">
+                <button id="add-image-btn" class="btn-primary" onclick="openAddImageModal()">
                   + Add Image
                 </button>
               </div>
@@ -1651,6 +1651,180 @@ export function renderAdminHtml(): string {
             <button type="submit" class="btn-primary">Save Changes</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 17. DISCOVER IMAGE CANDIDATES MODAL -->
+  <div id="discover-image-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:600px;">
+      <div class="modal-header">
+        <div class="modal-title" id="discover-modal-title">Discover Image Candidates</div>
+        <button class="modal-close-btn" onclick="closeModal('discover-image-modal')">&times;</button>
+      </div>
+
+      <!-- VIEW 1: Topic Selection Form -->
+      <div id="discover-view-form" class="modal-body">
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
+          Select a standard topic from NorthSoft content pillars or active system research, or enter a custom topic to discover open-license candidate illustrations.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label" for="discover-topic-select">Topic / Subject</label>
+          <select id="discover-topic-select" class="form-input" onchange="handleDiscoverTopicSelectChange()">
+            <option value="">-- Loading system topics &amp; categories --</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="discover-custom-topic-group" style="display:none;">
+          <label class="form-label" for="discover-custom-topic-input">Custom Topic / Search Query</label>
+          <input type="text" id="discover-custom-topic-input" class="form-input" placeholder="e.g. AI-powered customer support, Modern homepage design" oninput="validateDiscoverForm()" />
+        </div>
+
+        <div class="form-group" style="margin-bottom:0.5rem;">
+          <label class="form-label" for="discover-category-select">Assigned Category</label>
+          <select id="discover-category-select" class="form-input">
+            <option value="Technology &amp; Business">Technology &amp; Business</option>
+            <option value="AI &amp; Business Automation">AI &amp; Business Automation</option>
+            <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
+            <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
+            <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
+            <option value="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option>
+            <option value="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option>
+            <option value="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option>
+          </select>
+        </div>
+      </div>
+      <div id="discover-footer-form" class="modal-footer" style="display:flex; justify-content:flex-end; gap:0.5rem;">
+        <button type="button" class="btn-secondary" onclick="closeModal('discover-image-modal')">Cancel</button>
+        <button type="button" id="start-discovery-btn" class="btn-primary" onclick="startCandidateDiscovery()">
+          Discover Images
+        </button>
+      </div>
+
+      <!-- VIEW 2: Live Progress & Step Indicator -->
+      <div id="discover-view-progress" class="modal-body" style="display:none; text-align:left;">
+        <div style="text-align:center; margin-bottom:1.5rem;">
+          <div style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;" id="discover-progress-title">Discovering images...</div>
+          <div style="font-size:0.875rem; color:var(--accent-cyan); font-weight:500;" id="discover-progress-topic">--</div>
+        </div>
+
+        <div class="discovery-steps-list" style="display:flex; flex-direction:column; gap:0.85rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:1.25rem;">
+          <div class="disc-step-item" id="disc-step-1" style="display:flex; align-items:center; gap:0.75rem;">
+            <span class="disc-step-icon" id="disc-step-icon-1" style="width:24px; height:24px; border-radius:50%; background:var(--accent-blue); color:#fff; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">●</span>
+            <div>
+              <div class="disc-step-label" style="font-size:0.875rem; font-weight:600; color:var(--text-main);">Building search strategy</div>
+              <div class="disc-step-sub" id="disc-step-sub-1" style="font-size:0.75rem; color:var(--text-muted);">Initializing topic scope &amp; search query</div>
+            </div>
+          </div>
+          <div class="disc-step-item" id="disc-step-2" style="display:flex; align-items:center; gap:0.75rem; opacity:0.5;">
+            <span class="disc-step-icon" id="disc-step-icon-2" style="width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.1); color:var(--text-muted); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">○</span>
+            <div>
+              <div class="disc-step-label" style="font-size:0.875rem; font-weight:600; color:var(--text-main);">Searching image sources</div>
+              <div class="disc-step-sub" id="disc-step-sub-2" style="font-size:0.75rem; color:var(--text-muted);">Querying Openverse API for open-license illustrations</div>
+            </div>
+          </div>
+          <div class="disc-step-item" id="disc-step-3" style="display:flex; align-items:center; gap:0.75rem; opacity:0.5;">
+            <span class="disc-step-icon" id="disc-step-icon-3" style="width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.1); color:var(--text-muted); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">○</span>
+            <div>
+              <div class="disc-step-label" style="font-size:0.875rem; font-weight:600; color:var(--text-main);">Evaluating candidate metadata</div>
+              <div class="disc-step-sub" id="disc-step-sub-3" style="font-size:0.75rem; color:var(--text-muted);">Validating license compliance, titles &amp; authors</div>
+            </div>
+          </div>
+          <div class="disc-step-item" id="disc-step-4" style="display:flex; align-items:center; gap:0.75rem; opacity:0.5;">
+            <span class="disc-step-icon" id="disc-step-icon-4" style="width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.1); color:var(--text-muted); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">○</span>
+            <div>
+              <div class="disc-step-label" style="font-size:0.875rem; font-weight:600; color:var(--text-main);">Checking duplicate usage</div>
+              <div class="disc-step-sub" id="disc-step-sub-4" style="font-size:0.75rem; color:var(--text-muted);">Skipping previously imported assets &amp; 90-day window</div>
+            </div>
+          </div>
+          <div class="disc-step-item" id="disc-step-5" style="display:flex; align-items:center; gap:0.75rem; opacity:0.5;">
+            <span class="disc-step-icon" id="disc-step-icon-5" style="width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.1); color:var(--text-muted); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">○</span>
+            <div>
+              <div class="disc-step-label" style="font-size:0.875rem; font-weight:600; color:var(--text-main);">Saving candidates to Image Library</div>
+              <div class="disc-step-sub" id="disc-step-sub-5" style="font-size:0.75rem; color:var(--text-muted);">Storing candidate records as PENDING for admin review</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="discover-live-detail-box" style="margin-top:1rem; text-align:center; font-size:0.825rem; color:var(--text-muted); font-style:italic;">
+          Please wait while candidate discovery is running...
+        </div>
+      </div>
+      <div id="discover-footer-progress" class="modal-footer" style="display:none; justify-content:center;">
+        <span style="font-size:0.8rem; color:var(--text-muted);">Operation in progress... Please do not close window.</span>
+      </div>
+
+      <!-- VIEW 3: Completion & Results Summary -->
+      <div id="discover-view-result" class="modal-body" style="display:none;">
+        <div style="text-align:center; margin-bottom:1.5rem;">
+          <div style="font-size:2.5rem; margin-bottom:0.5rem;" id="discover-result-icon">🎉</div>
+          <h3 style="font-size:1.2rem; font-weight:700; color:var(--text-main); margin-bottom:0.25rem;" id="discover-result-title">Discovery Complete</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted);" id="discover-result-sub">New candidate illustrations found and added to Image Library.</p>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:1.25rem; margin-bottom:1rem;">
+          <div style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.5rem;">Topic Searched</div>
+          <div id="discover-result-topic-name" style="font-size:0.95rem; font-weight:600; color:var(--accent-cyan); margin-bottom:1rem;">--</div>
+
+          <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:0.75rem; text-align:center;">
+            <div style="background:rgba(255,255,255,0.04); border-radius:6px; padding:0.75rem;">
+              <div style="font-size:1.25rem; font-weight:700; color:var(--text-main);" id="discover-stat-total">0</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Candidates Found</div>
+            </div>
+            <div style="background:rgba(16, 185, 129, 0.1); border:1px solid rgba(16, 185, 129, 0.2); border-radius:6px; padding:0.75rem;">
+              <div style="font-size:1.25rem; font-weight:700; color:var(--accent-emerald);" id="discover-stat-added">0</div>
+              <div style="font-size:0.7rem; color:var(--accent-emerald);">New Candidates</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04); border-radius:6px; padding:0.75rem;">
+              <div style="font-size:1.25rem; font-weight:700; color:var(--text-muted);" id="discover-stat-skipped">0</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Duplicates Skipped</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:0.8rem; color:var(--text-muted); text-align:center; margin-bottom:0.5rem;">
+          Discovered candidates are saved as <strong style="color:var(--accent-amber);">PENDING</strong> for administrator review and approval.
+        </div>
+      </div>
+      <div id="discover-footer-result" class="modal-footer" style="display:none; justify-content:space-between; gap:0.5rem;">
+        <button type="button" class="btn-secondary" onclick="resetDiscoverModalForm()">Search Another Topic</button>
+        <button type="button" class="btn-primary" onclick="closeDiscoverModalAndViewPending()">View Candidates &rarr;</button>
+      </div>
+
+      <!-- VIEW 4: Error State -->
+      <div id="discover-view-error" class="modal-body" style="display:none;">
+        <div style="text-align:center; margin-bottom:1.25rem;">
+          <div style="font-size:2.5rem; margin-bottom:0.5rem;">⚠️</div>
+          <h3 style="font-size:1.1rem; font-weight:700; color:#fda4af; margin-bottom:0.25rem;">Image Discovery Failed</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted);" id="discover-error-sub">We couldn't complete the search.</p>
+        </div>
+
+        <div style="background:rgba(244, 63, 94, 0.1); border:1px solid rgba(244, 63, 94, 0.25); border-radius:8px; padding:1rem; margin-bottom:1rem; font-size:0.85rem; color:#fda4af;" id="discover-error-reason">
+          Error details...
+        </div>
+      </div>
+      <div id="discover-footer-error" class="modal-footer" style="display:none; justify-content:flex-end; gap:0.5rem;">
+        <button type="button" class="btn-secondary" onclick="closeModal('discover-image-modal')">Close</button>
+        <button type="button" class="btn-primary" onclick="resetDiscoverModalForm()">Try Again</button>
+      </div>
+
+      <!-- VIEW 5: 0 Candidates Found State -->
+      <div id="discover-view-empty" class="modal-body" style="display:none;">
+        <div style="text-align:center; margin-bottom:1.25rem;">
+          <div style="font-size:2.5rem; margin-bottom:0.5rem;">🔍</div>
+          <h3 style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:0.25rem;">No Suitable Candidates Found</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted);">No new open-license image candidates were found for:</p>
+          <div style="font-size:0.95rem; font-weight:600; color:var(--accent-cyan); margin-top:0.5rem;" id="discover-empty-topic-name">--</div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:1rem; font-size:0.825rem; color:var(--text-muted); text-align:center; margin-bottom:1rem;">
+          Try searching for a broader term or using a custom topic search query.
+        </div>
+      </div>
+      <div id="discover-footer-empty" class="modal-footer" style="display:none; justify-content:flex-end; gap:0.5rem;">
+        <button type="button" class="btn-secondary" onclick="closeModal('discover-image-modal')">Close</button>
+        <button type="button" class="btn-primary" onclick="resetDiscoverModalForm()">Try Another Topic</button>
       </div>
     </div>
   </div>
