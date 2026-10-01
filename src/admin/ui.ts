@@ -1868,6 +1868,19 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
+  <!-- 17. IMAGE LIGHTBOX MODAL -->
+  <div id="image-lightbox-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Image preview" onclick="handleLightboxBackdropClick(event)">
+    <div class="lightbox-content-box" onclick="event.stopPropagation()">
+      <div class="lightbox-header">
+        <div id="image-lightbox-title" class="lightbox-title">Image preview</div>
+        <button type="button" class="modal-close-btn" onclick="closeImageLightboxModal()" aria-label="Close image preview">&times;</button>
+      </div>
+      <div class="lightbox-body">
+        <img id="image-lightbox-img" src="" alt="Image preview" class="lightbox-img" />
+      </div>
+    </div>
+  </div>
+
   <!-- 13. GLOBAL TASK QUEUE / ACTIVITY CENTER WIDGET -->
   <div id="global-task-queue-widget" style="display:none;">
     <div class="tq-header" onclick="toggleTaskQueueWidget()">

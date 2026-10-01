@@ -2022,7 +2022,7 @@ export function getAdminScripts(): string {
               let imageColHtml = '';
               if (p.image_url) {
                 imageColHtml = '<div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">' +
-                  '<a href="' + escapeHtml(p.image_source_url || p.image_url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(p.license || 'Post image') + '"><img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:56px;height:40px;object-fit:cover;border-radius:4px;"/></a>' +
+                  '<button type="button" class="img-preview-btn" onclick="openImageLightboxModal(\\x27' + escapeHtml(p.image_url) + '\\x27, \\x27' + escapeHtml(safeStr(p.topic_title || 'Post image')) + '\\x27)" title="Preview image"><img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:56px;height:40px;object-fit:cover;border-radius:4px;"/></button>' +
                   '<div>' + imgBadge + '<br/><button class="btn-secondary" style="padding:0.1rem 0.4rem;font-size:0.7rem;margin-top:0.2rem;" onclick="openDraftImageSelectorModal(\\x27' + pId + '\\x27)">Change</button></div>' +
                   '</div>';
               } else {
@@ -2762,7 +2762,7 @@ export function getAdminScripts(): string {
                 '</div>' +
               '</div>' +
               '<div class="fb-rail-post-text">' + msgContent + '</div>' +
-              (post.fullPicture ? '<div class="fb-rail-post-img-wrap"><img src="' + escapeHtml(safeStr(post.fullPicture)) + '" alt="Post image" loading="lazy"></div>' : '') +
+              (post.fullPicture ? '<div class="fb-rail-post-img-wrap" style="cursor:pointer;" onclick="openImageLightboxModal(\\x27' + escapeHtml(safeStr(post.fullPicture)) + '\\x27, \\x27Facebook post image\\x27)"><img src="' + escapeHtml(safeStr(post.fullPicture)) + '" alt="Post image" loading="lazy"></div>' : '') +
               '<div class="fb-rail-post-footer">' +
                 '<span style="font-size:0.7rem; color:var(--text-subtle);" title="' + escapeHtml(postIdStr) + '">ID: ' + escapeHtml(postIdStr.length > 15 ? postIdStr.substring(0, 12) + '...' : postIdStr) + '</span>' +
                 (post.permalinkUrl ? '<a href="' + escapeHtml(safeStr(post.permalinkUrl)) + '" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook &rarr;</a>' : '') +
@@ -3595,6 +3595,36 @@ export function getAdminScripts(): string {
     function closeModal(id) {
       const modal = document.getElementById(id);
       if (modal) modal.classList.remove('active');
+    }
+
+    function openImageLightboxModal(imageUrl, title) {
+      if (!imageUrl) return;
+      const modal = document.getElementById('image-lightbox-modal');
+      const imgEl = document.getElementById('image-lightbox-img');
+      const titleEl = document.getElementById('image-lightbox-title');
+      if (imgEl) {
+        imgEl.src = imageUrl;
+        imgEl.alt = title || 'Image preview';
+      }
+      if (titleEl) {
+        titleEl.textContent = title || 'Image preview';
+      }
+      if (modal) {
+        modal.classList.add('active');
+      }
+    }
+
+    function closeImageLightboxModal() {
+      const modal = document.getElementById('image-lightbox-modal');
+      if (modal) {
+        modal.classList.remove('active');
+      }
+    }
+
+    function handleLightboxBackdropClick(event) {
+      if (event.target && event.target.id === 'image-lightbox-modal') {
+        closeImageLightboxModal();
+      }
     }
 
     document.addEventListener('keydown', (e) => {
@@ -4713,9 +4743,9 @@ export function getAdminScripts(): string {
         return '<div class="image-card" id="img-card-' + imgId + '">' +
             '<div style="position:relative;">' +
               '<input type="checkbox" class="img-select-checkbox" data-id="' + imgId + '" ' + isChecked + ' onchange="updateImageSelectionState()" style="position:absolute; top:8px; left:8px; z-index:2;" />' +
-              '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              '<button type="button" class="img-preview-btn" style="width:100%;display:block;" onclick="openImageLightboxModal(\\x27' + escapeHtml(sourceUrl) + '\\x27, \\x27' + escapeHtml(title) + '\\x27)" aria-label="Preview image: ' + escapeHtml(title) + '">' +
                 '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" class="image-card-preview" />' +
-              '</a>' +
+              '</button>' +
               '<span class="status-badge ' + statusBadgeClass + '" style="position:absolute; top:8px; right:8px; font-size:0.65rem;">' + status + '</span>' +
             '</div>' +
             '<div class="image-card-body">' +
