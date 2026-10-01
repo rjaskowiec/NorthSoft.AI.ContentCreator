@@ -181,6 +181,55 @@ export class PerformanceEngineService {
   }
 
   /**
+   * Formats a post's content string into a clean, sanitized snippet.
+   * Strips HTML tags, decodes basic entities, replaces excessive whitespace,
+   * falls back to title or 'No content available', and truncates to maxLen with '…'.
+   */
+  public static formatSnippet(content?: string | null, title?: string | null, maxLen = 160): string {
+    const rawContent = (content || '').trim();
+    const rawTitle = (title || '').trim();
+    const isFbImportedTitle = rawTitle.toLowerCase() === 'imported facebook post';
+
+    let rawText = rawContent;
+    if (!rawText || (isFbImportedTitle && rawContent.toLowerCase() === 'imported facebook post')) {
+      if (rawTitle && !isFbImportedTitle) {
+        rawText = rawTitle;
+      } else {
+        rawText = '';
+      }
+    }
+
+    if (!rawText) {
+      return 'No content available';
+    }
+
+    const clean = rawText
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .join(' ');
+
+    if (!clean || (isFbImportedTitle && clean.toLowerCase() === 'imported facebook post')) {
+      if (rawTitle && !isFbImportedTitle) {
+        return rawTitle;
+      }
+      return 'No content available';
+    }
+
+    if (clean.length > maxLen) {
+      return clean.slice(0, maxLen).trim() + '…';
+    }
+
+    return clean;
+  }
+
+  /**
    * Calculates median of a numeric array.
    */
   public static calculateMedian(values: number[]): number {
@@ -729,7 +778,7 @@ export class PerformanceEngineService {
     const successfulExamples = outperformingList.slice(0, 3).map((p) => ({
       postId: p.postId,
       title: p.title,
-      snippet: p.content.slice(0, 220) + (p.content.length > 220 ? '...' : ''),
+      snippet: PerformanceEngineService.formatSnippet(p.content, p.title, 160),
       score: p.score,
       percentile: p.percentile,
     }));
@@ -737,7 +786,7 @@ export class PerformanceEngineService {
     const poorExamples = underperformingList.slice(0, 3).map((p) => ({
       postId: p.postId,
       title: p.title,
-      snippet: p.content.slice(0, 220) + (p.content.length > 220 ? '...' : ''),
+      snippet: PerformanceEngineService.formatSnippet(p.content, p.title, 160),
       score: p.score,
       percentile: p.percentile,
     }));

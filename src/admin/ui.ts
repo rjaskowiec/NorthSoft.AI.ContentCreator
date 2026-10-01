@@ -739,7 +739,7 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
-                      <th>Title</th>
+                      <th style="min-width:320px;">Content Snippet</th>
                       <th>Confidence</th>
                       <th>Score</th>
                       <th>Percentile</th>
@@ -764,7 +764,7 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
-                      <th>Title</th>
+                      <th style="min-width:320px;">Content Snippet</th>
                       <th>Confidence</th>
                       <th>Score</th>
                       <th>Percentile</th>

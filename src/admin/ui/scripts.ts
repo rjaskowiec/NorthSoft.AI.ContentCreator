@@ -1161,6 +1161,52 @@ export function getAdminScripts(): string {
           return '<span class="status-badge ' + badgeClass + '">' + label + '</span>';
         }
 
+        // Helper for formatting content snippet
+        function formatContentSnippet(content, title, maxLen) {
+          maxLen = maxLen || 160;
+          var rawContent = safeStr(content).trim();
+          var rawTitle = safeStr(title).trim();
+          var isFbImportedTitle = rawTitle.toLowerCase() === 'imported facebook post';
+
+          var rawText = rawContent;
+          if (!rawText || (isFbImportedTitle && rawContent.toLowerCase() === 'imported facebook post')) {
+            if (rawTitle && !isFbImportedTitle) {
+              rawText = rawTitle;
+            } else {
+              rawText = '';
+            }
+          }
+
+          if (!rawText) {
+            return 'No content available';
+          }
+
+          var clean = rawText
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, ' ')
+            .split(/\\s+/)
+            .filter(Boolean)
+            .join(' ');
+
+          if (!clean || (isFbImportedTitle && clean.toLowerCase() === 'imported facebook post')) {
+            if (rawTitle && !isFbImportedTitle) {
+              return rawTitle;
+            }
+            return 'No content available';
+          }
+
+          if (clean.length > maxLen) {
+            return clean.slice(0, maxLen).trim() + '…';
+          }
+
+          return clean;
+        }
+
         // Render Strong Examples Table
         const strongTable = document.getElementById('intel-strong-table');
         if (strongTable) {
@@ -1169,8 +1215,12 @@ export function getAdminScripts(): string {
             strongTable.innerHTML = strongPosts.map((p) => {
               const viewsText = p.exposure_views != null ? Number(p.exposure_views) + ' views' : '<span style="color:var(--text-muted);">N/A</span>';
               const engText = p.weighted_engagement != null ? Number(p.weighted_engagement).toFixed(1) + ' eng. pts' : '<span style="color:var(--text-muted);">N/A</span>';
+              const snippetText = p.post_snippet || formatContentSnippet(p.post_content || p.content, p.post_title || p.title, 160);
+              const origTitle = safeStr(p.post_title || p.title);
+              const tooltipAttr = origTitle ? ' title="' + escapeHtml(origTitle) + '"' : '';
+
               return '<tr>' +
-                '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
+                '<td style="max-width:380px; white-space:normal; word-break:break-word; line-height:1.45;"' + tooltipAttr + '><strong style="color:var(--text-main); font-weight:600;">' + escapeHtml(snippetText) + '</strong></td>' +
                 '<td>' + getConfBadgeHtml(p.confidence) + '</td>' +
                 '<td><span class="status-badge status-healthy">' + Number(p.success_score || p.score || 1).toFixed(2) + 'x median</span></td>' +
                 '<td>' + Number(p.percentile || 50).toFixed(0) + 'th percentile</td>' +
@@ -1192,8 +1242,12 @@ export function getAdminScripts(): string {
             weakTable.innerHTML = weakPosts.map((p) => {
               const viewsText = p.exposure_views != null ? Number(p.exposure_views) + ' views' : '<span style="color:var(--text-muted);">N/A</span>';
               const engText = p.weighted_engagement != null ? Number(p.weighted_engagement).toFixed(1) + ' eng. pts' : '<span style="color:var(--text-muted);">N/A</span>';
+              const snippetText = p.post_snippet || formatContentSnippet(p.post_content || p.content, p.post_title || p.title, 160);
+              const origTitle = safeStr(p.post_title || p.title);
+              const tooltipAttr = origTitle ? ' title="' + escapeHtml(origTitle) + '"' : '';
+
               return '<tr>' +
-                '<td><strong>' + escapeHtml(safeStr(p.post_title || p.title)) + '</strong></td>' +
+                '<td style="max-width:380px; white-space:normal; word-break:break-word; line-height:1.45;"' + tooltipAttr + '><strong style="color:var(--text-main); font-weight:600;">' + escapeHtml(snippetText) + '</strong></td>' +
                 '<td>' + getConfBadgeHtml(p.confidence) + '</td>' +
                 '<td><span class="status-badge status-alert">' + Number(p.success_score || p.score || 0.5).toFixed(2) + 'x median</span></td>' +
                 '<td>' + Number(p.percentile || 50).toFixed(0) + 'th percentile</td>' +

@@ -65,8 +65,15 @@ performanceRouter.get('/performance', async (c) => {
           )
         : null;
 
+      const snippet = PerformanceEngineService.formatSnippet(
+        r.post_content || r.content,
+        r.post_title || r.title,
+        160,
+      );
+
       return {
         ...r,
+        post_snippet: snippet,
         exposure_views: exposure,
         weighted_engagement: weightedEng,
         is_measured: isMeasured,

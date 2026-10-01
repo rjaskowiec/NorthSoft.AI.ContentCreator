@@ -134,6 +134,59 @@ describe('PerformanceEngineService - Unit Tests', () => {
     });
   });
 
+  describe('Snippet Formatting Helper (formatSnippet)', () => {
+    it('returns snippet from actual content of normal post instead of title', () => {
+      const title = 'Boost Your Online Visibility: 3 Ways to Optimize Your Website for AI Search';
+      const content = 'Want to improve your website visibility in AI search? Here are 3 proven strategies...';
+      const snippet = PerformanceEngineService.formatSnippet(content, title, 160);
+
+      expect(snippet).toBe('Want to improve your website visibility in AI search? Here are 3 proven strategies...');
+      expect(snippet).not.toBe(title);
+    });
+
+    it('returns actual Facebook post text for Imported Facebook post instead of "Imported Facebook post"', () => {
+      const title = 'Imported Facebook post';
+      const content = 'Check out our new summer lineup now live on our official store!';
+      const snippet = PerformanceEngineService.formatSnippet(content, title, 160);
+
+      expect(snippet).toBe('Check out our new summer lineup now live on our official store!');
+      expect(snippet).not.toContain('Imported Facebook post');
+    });
+
+    it('truncates long content cleanly at 160 characters ending with …', () => {
+      const title = 'Long Post';
+      const longContent = 'A'.repeat(200);
+      const snippet = PerformanceEngineService.formatSnippet(longContent, title, 160);
+
+      expect(snippet.length).toBe(161); // 160 chars + 1 '…'
+      expect(snippet.endsWith('…')).toBe(true);
+      expect(snippet).toBe('A'.repeat(160) + '…');
+    });
+
+    it('strips HTML tags and normalizes excessive whitespace and newlines', () => {
+      const title = 'HTML Post';
+      const htmlContent = '<div><h1>Title</h1><p>Hello   <b>world!</b>\n\nHow are   you?</p></div>';
+      const snippet = PerformanceEngineService.formatSnippet(htmlContent, title, 160);
+
+      expect(snippet).toBe('Title Hello world! How are you?');
+      expect(snippet).not.toContain('<');
+      expect(snippet).not.toContain('>');
+    });
+
+    it('falls back to post title when content is missing or empty', () => {
+      const title = 'Fallback Title';
+      expect(PerformanceEngineService.formatSnippet(null, title, 160)).toBe('Fallback Title');
+      expect(PerformanceEngineService.formatSnippet('', title, 160)).toBe('Fallback Title');
+      expect(PerformanceEngineService.formatSnippet('   ', title, 160)).toBe('Fallback Title');
+    });
+
+    it('falls back to "No content available" when both content and title are missing or empty', () => {
+      expect(PerformanceEngineService.formatSnippet(null, null, 160)).toBe('No content available');
+      expect(PerformanceEngineService.formatSnippet('', '', 160)).toBe('No content available');
+      expect(PerformanceEngineService.formatSnippet(null, 'Imported Facebook post', 160)).toBe('No content available');
+    });
+  });
+
   describe('Adaptive Cold-Start & Reference Pool Sync', () => {
     it('populates Strong and Weak pools in EARLY mode with small set of 2 posts', async () => {
       const mockDb = new MockD1Database();
