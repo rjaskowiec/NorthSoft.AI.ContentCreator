@@ -92,17 +92,17 @@ imagesRouter.post('/images', csrfProtection, async (c) => {
   const db = c.env.DB;
   const imgService = new ImageLibraryService(db);
 
-  let title = 'Manual Image';
-  let category = 'General';
-  let keywords = '';
-  let description = '';
-  let author = '';
-  let license = 'Manual';
-  let notes = '';
+  let title: string;
+  let category: string;
+  let keywords: string;
+  let description: string;
+  let author: string;
+  let license: string;
+  let notes: string;
   let status: 'APPROVED' | 'PENDING' = 'APPROVED';
   let sourceUrl: string | undefined;
   let r2Key: string | undefined;
-  let sourceType: 'UPLOADED' | 'URL' = 'URL';
+  let sourceType: 'UPLOADED' | 'URL';
 
   try {
     if ((c.req.header('content-type') || '').includes('multipart/form-data')) {

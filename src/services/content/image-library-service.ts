@@ -239,7 +239,24 @@ export class ImageLibraryService {
       .bind(...bindings)
       .run();
 
-    return (res.meta?.changes ?? 0) > 0;
+    const updated = (res.meta?.changes ?? 0) > 0;
+
+    if (updated && updates.status && (updates.status === 'DELETED' || updates.status === 'REJECTED')) {
+      await this.db.batch([
+        this.db
+          .prepare('UPDATE curated_images SET reserved_post_id = NULL WHERE id = ?')
+          .bind(id),
+        this.db
+          .prepare(
+            `DELETE FROM post_images
+             WHERE (curated_image_id = ? OR url IN (SELECT source_url FROM curated_images WHERE id = ? AND source_url IS NOT NULL))
+               AND post_id IN (SELECT id FROM posts WHERE status != 'published')`,
+          )
+          .bind(id, id),
+      ]);
+    }
+
+    return updated;
   }
 
   /**
@@ -374,6 +391,12 @@ export class ImageLibraryService {
       throw new Error(`Cannot assign image ${imageId} because its status is '${img.status}'. Only APPROVED images can be selected.`);
     }
 
+    const postRow = await this.db
+      .prepare('SELECT current_version FROM posts WHERE id = ?')
+      .bind(postId)
+      .first<{ current_version: number }>();
+    const currentVersion = postRow?.current_version ?? 1;
+
     const nowIso = new Date().toISOString();
 
     // Batch database updates safely
@@ -391,11 +414,12 @@ export class ImageLibraryService {
           license, license_url, verified_at, verification_status, visual_verification_status,
           curated_image_id, selection_source, created_at
         ) VALUES (
-          ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, ?, ?
         )`,
       ).bind(
         crypto.randomUUID(),
         postId,
+        currentVersion,
         img.source_url || img.r2_key || 'post-image',
         img.title || img.description || 'Post Image',
         img.original_page_url || img.source_url,

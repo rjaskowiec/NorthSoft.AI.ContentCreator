@@ -171,7 +171,20 @@ export class PublicationService {
       .prepare(
         `SELECT p.id, p.title, p.status as post_status,
                 pv.id as version_id, pv.content as body, p.status as version_status, pv.version_number,
-                (SELECT url FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version LIMIT 1) as image_url
+                (SELECT url FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version
+                 AND (
+                   p.status = 'published'
+                   OR (
+                     (pi.curated_image_id IS NULL OR EXISTS (
+                       SELECT 1 FROM curated_images cur WHERE cur.id = pi.curated_image_id AND cur.status = 'APPROVED'
+                     ))
+                     AND NOT EXISTS (
+                       SELECT 1 FROM curated_images cur
+                       WHERE (cur.id = pi.curated_image_id OR (pi.curated_image_id IS NULL AND cur.source_url IS NOT NULL AND cur.source_url = pi.url))
+                         AND cur.status IN ('DELETED', 'REJECTED')
+                     )
+                   )
+                 ) LIMIT 1) as image_url
          FROM posts p
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE p.id = ?`,
@@ -349,25 +362,31 @@ export class PublicationService {
 
     // 7. INVOKE META PUBLISHER (0 AI calls, exact approved post content)
     // 6.5. PUBLISHING SAFETY CHECK: Ensure image belongs to approved library and is valid
-    if (postRow.image_url) {
-      const imgCheck = await this.db
-        .prepare('SELECT ci.status FROM post_images pi JOIN curated_images ci ON ci.id = pi.curated_image_id WHERE pi.post_id = ?')
-        .bind(postId)
-        .first<{ status: string }>();
+    const piRow = await this.db
+      .prepare(
+        `SELECT pi.curated_image_id, ci.status
+         FROM post_images pi
+         LEFT JOIN curated_images ci ON ci.id = pi.curated_image_id
+         WHERE pi.post_id = ? AND pi.version_number = ?`,
+      )
+      .bind(postId, postRow.version_number)
+      .first<{ curated_image_id: string | null; status: string | null }>();
 
-      if (imgCheck && imgCheck.status !== 'APPROVED') {
+    if (piRow && piRow.curated_image_id) {
+      if (!piRow.status || piRow.status !== 'APPROVED') {
+        const imageStatus = piRow.status || 'DELETED';
         await this.auditLogger?.log({
           eventType: 'PUBLICATION_BLOCKED',
           entityType: 'post',
           entityId: postId,
           actor,
-          details: { reason: 'IMAGE_NOT_APPROVED', imageStatus: imgCheck.status },
+          details: { reason: 'IMAGE_NOT_APPROVED', imageStatus },
         });
 
         return {
           success: false,
           code: 'IMAGE_NOT_APPROVED',
-          message: `Publication blocked: Image attached to post ${postId} has status '${imgCheck.status}'. Only APPROVED images can be published to Facebook.`,
+          message: `Publication blocked: Image attached to post ${postId} has status '${imageStatus}'. Only APPROVED images can be published to Facebook.`,
           retryable: false,
         };
       }

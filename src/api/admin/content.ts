@@ -81,6 +81,19 @@ contentRouter.get('/content/posts', async (c) => {
        LEFT JOIN content_ideas ci ON ci.id = p.idea_id
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
        LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
+         AND (
+           p.status = 'published'
+           OR (
+             (pi.curated_image_id IS NULL OR EXISTS (
+               SELECT 1 FROM curated_images cur WHERE cur.id = pi.curated_image_id AND cur.status = 'APPROVED'
+             ))
+             AND NOT EXISTS (
+               SELECT 1 FROM curated_images cur
+               WHERE (cur.id = pi.curated_image_id OR (pi.curated_image_id IS NULL AND cur.source_url IS NOT NULL AND cur.source_url = pi.url))
+                 AND cur.status IN ('DELETED', 'REJECTED')
+             )
+           )
+         )
        WHERE (? = '' OR p.id = ?)
          AND (p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED')
          AND (v.ai_provider IS NULL OR v.ai_provider != 'facebook')
