@@ -159,18 +159,223 @@ describe('PublicationService Unit Tests', () => {
     expect(runMock).toHaveBeenCalled();
   });
 
-  it('should skip publishing scheduled due posts gracefully when publisher is disabled or not configured', async () => {
+  it('should skip publishing scheduled due posts gracefully when publisher is disabled or not configured and log audit warning if due posts exist', async () => {
+    const logMock = vi.fn();
+    const mockAuditLogger = { log: logMock } as any;
+
     const mockDb = {
-      prepare: vi.fn(),
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('SELECT COUNT(*)')) {
+          return {
+            first: vi.fn().mockResolvedValue({ cnt: 3 }),
+          };
+        }
+        return { first: vi.fn().mockResolvedValue(null) };
+      }),
     } as unknown as D1Database;
 
     const mockPublisher = new MockMetaPublisher();
     mockPublisher.isConfigured = false;
 
-    const service = new PublicationService(mockDb, mockPublisher);
+    const service = new PublicationService(mockDb, mockPublisher, mockAuditLogger);
     const result = await service.publishScheduledDuePosts();
 
     expect(result.processed).toBe(0);
     expect(result.skippedReason).toBe('NOT_CONFIGURED');
+    expect(logMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'PUBLICATION_SKIPPED',
+        details: expect.objectContaining({ dueCount: 3, reason: 'NOT_CONFIGURED' }),
+      }),
+    );
+  });
+
+  it('should process past scheduled posts (scheduledAt < now) and ignore future posts (scheduledAt > now)', async () => {
+    const publishedPosts: string[] = [];
+
+    const mockDb = {
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM schedules s')) {
+          return {
+            all: vi.fn().mockResolvedValue({
+              results: [
+                { schedule_id: 'sched-past', post_id: 'post-past' },
+              ],
+            }),
+          };
+        }
+        if (sql.includes('FROM posts p')) {
+          return {
+            bind: vi.fn().mockImplementation((id: string) => ({
+              first: vi.fn().mockResolvedValue({
+                id,
+                title: 'Past Due Post',
+                post_status: 'scheduled',
+                version_id: `ver-${id}`,
+                body: 'Post body text',
+                version_status: 'scheduled',
+                version_number: 1,
+              }),
+            })),
+          };
+        }
+        if (sql.includes('FROM publications')) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            first: vi.fn().mockResolvedValue(null),
+          };
+        }
+        if (sql.includes('UPDATE schedules SET status = \'publishing\'')) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+          };
+        }
+        return {
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          run: vi.fn().mockImplementation(() => {
+            return Promise.resolve({ meta: { changes: 1 } });
+          }),
+        };
+      }),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    mockPublisher.mockExternalPostId = 'fb_due_123';
+
+    const service = new PublicationService(mockDb, mockPublisher);
+    const result = await service.publishScheduledDuePosts();
+
+    expect(result.processed).toBe(1);
+    expect(result.succeeded).toBe(1);
+    expect(mockPublisher.publishCalls.length).toBe(1);
+  });
+
+  it('should recover stale schedule locks in status publishing older than 15 minutes', async () => {
+    const runMock = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
+    const mockDb = {
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes("FROM publications")) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            all: vi.fn().mockResolvedValue({ results: [] }),
+            run: runMock,
+          };
+        }
+        if (sql.includes("UPDATE schedules")) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            run: runMock,
+          };
+        }
+        return {
+          bind: vi.fn().mockReturnThis(),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          run: runMock,
+        };
+      }),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    const service = new PublicationService(mockDb, mockPublisher);
+
+    await service.recoverStaleLocks(15);
+    expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining('UPDATE schedules'));
+  });
+
+  it('should continue processing remaining due posts if an individual post throws an unhandled exception', async () => {
+    const processedPostIds: string[] = [];
+
+    const mockDb = {
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM schedules s')) {
+          return {
+            all: vi.fn().mockResolvedValue({
+              results: [
+                { schedule_id: 'sched-1', post_id: 'post-1' },
+                { schedule_id: 'sched-2-broken', post_id: 'post-2-broken' },
+                { schedule_id: 'sched-3', post_id: 'post-3' },
+              ],
+            }),
+          };
+        }
+        if (sql.includes('FROM posts p')) {
+          return {
+            bind: vi.fn().mockImplementation((id: string) => ({
+              first: vi.fn().mockImplementation(async () => {
+                if (id === 'post-2-broken') {
+                  throw new Error('Database connection reset during post fetch');
+                }
+                processedPostIds.push(id);
+                return {
+                  id,
+                  title: `Post ${id}`,
+                  post_status: 'scheduled',
+                  version_id: `ver-${id}`,
+                  body: 'Content text',
+                  version_status: 'scheduled',
+                  version_number: 1,
+                };
+              }),
+            })),
+          };
+        }
+        return {
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
+          all: vi.fn().mockResolvedValue({ results: [] }),
+          run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+        };
+      }),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    const service = new PublicationService(mockDb, mockPublisher);
+
+    const result = await service.publishScheduledDuePosts();
+
+    expect(result.processed).toBe(3);
+    expect(result.succeeded).toBe(2);
+    expect(result.failed).toBe(1);
+    expect(processedPostIds).toEqual(['post-1', 'post-3']);
+  });
+
+  it('should block publication with IMAGE_NOT_ACCESSIBLE when image URL is HTTP 404', async () => {
+    const mockDb = {
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM posts p')) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            first: vi.fn().mockResolvedValue({
+              id: 'post-bad-img',
+              title: 'Bad Image Post',
+              post_status: 'scheduled',
+              version_id: 'ver-bad-img',
+              body: 'Post with missing image',
+              version_status: 'scheduled',
+              version_number: 1,
+              image_url: 'https://example.com/nonexistent-image-404.jpg',
+            }),
+          };
+        }
+        return {
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
+          run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+        };
+      }),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    const service = new PublicationService(mockDb, mockPublisher);
+
+    const result = await service.publishPost('post-bad-img');
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('IMAGE_NOT_ACCESSIBLE');
+    expect(result.retryable).toBe(false);
+    expect(mockPublisher.publishCalls.length).toBe(0);
   });
 });

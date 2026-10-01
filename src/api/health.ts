@@ -35,7 +35,7 @@ healthRoutes.get('/', async (c) => {
     {
       status: isHealthy ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
-      environment: env.ENVIRONMENT,
+      environment: env?.ENVIRONMENT || 'development',
       version: '0.1.0',
       checks: {
         database: {

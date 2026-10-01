@@ -5,6 +5,67 @@ import type { IMailGatewayClient } from '../mail/mail-service.js';
 import { NotificationService } from '../notifications/notification-service.js';
 import { PerformanceEngineService } from '../analytics/performance-engine.js';
 
+export async function validateImageUrl(
+  url: string,
+  timeoutMs = 4000,
+): Promise<{ valid: boolean; error?: string; httpStatus?: number }> {
+  if (!url || typeof url !== 'string') {
+    return { valid: false, error: 'Empty image URL' };
+  }
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return { valid: false, error: 'Image URL must start with http:// or https://' };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(trimmed, {
+      method: 'HEAD',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'NorthSoft-ImageValidator/1.0' },
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      if (response.status === 405) {
+        const getController = new AbortController();
+        const getTimer = setTimeout(() => getController.abort(), timeoutMs);
+        const getRes = await fetch(trimmed, {
+          method: 'GET',
+          signal: getController.signal,
+          headers: { Range: 'bytes=0-1024', 'User-Agent': 'NorthSoft-ImageValidator/1.0' },
+        });
+        clearTimeout(getTimer);
+        if (!getRes.ok) {
+          return { valid: false, httpStatus: getRes.status, error: `HTTP ${getRes.status}` };
+        }
+        return { valid: true, httpStatus: getRes.status };
+      }
+      return { valid: false, httpStatus: response.status, error: `HTTP ${response.status}` };
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (
+      contentType &&
+      !contentType.toLowerCase().includes('image/') &&
+      !contentType.toLowerCase().includes('octet-stream')
+    ) {
+      return {
+        valid: false,
+        httpStatus: response.status,
+        error: `Invalid content-type '${contentType}'`,
+      };
+    }
+
+    return { valid: true, httpStatus: response.status };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { valid: false, error: `Fetch failed: ${msg}` };
+  }
+}
+
 export interface PublicationRecord {
   id: string;
   postId: string;
@@ -89,6 +150,19 @@ export class PublicationService {
    */
   public async recoverStaleLocks(thresholdMinutes = 15): Promise<number> {
     try {
+      // 1. Recover stale schedule locks in 'publishing' status older than threshold minutes
+      await this.db
+        .prepare(
+          `UPDATE schedules
+           SET status = 'pending', updated_at = datetime('now')
+           WHERE status = 'publishing'
+             AND updated_at <= datetime('now', '-' || ? || ' minutes')`,
+        )
+        .bind(thresholdMinutes)
+        .run()
+        .catch(() => {});
+
+      // 2. Recover stale publication records in 'publishing' status older than threshold minutes
       const staleRows = await this.db
         .prepare(
           `SELECT id, post_id, post_version_id, attempt_count
@@ -392,6 +466,32 @@ export class PublicationService {
       }
     }
 
+    // 6.6. MEDIA ACCESSIBILITY PRE-VALIDATION: Confirm image URL returns HTTP 200 before calling Meta API
+    if (postRow.image_url) {
+      const mediaVal = await validateImageUrl(postRow.image_url).catch(() => ({ valid: true }));
+      if (!mediaVal.valid) {
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_BLOCKED',
+          entityType: 'post',
+          entityId: postId,
+          actor,
+          details: {
+            reason: 'IMAGE_NOT_ACCESSIBLE',
+            imageUrl: postRow.image_url,
+            httpStatus: mediaVal.httpStatus,
+            error: mediaVal.error,
+          },
+        });
+
+        return {
+          success: false,
+          code: 'IMAGE_NOT_ACCESSIBLE',
+          message: `Publication blocked: Image URL '${postRow.image_url}' is not accessible or invalid (${mediaVal.error}).`,
+          retryable: false,
+        };
+      }
+    }
+
     const pubResult = await this.publisher.publish({
       postId,
       postVersionId: postRow.version_id,
@@ -570,6 +670,37 @@ export class PublicationService {
   }> {
     const publisherConfig = this.publisher.getConfigStatus();
     if (publisherConfig.state === 'DISABLED' || publisherConfig.state === 'NOT_CONFIGURED') {
+      try {
+        const dueCountRes = await this.db
+          .prepare(
+            `SELECT COUNT(*) as cnt
+             FROM schedules s
+             JOIN posts p ON s.post_id = p.id
+             WHERE s.status = 'pending'
+               AND datetime(s.scheduled_at) <= datetime('now')
+               AND p.status IN ('approved', 'scheduled')`,
+          )
+          .first<{ cnt: number }>();
+
+        if (dueCountRes && dueCountRes.cnt > 0) {
+          await this.auditLogger?.log({
+            eventType: 'PUBLICATION_SKIPPED',
+            entityType: 'schedule',
+            entityId: 'due_queue',
+            actor: 'system',
+            level: 'WARNING',
+            status: 'DEFERRED',
+            details: {
+              reason: publisherConfig.state,
+              statusMessage: publisherConfig.statusMessage,
+              dueCount: dueCountRes.cnt,
+            },
+          });
+        }
+      } catch {
+        // Observability check is best-effort
+      }
+
       return {
         processed: 0,
         succeeded: 0,
@@ -611,26 +742,48 @@ export class PublicationService {
       }
 
       processed++;
-      const result = await this.publishPost(item.post_id, {
-        scheduleId: item.schedule_id,
-        actor: 'system',
-      });
+      try {
+        const result = await this.publishPost(item.post_id, {
+          scheduleId: item.schedule_id,
+          actor: 'system',
+        });
 
-      if (result.success) {
-        succeeded++;
-      } else {
-        failed++;
-        if (!result.retryable) {
-          await this.db
-            .prepare(`UPDATE schedules SET status = 'failed', updated_at = datetime('now') WHERE id = ?`)
-            .bind(item.schedule_id)
-            .run();
+        if (result.success) {
+          succeeded++;
         } else {
-          await this.db
-            .prepare(`UPDATE schedules SET status = 'pending', updated_at = datetime('now') WHERE id = ?`)
-            .bind(item.schedule_id)
-            .run();
+          failed++;
+          if (!result.retryable) {
+            await this.db
+              .prepare(`UPDATE schedules SET status = 'failed', updated_at = datetime('now') WHERE id = ?`)
+              .bind(item.schedule_id)
+              .run();
+          } else {
+            await this.db
+              .prepare(`UPDATE schedules SET status = 'pending', updated_at = datetime('now') WHERE id = ?`)
+              .bind(item.schedule_id)
+              .run();
+          }
         }
+      } catch (err: unknown) {
+        failed++;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_FAILED',
+          entityType: 'schedule',
+          entityId: item.schedule_id,
+          actor: 'system',
+          level: 'ERROR',
+          status: 'FAILED',
+          error: {
+            code: 'SCHEDULED_PUBLICATION_EXCEPTION',
+            message: errMsg,
+            stage: 'publishScheduledDuePosts',
+          },
+        });
+        await this.db
+          .prepare(`UPDATE schedules SET status = 'failed', updated_at = datetime('now') WHERE id = ?`)
+          .bind(item.schedule_id)
+          .run();
       }
     }
 

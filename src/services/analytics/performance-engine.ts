@@ -139,6 +139,108 @@ export class PerformanceEngineService {
   }
 
   /**
+   * Extracts style hints from recent strong reference posts.
+   * Returns a JSON string with aggregated hints or null if insufficient data.
+   */
+  public async extractStyleHints(db: D1Database, limit = 30): Promise<string | null> {
+    try {
+      // Fetch up to `limit` active strong reference posts
+      const rows = await db
+        .prepare(
+          `SELECT r.content as post_content, r.title as post_title, r.extracted_characteristics as extracted_chars`
+          + ` FROM generator_reference_posts r`
+          + ` WHERE r.is_active = 1 AND r.classification = 'STRONG'`
+          + ` ORDER BY r.rank ASC LIMIT ?`,
+        )
+        .bind(limit)
+        .all<any>();
+      const results = rows.results || [];
+      if (results.length === 0) return null;
+
+      const hookMap: Record<string, number> = {};
+      let audienceScore = 0;
+      const specificityMap: Record<string, number> = {};
+      let valueCueScore = 0;
+      let emotionScore = 0;
+      let brandScore = 0;
+      let totalParagraphs = 0;
+      let totalEmojis = 0;
+      let totalChars = 0;
+
+      const emojiRegex = /[\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}]/u;
+      const valueVerbRegex = /\b(check|review|update|try|implement|test)\b/i;
+      const brandRegex = /NorthSoft/i;
+      const fearWords = /\b(urgent|dying|crisis|panic)\b/i;
+
+      for (const r of results) {
+        let chars: any;
+        try {
+          chars = r.extracted_chars ? JSON.parse(r.extracted_chars) : null;
+        } catch {
+          chars = null;
+        }
+        // Fallback to on‑the‑fly extraction if not stored
+        if (!chars) {
+          chars = PerformanceEngineService.extractCharacteristics(r.post_content, r.post_title);
+        }
+        // Hook patterns aggregation
+        const hook = chars.hookStyle || 'Standard Opening';
+        hookMap[hook] = (hookMap[hook] || 0) + 1;
+        // Audience recognition: simple heuristic – presence of "customer" or "client"
+        if (/\b(customer|client)\b/i.test(r.post_content)) audienceScore++;
+        // Specificity based on lengthCategory
+        const spec = chars.lengthCategory || 'MEDIUM';
+        specificityMap[spec] = (specificityMap[spec] || 0) + 1;
+        // Value cue detection
+        if (valueVerbRegex.test(r.post_content)) valueCueScore++;
+        // Emotional tone detection
+        if (fearWords.test(r.post_content)) emotionScore++;
+        // Brand role – ensure NorthSoft appears after a value verb
+        const brandIdx = r.post_content.search(brandRegex);
+        const valueIdx = r.post_content.search(valueVerbRegex);
+        if (brandIdx !== -1 && (valueIdx === -1 || brandIdx > valueIdx)) brandScore++;
+        // Rhythm statistics
+        const paragraphs = r.post_content.split(/\n\s*\n/).filter(Boolean).length;
+        totalParagraphs += paragraphs;
+        const emojis = (r.post_content.match(emojiRegex) || []).length;
+        totalEmojis += emojis;
+        totalChars += r.post_content.length;
+      }
+
+      // Determine top 3 hook patterns
+      const topHooks = Object.entries(hookMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map((h) => h[0]);
+
+      // Helper to pick the most common category
+      const mostCommon = (map: Record<string, number>) =>
+        Object.entries(map).sort((a, b) => b[1] - a[1])[0][0];
+
+      const payload = {
+        hookPatterns: topHooks,
+        audienceRecognition: audienceScore / results.length >= 0.5 ? 'high' : 'medium',
+        specificity: mostCommon(specificityMap).toLowerCase() as 'high' | 'medium' | 'low',
+        valueCue: valueCueScore / results.length >= 0.5 ? 'present' : 'absent',
+        emotionalTone: emotionScore === 0 ? 'low-to-moderate' : 'high',
+        brandRole: brandScore / results.length >= 0.5 ? 'solution-only' : 'mixed',
+        preferredRhythm: 'short-to-medium sentences with deliberate variation',
+        statistics: {
+          avgParagraphs: Number((totalParagraphs / results.length).toFixed(2)),
+          emojiFreq: Number((totalEmojis / totalChars).toFixed(4)),
+        },
+      };
+
+      return JSON.stringify(payload);
+    } catch (e) {
+      console.warn('extractStyleHints error:', e);
+      return null;
+    }
+  }
+
+
+
+  /**
    * Evaluates exposure using unique_views (reach) or fallback to views (impressions).
    */
   public static computeExposure(uniqueViews = 0, views = 0): number {

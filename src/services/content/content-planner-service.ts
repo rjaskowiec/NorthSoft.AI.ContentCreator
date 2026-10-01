@@ -23,6 +23,7 @@ import {
   type ResearchTopicItem,
 } from './writer-service';
 import { QuotaManager } from '../ai/quota-manager';
+import { SocialMediaQualityGate } from './social-media-quality-gate';
 
 export interface GenerationResultSummary {
   postId?: string;
@@ -147,6 +148,7 @@ export class ContentPlannerService {
     const originalRegenerationCount = existingPost?.regeneration_count || 0;
     let currentVersion = existingPost?.current_version || 0;
     let finalDecision: 'PASS' | 'FAIL' | 'BLOCKED' = 'FAIL';
+    let smqgPass = true;
     let finalScore = 0;
     let lastDraft: PostDraft | undefined;
     let runErrorMessage: string | undefined;
@@ -173,6 +175,7 @@ export class ContentPlannerService {
     };
 
     // 4. Generation & Bounded Regeneration Loop (Max 3 attempts = 2 retries)
+    let correctionHint: string | undefined;
     for (let attempt = 1; attempt <= 3; attempt++) {
       const versionNumber = baseVersion + attempt;
       currentVersion = versionNumber;
@@ -203,7 +206,7 @@ export class ContentPlannerService {
       }
 
       // 4a. Call Writer AI BEFORE inserting post record in DB
-      const genRes = await writerService.generateDraft(topicRow, sources);
+      const genRes = await writerService.generateDraft(topicRow, sources, undefined, correctionHint);
       if (genRes.deferred) {
         runErrorMessage = `Writer deferred: ${genRes.error}`;
         break;
@@ -233,6 +236,26 @@ export class ContentPlannerService {
       }
 
       lastDraft = genRes.draft;
+      // Evaluate Social Media Quality Gate
+      const smqg = new SocialMediaQualityGate();
+      const smqgResult = smqg.evaluate(lastDraft);
+      smqgPass = smqgResult.pass;
+      if (!smqgPass) {
+        await this.auditLogger.log({
+          eventType: 'SMQG_FAILED',
+          entityType: 'content_idea',
+          entityId: topicId,
+          actor: 'system',
+          details: { score: smqgResult.score, warnings: smqgResult.warnings, attempt },
+        });
+        // Build corrective feedback for next regeneration attempt
+        const criticalWarnings = smqgResult.warnings.filter((w) => w.severity === 'critical' || w.severity === 'high');
+        if (criticalWarnings.length > 0) {
+          correctionHint = criticalWarnings.map((w) => `[${w.dimension}] ${w.reason}`).join('\n');
+        }
+      } else {
+        correctionHint = undefined; // Clear hint if this attempt passed
+      }
       const metadataJson = JSON.stringify({
         claims: lastDraft.claims,
         hashtags: lastDraft.hashtags,
@@ -502,7 +525,7 @@ export class ContentPlannerService {
       // 4f. Evaluate Quality Gate Decision
       finalDecision = evaluatePipelineGate({
         staticValid: staticResult.valid,
-        contentQualityPassed: contentQualityResult.passed,
+        contentQualityPassed: contentQualityResult.passed && smqgPass,
         qaVerdict: qaReview.verdict,
         qaScore: qaReview.score,
         policyPassed: policyResult.passed,

@@ -10,6 +10,56 @@ import { parseAiJsonResponse } from '../../core/json-parser';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
 import { QuotaManager } from '../ai/quota-manager';
 import { PerformanceEngineService } from '../analytics/performance-engine';
+import structureCatalog from './structure-catalog.json' assert { type: 'json' };
+
+const basePrompt = `You are a skilled human copywriter writing social media posts (Facebook/Instagram) for NorthSoft AI — a company that helps small local businesses with websites, e-commerce, local SEO, online marketing, workflow automation, AI assistants, and email systems.
+
+Your reader is a small-business owner — a shop owner, restaurant, tradesperson, or similar. They are practical, time-pressed, and scroll past anything that sounds corporate or generic.
+
+OBJECTIVE:
+Write a post that makes the reader feel it was written specifically for someone like them.
+
+HOW TO THINK ABOUT IT — think in steps, but keep these steps invisible in the finished post:
+1. ATTENTION: Start with something that makes them stop. A concrete observation, a recognizable situation, or a mildly surprising fact.
+2. RECOGNITION: Let them see themselves — their customers, their daily reality, a frustration they know.
+3. CONCRETE VALUE: Give them something genuinely useful — a specific insight, practical framing, or actionable observation. Not vague advice like "have a good website". Real substance.
+4. CREDIBILITY: Stay honest. If you use a number, it must come from the source material. If there are no numbers, make a confident but honest observation. Never invent statistics.
+5. NATURAL SOLUTION: If NorthSoft fits naturally, introduce it. If it doesn't fit, leave it out. Never force a mention.
+6. OPTIONAL CTA: If a question, invitation, or next step feels natural, include one. If the post ends better without it, end without it.
+
+LANGUAGE AND STYLE:
+- Write in natural, conversational English. Use contractions (it's, you're, they've, can't).
+- Vary sentence length deliberately — mix short punchy sentences with occasional longer ones.
+- Write in paragraphs. Use a bullet list only when it genuinely improves clarity.
+- Active voice. Avoid passive constructions.
+- Body: 350–900 characters. Shorter is fine if the point is complete. Longer only if the content requires it.
+- 0–3 hashtags, only where they feel natural. No hashtag stuffing.
+
+WHAT TO AVOID:
+- Corporate jargon: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "revolutionizing the way", "leverage synergy", "maximize conversion".
+- Promotional filler: "In today's digital world...", "As a business owner, you know..."
+- Abstract claims without specifics.
+- Fabricated statistics or exaggerated claims.
+- Forcing a NorthSoft mention when it doesn't fit naturally.
+- Forcing a CTA when the post works better without one.
+- Mandatory emojis — use only when they add genuine personality.
+
+STRUCTURE GUIDANCE:
+A suggested structure will be provided below. Treat it as a starting point, not a rigid template.
+Override it entirely if a more natural structure emerges from the content.
+The goal is a post that feels human — not one that follows a template.
+
+Return ONLY a valid JSON object with this schema:
+{
+  "title": "Short post headline",
+  "body": "Full post text in natural English",
+  "language": "en",
+  "tone": "conversational",
+  "claims": [{ "text": "Key factual observation", "sourceIds": ["src-1"] }],
+  "hashtags": ["#optional"],
+  "imageSearchQuery": "2-8 word visual scene or metaphor (e.g. 'plumber checking phone for bookings')",
+  "callToAction": "Optional closing line or question — omit if the post ends better without one"
+}`;
 
 export interface FactualClaim {
   text: string;
@@ -47,6 +97,35 @@ export interface ResearchTopicItem {
 }
 
 export class WriterService {
+  /**
+   * Selects a structural pattern from the catalog.
+   * Uses recent performance metrics to weight successful patterns higher.
+   */
+  private async selectStructurePattern(perfEngine: PerformanceEngineService): Promise<string> {
+    const patterns = structureCatalog as Array<{ id: string; name: string; description: string; pattern: string }>;
+    const profile = await perfEngine.getActiveProfile(this.db).catch(() => null);
+    const weightMap: Record<string, number> = {};
+    patterns.forEach((p) => (weightMap[p.id] = 1));
+    if (profile && profile.successfulPatterns) {
+      for (const sp of profile.successfulPatterns) {
+        for (const p of patterns) {
+          if (sp.toLowerCase().includes(p.name.toLowerCase())) {
+            weightMap[p.id] = (weightMap[p.id] ?? 1) + 1;
+          }
+        }
+      }
+    }
+    const weightedList: string[] = [];
+    for (const p of patterns) {
+      const w = weightMap[p.id] ?? 1;
+      for (let i = 0; i < w; i++) weightedList.push(p.id);
+    }
+    if (weightedList.length === 0) return '';
+    const chosenId = weightedList[Math.floor(Math.random() * weightedList.length)];
+    const chosen = patterns.find((p) => p.id === chosenId);
+    return chosen ? `Suggested structure: ${chosen.name}\nPattern: ${chosen.pattern}\nDescription: ${chosen.description}` : '';
+  }
+
   private quotaManager: QuotaManager;
 
   constructor(
@@ -58,10 +137,13 @@ export class WriterService {
 
   /**
    * Generates a structured social post draft from a queued content idea.
+   * @param correctionHint Optional corrective feedback from a previous failed attempt (drives targeted regeneration).
    */
   async generateDraft(
     topic: ResearchTopicItem,
     sources: ResearchSourceItem[],
+    extraContext?: string,
+    correctionHint?: string,
   ): Promise<{ draft?: PostDraft; deferred?: boolean; error?: string }> {
     // 1. Pre-invocation Neuron Budget Check (estimated 1500 tokens/neurons for Writer)
     const capacity = await this.quotaManager.checkCapacity(
@@ -78,68 +160,46 @@ export class WriterService {
       };
     }
 
-    const systemPrompt = `You are a Social Media Copywriter for NorthSoft AI.
-Your objective is to turn a research-inspired topic into a clear, useful social media post (Facebook/Instagram) that helps an Icelandic small-business owner recognize a practical opportunity and consider contacting NorthSoft.
-
-NorthSoft Brand Voice Guidelines:
-- Tone: Natural, friendly, human conversational English speaking directly to a small business owner.
-- Language: MUST be written strictly in English ("en").
-- Write in natural, fluent English only.
-- Start with a concise, specific hook. Explain one useful business implication in plain English and give practical next steps or a clear example. Use paragraphs; use a list only when a real list improves the post.
-- Keep the body around 350-900 characters. A shorter post is acceptable if it delivers a complete useful point.
-- Connect the idea to a relevant NorthSoft service only when the connection is genuine: websites, e-commerce, local SEO, online marketing, workflow automation, AI assistants, or email systems. Do not force the same service into every post.
-- End with a contextual, low-pressure invitation to ask NorthSoft for help or learn more. Avoid a generic engagement question unless it fits naturally.
-- Use 0-3 relevant hashtags only when they add value.
-
-TOPIC-TO-POST APPROACH:
-- The topic and article are an inspiration and factual anchor, not a brief to summarize or a rigid subject the entire post must explain.
-- Find the practical consequence for a business owner: how customers discover them, how the website supports enquiries or sales, or which repetitive task consumes their time.
-- Build a natural bridge from that consequence to a useful improvement NorthSoft could deliver. Example: changing search habits → a website needs clear, current, structured information → invite the owner to review whether their site is ready.
-- Keep the bridge honest and conditional. Do not claim that a particular owner's site is outdated, that all customers have changed behavior, or that NorthSoft guarantees results unless the source or verified business facts support it.
-- The post should read as complete social copy, not an article summary, an internal outline, or a set of instructions.
-- Also provide a concise, concrete English imageSearchQuery (2-8 words) describing a visually searchable scene or metaphor for the main post idea. Prefer recognizable objects/scenes (for example, "robot assistant with search window"), not abstract words or the full topic sentence.
-
-CRITICAL RULES:
-1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. The following buzzwords are FORBIDDEN:
-   "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business",
-   "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
-2. FACT PRESERVATION RULE: If the post uses specific numbers, percentages, or statistics from the source material, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not in the source material. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
-3. SUBSTANTIVE VALUE RULE: Do not return the topic title, angle, or source summary as the post. Add a useful business implication and practical context. A teaser that promises to explain something without doing so is not finished content.
-4. FACT BOUNDARY: Keep factual statements about the article accurate. Clearly frame broader business advice as practical guidance or a possibility, not as a statistic or a finding from the article.
-
-Return ONLY a valid JSON object matching this schema:
-{
-  "title": "Catchy post headline in English",
-  "body": "Full social media post content in natural English",
-  "language": "en",
-  "tone": "conversational",
-  "claims": [
-    { "text": "Key practical observation", "sourceIds": ["src-1"] }
-  ],
-  "hashtags": ["#SmallBusiness"],
-  "imageSearchQuery": "robot assistant with search window",
-  "callToAction": "Subtle call to action or engaging question at the end"
-}`;
-
+    // 2. Select a narrative structure hint
     const perfEngine = new PerformanceEngineService();
-    const contextPreview = await perfEngine.buildGeneratorContextPreview(this.db).catch(() => null);
+    const structureHint = await this.selectStructurePattern(perfEngine).catch(() => '');
 
+    // 3. Retrieve style hints from performance engine
+    const styleHintsJson = await perfEngine.extractStyleHints(this.db).catch(() => null);
+
+    // 4. Build performance context (guidelines + reference examples)
+    const contextPreview = await perfEngine.buildGeneratorContextPreview(this.db).catch(() => null);
     let performanceContext = '';
     if (contextPreview) {
       const parts: string[] = [];
       if (contextPreview.manualGuidelines.length > 0) {
-        parts.push('ADMIN EDITABLE GUIDELINES (HIGH PRIORITY):\n' + contextPreview.manualGuidelines.map((g) => `- ${g.guidelineText}`).join('\n'));
+        parts.push(
+          'ADMIN EDITABLE GUIDELINES (HIGH PRIORITY):\n' +
+            contextPreview.manualGuidelines.map((g) => `- ${g.guidelineText}`).join('\n'),
+        );
       }
       if (contextPreview.learnedGuidelines.length > 0) {
-        parts.push('LEARNED PERFORMANCE GUIDELINES:\n' + contextPreview.learnedGuidelines.map((g) => `- [${g.category}] ${g.guidelineText}`).join('\n'));
+        parts.push(
+          'LEARNED PERFORMANCE GUIDELINES:\n' +
+            contextPreview.learnedGuidelines.map((g) => `- [${g.category}] ${g.guidelineText}`).join('\n'),
+        );
       }
       if (contextPreview.activeStrongExamples.length > 0) {
-        parts.push('ACTIVE STRONG EXAMPLES (FOR STRUCTURAL PATTERNS ONLY — DO NOT COPY SENTENCES 1:1):\n' + contextPreview.activeStrongExamples.map((e) => `- ${e.title}: ${e.reasonForInclusion}`).join('\n'));
+        parts.push(
+          'ACTIVE STRONG EXAMPLES (FOR STRUCTURAL PATTERNS ONLY — DO NOT COPY SENTENCES 1:1):\n' +
+            contextPreview.activeStrongExamples
+              .map((e) => `- ${e.title}: ${e.reasonForInclusion}`)
+              .join('\n'),
+        );
       }
       if (contextPreview.activeWeakExamples.length > 0) {
-        parts.push('ACTIVE WEAK EXAMPLES (PATTERNS TO AVOID):\n' + contextPreview.activeWeakExamples.map((e) => `- ${e.title}: ${e.reasonForInclusion}`).join('\n'));
+        parts.push(
+          'ACTIVE WEAK EXAMPLES (PATTERNS TO AVOID):\n' +
+            contextPreview.activeWeakExamples
+              .map((e) => `- ${e.title}: ${e.reasonForInclusion}`)
+              .join('\n'),
+        );
       }
-
       if (parts.length > 0) {
         performanceContext =
           '\n<<< CURRENT_PERFORMANCE_INSIGHTS >>>\n' +
@@ -151,17 +211,56 @@ Return ONLY a valid JSON object matching this schema:
 
     if (!performanceContext) {
       const perfProfile = await perfEngine.getActiveProfile(this.db).catch(() => null);
-      if (perfProfile && (perfProfile.successfulPatterns.length > 0 || perfProfile.failurePatterns.length > 0)) {
+      if (
+        perfProfile &&
+        ((perfProfile.successfulPatterns?.length ?? 0) > 0 ||
+          (perfProfile.failurePatterns?.length ?? 0) > 0)
+      ) {
         performanceContext =
           '\n<<< CURRENT_PERFORMANCE_INSIGHTS >>>\n' +
           'Derived from real social media publication engagement metrics. Use these patterns for guidance on hook, tone, and structure. Do NOT copy verbatim.\n' +
-          (perfProfile.successfulPatterns.length > 0 ? 'PATTERNS THAT CURRENTLY OUTPERFORM:\n' + perfProfile.successfulPatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
-          (perfProfile.failurePatterns.length > 0 ? 'PATTERNS THAT CURRENTLY UNDERPERFORM (AVOID):\n' + perfProfile.failurePatterns.map((p) => `- ${p}`).join('\n') + '\n' : '') +
-          (perfProfile.successfulExamples.length > 0 ? 'HIGH-PERFORMING REPRESENTATIVE EXAMPLES (FOR INSPIRATION ONLY):\n' + perfProfile.successfulExamples.map((e) => `[Snippet]: ${e.snippet}`).join('\n') + '\n' : '') +
+          (perfProfile.successfulPatterns?.length > 0
+            ? 'PATTERNS THAT CURRENTLY OUTPERFORM:\n' +
+              perfProfile.successfulPatterns.map((p) => `- ${p}`).join('\n') +
+              '\n'
+            : '') +
+          (perfProfile.failurePatterns?.length > 0
+            ? 'PATTERNS THAT CURRENTLY UNDERPERFORM (AVOID):\n' +
+              perfProfile.failurePatterns.map((p) => `- ${p}`).join('\n') +
+              '\n'
+            : '') +
+          (perfProfile.successfulExamples?.length > 0
+            ? 'HIGH-PERFORMING REPRESENTATIVE EXAMPLES (FOR INSPIRATION ONLY):\n' +
+              perfProfile.successfulExamples
+                .map((e) => `[Snippet]: ${e.snippet}`)
+                .join('\n') +
+              '\n'
+            : '') +
           '<<< END_PERFORMANCE_INSIGHTS >>>\n';
       }
     }
 
+    // 5. Assemble full system context (style hints + structure hint + extra context)
+    let fullExtraContext = extraContext ?? '';
+    if (structureHint) {
+      fullExtraContext += `\n\n${structureHint}`;
+    }
+    if (styleHintsJson) {
+      fullExtraContext +=
+        `\n\n<<< STYLE_HINTS >>>\n` +
+        `These hints describe tendencies of high-performing posts — treat as guidance, not prescriptions:\n` +
+        styleHintsJson +
+        `\n<<< END STYLE_HINTS >>>`;
+    }
+    if (correctionHint) {
+      fullExtraContext +=
+        `\n\nREGENERATION GUIDANCE — the previous draft was rejected for the following reason:\n${correctionHint}\n` +
+        `Address these specific issues in the new draft. Do not reproduce the same structure.`;
+    }
+
+    const systemPrompt = fullExtraContext ? `${basePrompt}\n\n${fullExtraContext}` : basePrompt;
+
+    // 6. Build research context (user message)
     const researchContext =
       `Topic Title: ${topic.title}\n` +
       `Content Angle: ${topic.content_angle || topic.description}\n` +
@@ -242,7 +341,10 @@ Return ONLY a valid JSON object matching this schema:
         claims: claimsList,
         hashtags: hashtagsList,
         callToAction: typeof parsed.callToAction === 'string' ? parsed.callToAction : undefined,
-        imageSearchQuery: typeof parsed.imageSearchQuery === 'string' ? parsed.imageSearchQuery.trim().slice(0, 120) : undefined,
+        imageSearchQuery:
+          typeof parsed.imageSearchQuery === 'string'
+            ? parsed.imageSearchQuery.trim().slice(0, 120)
+            : undefined,
         generatedAt: new Date().toISOString(),
       };
 

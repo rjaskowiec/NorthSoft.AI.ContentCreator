@@ -104,10 +104,10 @@
     }
   },
 
-  // Default vars (development)
+  // Default vars (production)
   "vars": {
-    "ENVIRONMENT": "development",
-    "FACEBOOK_PUBLISH_ENABLED": "false",
-    "LOG_LEVEL": "debug"
+    "ENVIRONMENT": "production",
+    "FACEBOOK_PUBLISH_ENABLED": "true",
+    "LOG_LEVEL": "info"
   }
 }

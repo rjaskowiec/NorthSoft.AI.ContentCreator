@@ -1,0 +1,62 @@
+[
+  {
+    "id": "problem_consequence_fix",
+    "name": "Problem → Consequence → Practical Fix",
+    "description": "State the problem, explain what goes wrong, then give a concrete, easy‑to‑apply tip.",
+    "pattern": "hook/problem → consequence → actionable tip"
+  },
+  {
+    "id": "question_recognition_advice",
+    "name": "Question → Recognition → Advice",
+    "description": "Pose a rhetorical question or observation, let the reader recognize their own situation, then provide a short recommendation.",
+    "pattern": "hook (question/observation) → recognisable scenario → advice"
+  },
+  {
+    "id": "mistake_why_better",
+    "name": "Common Mistake → Why It Matters → Better Approach",
+    "description": "Identify a frequent error, explain its impact, and suggest a better way.",
+    "pattern": "mistake → impact → alternative"
+  },
+  {
+    "id": "observation_explanation_takeaway",
+    "name": "Observation → Explanation → Takeaway",
+    "description": "Share an interesting fact or surprising observation, briefly explain it, and end with a concise lesson.",
+    "pattern": "observation → brief explanation → takeaway"
+  },
+  {
+    "id": "scenario_hidden_problem_solution",
+    "name": "Scenario → Hidden Problem → Solution",
+    "description": "Describe a realistic scenario, surface a hidden issue, then propose a simple solution.",
+    "pattern": "scenario → hidden issue → solution"
+  },
+  {
+    "id": "myth_reality_implication",
+    "name": "Myth → Reality → Practical Implication",
+    "description": "Debunk a common myth, present the real facts, and explain what the reader should do.",
+    "pattern": "myth → reality → implication"
+  },
+  {
+    "id": "before_after_explanation",
+    "name": "Before/After Situation → Explanation",
+    "description": "Contrast a before‑state with an after‑state, then explain why the change matters.",
+    "pattern": "before → after → explanation"
+  },
+  {
+    "id": "checklist_explanation",
+    "name": "Checklist → Explanation",
+    "description": "Provide a short checklist of actions and briefly justify each point.",
+    "pattern": "list items → brief rationale"
+  },
+  {
+    "id": "unexpected_observation_lesson",
+    "name": "Unexpected Observation → Lesson",
+    "description": "Present a surprising fact and draw a short business lesson from it.",
+    "pattern": "surprise → lesson"
+  },
+  {
+    "id": "short_story_business_lesson",
+    "name": "Short Story → Business Lesson",
+    "description": "Tell a tiny anecdote (often 1‑2 sentences) and end with a clear takeaway for the reader.",
+    "pattern": "story → lesson"
+  }
+]
