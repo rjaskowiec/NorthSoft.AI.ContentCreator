@@ -479,24 +479,12 @@ export class ImageLibraryService {
 
   /**
    * Marks an image as successfully published to Facebook.
-   * Updates usage count, last_used_at, used_in_post_id, and clears reservation.
+   * Logs an audit event then recalculates all usage statistics from the ground truth
+   * (post_images + publications + audit_log) to ensure counts are always accurate
+   * regardless of how many times a post was re-published or which path was taken.
    */
   async markImageAsPublished(imageId: string, postId: string): Promise<void> {
-    const nowIso = new Date().toISOString();
-    await this.db
-      .prepare(
-        `UPDATE curated_images
-         SET usage_count = usage_count + 1,
-             historical_usage_count = historical_usage_count + 1,
-             last_used_at = ?,
-             used_in_post_id = ?,
-             reserved_post_id = NULL,
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(nowIso, postId, nowIso, imageId)
-      .run();
-
+    // Audit the publication event first
     await this.auditLogger.log({
       eventType: 'IMAGE_PUBLISHED',
       entityType: 'curated_image',
@@ -504,6 +492,9 @@ export class ImageLibraryService {
       actor: 'system',
       details: { postId },
     });
+
+    // Recalculate from source-of-truth to prevent double-counting
+    await recalculateCuratedImageUsage(this.db, imageId);
   }
 
   /**

@@ -1928,17 +1928,9 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- 13. GLOBAL TASK QUEUE / ACTIVITY CENTER WIDGET -->
-  <div id="global-task-queue-widget" style="display:none;">
-    <div class="tq-header" onclick="toggleTaskQueueWidget()">
-      <div class="tq-header-title">
-        <span>⚡ Activity Center</span>
-        <span id="tq-header-badge" class="tq-header-badge">0 Active</span>
-      </div>
-      <button class="tq-toggle-btn" id="tq-toggle-icon">▲</button>
-    </div>
-    <div class="tq-body" id="tq-body-container">
-      <div style="text-align:center; color:var(--text-muted); font-size:0.8rem; padding:0.5rem;">No active operations</div>
+  <!-- 13. ACTIVITY CENTER WIDGET -->
+  <div id="activity-center-widget" style="display:none; pointer-events:none;">
+    <div class="ac-body" id="ac-body-container" style="pointer-events:auto;">
     </div>
   </div>
 

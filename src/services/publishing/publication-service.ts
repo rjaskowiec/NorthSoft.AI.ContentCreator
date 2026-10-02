@@ -539,7 +539,12 @@ export class PublicationService {
 
       // Mark curated image as permanently consumed/published
       const postImgRow = await this.db
-        .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ?')
+        .prepare(
+          `SELECT pi.curated_image_id FROM post_images pi
+           JOIN posts p ON p.id = pi.post_id AND p.current_version = pi.version_number
+           WHERE pi.post_id = ? AND pi.curated_image_id IS NOT NULL
+           LIMIT 1`,
+        )
         .bind(postId)
         .first<{ curated_image_id?: string }>();
 

@@ -1481,139 +1481,98 @@ export function getAdminCss(): string {
     .batch-status-completed { color: var(--accent-emerald); }
     .batch-status-failed { color: var(--accent-rose); }
 
-    /* GLOBAL TASK QUEUE / ACTIVITY CENTER WIDGET */
-    #global-task-queue-widget {
+    /* ACTIVITY CENTER WIDGET */
+    #activity-center-widget {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 360px;
-      max-width: calc(100vw - 40px);
+      bottom: 24px;
+      right: 24px;
+      width: 380px;
+      max-width: calc(100vw - 48px);
       z-index: 9999;
-      background: #111827;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 12px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-      font-family: inherit;
-      overflow: hidden;
-      transition: all 0.25s ease;
-    }
-
-    .tq-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.75rem 1rem;
-      background: #1f2937;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .tq-header-title {
-      font-weight: 600;
-      font-size: 0.875rem;
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .tq-header-badge {
-      font-size: 0.7rem;
-      font-weight: 700;
-      padding: 0.15rem 0.45rem;
-      border-radius: 999px;
-      background: rgba(59, 130, 246, 0.2);
-      color: #60a5fa;
-    }
-
-    .tq-toggle-btn {
       background: transparent;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.75rem;
+    }
+
+    .ac-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      width: 100%;
+    }
+
+    .ac-item {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
       font-size: 0.85rem;
-      padding: 0.2rem;
-    }
-
-    .tq-body {
-      max-height: 320px;
-      overflow-y: auto;
-      padding: 0.5rem 0.75rem;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.4rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      animation: acSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+      pointer-events: auto;
+    }
+    
+    .ac-item.ac-fade-out {
+      animation: acFadeOut 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
-    .tq-item {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 8px;
-      padding: 0.65rem 0.75rem;
-      font-size: 0.825rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      transition: all 0.15s ease;
+    @keyframes acSlideIn {
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    
+    @keyframes acFadeOut {
+      to { opacity: 0; transform: translateY(10px) scale(0.95); }
     }
 
-    .tq-item-top {
+    .ac-item-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.5rem;
+      gap: 0.75rem;
     }
 
-    .tq-item-title {
+    .ac-item-title {
       font-weight: 600;
-      color: var(--text-main);
-      max-width: 220px;
+      color: rgba(255, 255, 255, 0.95);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .tq-status-badge {
-      font-size: 0.675rem;
+    .ac-status-text {
+      font-size: 0.7rem;
       font-weight: 700;
-      padding: 0.12rem 0.4rem;
-      border-radius: 4px;
       text-transform: uppercase;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.05em;
     }
 
-    .tq-status-queued { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
-    .tq-status-running { background: rgba(59, 130, 246, 0.2); color: #60a5fa; animation: pulse 1.5s infinite; }
-    .tq-status-completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-    .tq-status-failed { background: rgba(244, 63, 94, 0.2); color: #fda4af; }
+    .ac-status-pending { color: var(--text-muted); }
+    .ac-status-processing { color: var(--accent-cyan); animation: pulse 2s infinite; }
+    .ac-status-completed { color: var(--accent-emerald); }
+    .ac-status-failed { color: var(--accent-rose); }
 
-    .tq-item-detail {
+    .ac-item-stage {
       font-size: 0.75rem;
-      color: var(--text-muted);
+      color: rgba(255, 255, 255, 0.7);
       word-break: break-word;
+      line-height: 1.3;
     }
 
-    .tq-item-error {
+    .ac-item-error {
       font-size: 0.75rem;
       color: #fda4af;
-      background: rgba(244, 63, 94, 0.1);
-      border-radius: 4px;
-      padding: 0.35rem 0.5rem;
       margin-top: 0.25rem;
-    }
-
-    .tq-progress-bar {
-      height: 4px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .tq-progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #3b82f6, #06b6d4);
-      transition: width 0.2s ease;
-    }
 
     /* IMAGE LIBRARY STYLES */
     .image-card {

@@ -245,6 +245,7 @@ export function getAdminScripts(): string {
       const method = safeUpper(options ? options.method : 'GET', 'GET');
       const key = method + ':' + url;
 
+      // Deduplicate GET requests
       if (method === 'GET' && activeInFlightRequests.has(key)) {
         return activeInFlightRequests.get(key).then(res => typeof res.clone === 'function' ? res.clone() : res);
       }
@@ -259,12 +260,32 @@ export function getAdminScripts(): string {
         opts.headers['x-session-token'] = sessionToken;
       }
 
+      // Activity Center integration -- only surface mutating requests, not background data loads
+      const isAuthCall = url.includes('/api/auth/');
+      const isMutation = method !== 'GET';
+      let taskId = null;
+      if (!isAuthCall && isMutation) {
+        taskId = window.TaskQueue.add('Fetching ' + method + ' ' + url, { type: 'network' });
+        window.TaskQueue.start(taskId);
+      }
+
       const fetchPromise = (async () => {
         try {
           const res = await fetch(url, opts);
           if (res.status === 401 && !url.includes('/api/auth/session') && !url.includes('/api/auth/login')) {
             showLoginForm();
           }
+
+          // Update task status based on response
+          if (taskId) {
+            if (res.ok) {
+              window.TaskQueue.complete(taskId, 'Fetched ' + method + ' ' + url);
+            } else {
+              var errMsg = 'Error ' + res.status;
+              window.TaskQueue.fail(taskId, errMsg, 'Failed to fetch ' + url);
+            }
+          }
+
           return typeof res.clone === 'function' ? res.clone() : res;
         } finally {
           activeInFlightRequests.delete(key);
@@ -1409,110 +1430,139 @@ export function getAdminScripts(): string {
     // ======================================================================
     // GLOBAL TASK QUEUE / ACTIVITY CENTER SERVICE
     // ======================================================================
-    window.TaskQueue = {
+    window.AsyncOperationManager = {
       tasks: [],
-      isExpanded: true,
+      timers: {},
       add: function(title, options) {
         var opts = options || {};
         var task = {
           id: 'task_' + Math.random().toString(36).substring(2, 9),
           title: title,
           type: opts.type || 'manual',
-          status: 'QUEUED',
+          status: 'PENDING',
+          currentStage: opts.detail || 'Preparing...',
           progress: opts.total ? { completed: 0, total: opts.total } : null,
-          detail: opts.detail || 'Waiting in queue...',
           errorMessage: null,
-          errorDetail: null,
-          createdAt: new Date().toISOString(),
-          completedAt: null
+          createdAt: Date.now(),
+          completedAt: null,
+          showTimer: null,
+          visible: false
         };
-        this.tasks.unshift(task);
-        this.render();
+        this.tasks.push(task);
+        
+        // Only show if operation takes longer than 300ms
+        task.showTimer = setTimeout(() => {
+          task.visible = true;
+          this.render();
+        }, 300);
+
         return task.id;
       },
-      start: function(id, detail) {
+      stage: function(id, stageName) {
         var task = this.getTask(id);
         if (!task) return;
-        task.status = 'RUNNING';
-        if (detail) task.detail = detail;
+        task.status = 'PROCESSING';
+        if (stageName) task.currentStage = stageName;
         this.render();
+      },
+      start: function(id, detail) {
+        this.stage(id, detail);
       },
       updateProgress: function(id, completed, total, detail) {
         var task = this.getTask(id);
         if (!task) return;
-        task.status = 'RUNNING';
+        task.status = 'PROCESSING';
         task.progress = { completed: completed, total: total };
-        if (detail) task.detail = detail;
+        if (detail) task.currentStage = detail;
         this.render();
       },
       complete: function(id, summary) {
         var task = this.getTask(id);
         if (!task) return;
+        
+        if (task.showTimer) {
+          clearTimeout(task.showTimer);
+          task.showTimer = null;
+        }
+
         task.status = 'COMPLETED';
-        task.detail = summary || 'Completed successfully.';
-        task.completedAt = new Date().toISOString();
+        if (summary) task.currentStage = summary;
+        task.completedAt = Date.now();
         this.render();
-        setTimeout(function() {
-          window.TaskQueue.render();
-        }, 5000);
+        
+        setTimeout(() => {
+          var t = this.getTask(id);
+          if (t) t.fadingOut = true;
+          this.render();
+          
+          setTimeout(() => {
+            this.tasks = this.tasks.filter(x => x.id !== id);
+            this.render();
+          }, 500);
+        }, 3000);
       },
       fail: function(id, errorMessage, userAdvice) {
         var task = this.getTask(id);
         if (!task) return;
+
+        if (task.showTimer) {
+          clearTimeout(task.showTimer);
+          task.showTimer = null;
+          task.visible = true; // force show on error
+        }
+
         task.status = 'FAILED';
-        task.errorMessage = errorMessage || 'Operation failed.';
-        task.detail = userAdvice || errorMessage || 'An unexpected error occurred.';
-        task.completedAt = new Date().toISOString();
+        task.currentStage = errorMessage || 'Operation failed.';
+        task.errorMessage = userAdvice || errorMessage || 'An unexpected error occurred.';
+        task.completedAt = Date.now();
         this.render();
+        
+        setTimeout(() => {
+          var t = this.getTask(id);
+          if (t) t.fadingOut = true;
+          this.render();
+          
+          setTimeout(() => {
+            this.tasks = this.tasks.filter(x => x.id !== id);
+            this.render();
+          }, 500);
+        }, 5000);
       },
       getTask: function(id) {
         return this.tasks.find(function(t) { return t.id === id; });
       },
-      toggle: function() {
-        this.isExpanded = !this.isExpanded;
-        var container = document.getElementById('tq-body-container');
-        var icon = document.getElementById('tq-toggle-icon');
-        if (container) container.style.display = this.isExpanded ? 'flex' : 'none';
-        if (icon) icon.textContent = this.isExpanded ? '▲' : '▼';
-      },
       render: function() {
-        var widget = document.getElementById('global-task-queue-widget');
-        var container = document.getElementById('tq-body-container');
-        var badge = document.getElementById('tq-header-badge');
+        var widget = document.getElementById('activity-center-widget');
+        var container = document.getElementById('ac-body-container');
         if (!widget || !container) return;
 
-        if (this.tasks.length === 0) {
+        var visibleTasks = this.tasks.filter(function(t) { return t.visible || t.status === 'COMPLETED' || t.status === 'FAILED'; });
+
+        if (visibleTasks.length === 0) {
           widget.style.display = 'none';
           return;
         }
 
-        widget.style.display = 'block';
-        var activeTasks = this.tasks.filter(function(t) { return t.status === 'RUNNING' || t.status === 'QUEUED'; });
-        if (badge) {
-          badge.textContent = activeTasks.length > 0 ? (activeTasks.length + ' Active') : '✓ Completed';
-        }
+        widget.style.display = 'flex';
 
-        container.innerHTML = this.tasks.slice(0, 8).map(function(t) {
-          var statusClass = 'tq-status-' + t.status.toLowerCase();
-          var pct = t.progress && t.progress.total > 0 ? Math.round((t.progress.completed / t.progress.total) * 100) : 0;
+        container.innerHTML = visibleTasks.map(function(t) {
+          var statusClass = 'ac-status-' + t.status.toLowerCase();
+          var fadeClass = t.fadingOut ? ' ac-fade-out' : '';
           
-          return '<div class="tq-item">' +
-            '<div class="tq-item-top">' +
-              '<div class="tq-item-title" title="' + escapeHtml(safeStr(t.title)) + '">' + escapeHtml(safeStr(t.title)) + '</div>' +
-              '<span class="tq-status-badge ' + statusClass + '">' + escapeHtml(t.status) + '</span>' +
+          return '<div class="ac-item' + fadeClass + '">' +
+            '<div class="ac-item-top">' +
+              '<div class="ac-item-title" title="' + escapeHtml(safeStr(t.title)) + '">' + escapeHtml(safeStr(t.title)) + '</div>' +
+              '<span class="ac-status-text ' + statusClass + '">' + escapeHtml(t.status) + '</span>' +
             '</div>' +
-            '<div class="tq-item-detail">' + escapeHtml(safeStr(t.detail)) + '</div>' +
-            (t.progress ? '<div class="tq-progress-bar"><div class="tq-progress-fill" style="width:' + pct + '%;"></div></div>' : '') +
-            (t.errorMessage ? '<div class="tq-item-error">' + escapeHtml(safeStr(t.errorMessage)) + '</div>' : '') +
+            '<div class="ac-item-stage">' + escapeHtml(safeStr(t.currentStage)) + '</div>' +
+            (t.errorMessage ? '<div class="ac-item-error">' + escapeHtml(safeStr(t.errorMessage)) + '</div>' : '') +
           '</div>';
         }).join('');
       }
     };
 
-    function toggleTaskQueueWidget() {
-      if (window.TaskQueue) window.TaskQueue.toggle();
-    }
-    window.toggleTaskQueueWidget = toggleTaskQueueWidget;
+    // Alias for backward compatibility
+    window.TaskQueue = window.AsyncOperationManager;
 
     // ======================================================================
     // MANUAL GUIDELINES & CONTEXT EDITOR HANDLERS
@@ -2698,7 +2748,9 @@ export function getAdminScripts(): string {
 
     async function saveFacebookPostEdit() {
       const textarea = document.getElementById('fb-post-detail-content');
+      if (!textarea) return;
       const id = safeStr(textarea.dataset.facebookPostId);
+      if (!id) return;
       try {
         const response = await guardedFetch('/api/admin/facebook/page-posts/' + encodeURIComponent(id) + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ content: textarea.value }) });
         const data = await response.json().catch(() => ({}));
@@ -2708,8 +2760,7 @@ export function getAdminScripts(): string {
         await loadFacebookPublications(false);
       } catch (error) {
         const element = document.getElementById('fb-post-detail-error');
-        element.textContent = error instanceof Error ? error.message : String(error);
-        element.style.display = 'block';
+        if (element) { element.textContent = error instanceof Error ? error.message : String(error); element.style.display = 'block'; }
       }
     }
 
@@ -2720,7 +2771,9 @@ export function getAdminScripts(): string {
 
     async function toggleFacebookPostHidden() {
       const button = document.getElementById('fb-post-hide-button');
+      if (!button) return;
       const id = safeStr(button.dataset.facebookPostId);
+      if (!id) return;
       const post = facebookPublicationPosts.get(id);
       if (!post) return;
       try {
@@ -2733,13 +2786,13 @@ export function getAdminScripts(): string {
         await loadFacebookPublications(false);
       } catch (error) {
         const element = document.getElementById('fb-post-detail-error');
-        element.textContent = error instanceof Error ? error.message : String(error);
-        element.style.display = 'block';
+        if (element) { element.textContent = error instanceof Error ? error.message : String(error); element.style.display = 'block'; }
       }
     }
 
     async function deleteFacebookPost() {
       const textarea = document.getElementById('fb-post-detail-content');
+      if (!textarea) return;
       const id = safeStr(textarea.dataset.facebookPostId);
       if (!id || !window.confirm('Delete this post from Facebook? This cannot be undone.')) return;
       try {
