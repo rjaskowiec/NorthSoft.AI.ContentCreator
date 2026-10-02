@@ -263,20 +263,13 @@ export class PublicationService {
       .prepare(
         `SELECT p.id, p.title, p.status as post_status,
                 pv.id as version_id, pv.content as body, p.status as version_status, pv.version_number,
-                (SELECT url FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version
-                 AND (
-                   p.status = 'published'
-                   OR (
-                     (pi.curated_image_id IS NULL OR EXISTS (
-                       SELECT 1 FROM curated_images cur WHERE cur.id = pi.curated_image_id AND cur.status = 'APPROVED'
-                     ))
-                     AND NOT EXISTS (
-                       SELECT 1 FROM curated_images cur
-                       WHERE (cur.id = pi.curated_image_id OR (pi.curated_image_id IS NULL AND cur.source_url IS NOT NULL AND cur.source_url = pi.url))
-                         AND cur.status IN ('DELETED', 'REJECTED')
-                     )
-                   )
-                 ) LIMIT 1) as image_url
+                (SELECT pi.url FROM post_images pi
+                  LEFT JOIN curated_images ci ON ci.id = pi.curated_image_id
+                  WHERE pi.post_id = p.id
+                    AND pi.version_number = p.current_version
+                    AND (p.status = 'published' OR ci.status = 'APPROVED' OR pi.curated_image_id IS NULL)
+                    AND (ci.status IS NULL OR ci.status NOT IN ('DELETED', 'REJECTED'))
+                  LIMIT 1) as image_url
          FROM posts p
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE p.id = ?`,

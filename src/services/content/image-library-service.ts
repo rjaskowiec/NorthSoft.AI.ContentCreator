@@ -414,7 +414,7 @@ export class ImageLibraryService {
       // 2. Reserve new image
       this.db.prepare('UPDATE curated_images SET reserved_post_id = ?, updated_at = ? WHERE id = ?').bind(postId, nowIso, imageId),
       // 3. Clear existing post_images for current version
-      this.db.prepare('DELETE FROM post_images WHERE post_id = ?').bind(postId),
+      this.db.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, currentVersion),
       // 4. Insert post_images link
       this.db.prepare(
         `INSERT INTO post_images (
@@ -462,7 +462,7 @@ export class ImageLibraryService {
    */
   async releaseDraftReservation(postId: string): Promise<void> {
     const prevPi = await this.db
-      .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ?')
+      .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ? AND version_number = (SELECT current_version FROM posts WHERE id = ?)')
       .bind(postId)
       .first<{ curated_image_id: string | null }>();
     const prevImageId = prevPi?.curated_image_id || null;
