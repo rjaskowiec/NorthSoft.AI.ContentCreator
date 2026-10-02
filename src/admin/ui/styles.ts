@@ -1624,6 +1624,42 @@ export function getAdminCss(): string {
       padding-top: 0.5rem;
       border-top: 1px solid var(--border-color);
     }
+
+    /* GRID CONTAINER FOR IMAGE LIBRARY */
+    #image-library-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      padding: 1rem;
+    }
+
+    /* TAB BUTTONS */
+    .btn-tab {
+      background: rgba(255,255,255,0.06);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .btn-tab:hover {
+      background: rgba(255,255,255,0.12);
+      color: var(--text-main);
+    }
+    .btn-tab.active {
+      background: var(--accent-blue);
+      color: #fff;
+      border-color: var(--accent-blue-hover);
+    }
+      display: flex;
+      gap: 0.35rem;
+      margin-top: auto;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border-color);
+    }
     .badge-count {
       background: rgba(255, 255, 255, 0.1);
       color: var(--text-main);
