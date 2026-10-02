@@ -122,15 +122,14 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
               const id = args[args.length - 1] as string;
               const existing = store.get(id);
 
-              if (sql.includes('usage_count = ?')) {
-                const [pubCount, lastUsedAt, usedInPostId, reservedPostId, updatedAt, imgId] = args;
+              if (sql.includes('usage_count =')) {
+                const imgId = args[args.length - 1] as string;
                 const target = store.get(imgId);
                 if (target) {
+                  const pubCount = typeof args[0] === 'number' ? args[0] : ((target.usage_count || 0) + 1);
                   target.usage_count = pubCount;
-                  target.last_used_at = lastUsedAt;
-                  target.used_in_post_id = usedInPostId;
-                  target.reserved_post_id = reservedPostId;
-                  target.updated_at = updatedAt;
+                  target.last_used_at = new Date().toISOString();
+                  target.reserved_post_id = null;
                 }
               } else if (sql.includes('reserved_post_id = NULL')) {
                 const postId = args[0];

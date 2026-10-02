@@ -2300,23 +2300,58 @@ export function getAdminScripts(): string {
 
         if (schedBody) {
           if (schedules.length > 0) {
-            schedBody.innerHTML = schedules.map(sched => {
-              if (!sched) return '';
-              const schedIdStr = safeStr(sched.id);
-              const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
-              const topicTitle = safeStr(sched.topic_title);
-              const topicId = safeStr(sched.idea_id);
-              return '<tr>' +
-                '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
-                '<td>' + renderWorkflowStages({ idea_id: topicId, id: sched.post_id || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
-                '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
-                '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
-                '<td>' +
-                  '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openSchedulePostModal(&quot;' + schedIdStr + '&quot;)">Edit</button>' +
-                  '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
-                '</td>' +
-              '</tr>';
-            }).join('');
+            const upcoming = schedules.filter(s => s && s.status !== 'published' && s.post_status !== 'published');
+            const published = schedules.filter(s => s && (s.status === 'published' || s.post_status === 'published'));
+
+            let rows = '';
+
+            if (upcoming.length > 0) {
+              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">⏳ UPCOMING SCHEDULED POSTS (' + upcoming.length + ')</th></tr>';
+              rows += upcoming.map(sched => {
+                const schedIdStr = safeStr(sched.id);
+                const postIdStr = safeStr(sched.post_id);
+                const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
+                const topicTitle = safeStr(sched.topic_title);
+                const topicId = safeStr(sched.idea_id);
+                return '<tr>' +
+                  '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
+                  '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
+                  '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
+                  '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
+                  '<td>' +
+                    '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">Edit</button>' +
+                    '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
+                  '</td>' +
+                '</tr>';
+              }).join('');
+            } else {
+              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">⏳ UPCOMING SCHEDULED POSTS (0)</th></tr>';
+              rows += '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No upcoming scheduled posts.<br><button class="btn-primary" style="margin-top:0.5rem; font-size:0.8rem;" onclick="openSchedulePostModal()">+ Schedule Draft</button></td></tr>';
+            }
+
+            if (published.length > 0) {
+              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(16,185,129,0.1); color:var(--accent-emerald); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">✅ PUBLISHED POSTS (' + published.length + ')</th></tr>';
+              rows += published.map(sched => {
+                const schedIdStr = safeStr(sched.id);
+                const postIdStr = safeStr(sched.post_id);
+                const fbPostId = safeStr(sched.facebook_post_id);
+                const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
+                const topicTitle = safeStr(sched.topic_title);
+                const topicId = safeStr(sched.idea_id);
+                const displayDate = sched.published_at ? 'Published · ' + formatDateUtcSafe(sched.published_at) : (sched.scheduled_at ? 'Published · ' + formatDateUtcSafe(sched.scheduled_at) : 'Published');
+                return '<tr class="schedule-published-dimmed" style="opacity:0.75; background:rgba(255,255,255,0.015);">' +
+                  '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted);">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
+                  '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: fbPostId, isPublished: true }) + '</td>' +
+                  '<td data-sort-value="' + escapeHtml(safeStr(sched.published_at || sched.scheduled_at)) + '" style="color:var(--accent-emerald); font-weight:500;">' + escapeHtml(displayDate) + '</td>' +
+                  '<td><span class="status-badge status-healthy" style="opacity:0.85;">PUBLISHED</span></td>' +
+                  '<td>' +
+                    '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openFacebookPostDetails(&quot;' + (fbPostId || postIdStr) + '&quot;)">View / Edit</button>' +
+                  '</td>' +
+                '</tr>';
+              }).join('');
+            }
+
+            schedBody.innerHTML = rows;
           } else {
             schedBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Nothing scheduled.<br><button class="btn-primary" style="margin-top:0.75rem;" onclick="openSchedulePostModal()">+ Schedule Post</button></td></tr>';
           }
@@ -2521,35 +2556,144 @@ export function getAdminScripts(): string {
       }
     }
 
-    function openFacebookPostDetails(facebookPostId) {
-      const post = facebookPublicationPosts.get(safeStr(facebookPostId));
-      if (!post) return;
+    async function openFacebookPostDetails(facebookPostId) {
       const error = document.getElementById('fb-post-detail-error');
-      error.style.display = 'none';
-      document.getElementById('fb-post-detail-content').value = safeStr(post.message || post.story);
-      document.getElementById('fb-post-detail-content').dataset.facebookPostId = safeStr(post.id);
-      document.getElementById('fb-post-detail-meta').textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable') + (post.topicTitle ? ' · Topic: ' + safeStr(post.topicTitle) : '');
-      const displayMetric = value => value == null ? 'Not available' : Number(value).toLocaleString();
-      document.getElementById('fb-post-detail-stats').innerHTML = '<div class="card"><div class="card-label">Views</div><div class="card-val">' + displayMetric(post.views) + '</div></div>' +
-        '<div class="card"><div class="card-label">Unique views</div><div class="card-val">' + displayMetric(post.uniqueViews) + '</div></div>' +
-        '<div class="card"><div class="card-label">Reactions</div><div class="card-val">' + displayMetric(post.reactions) + '</div></div>' +
-        '<div class="card"><div class="card-label">Comments</div><div class="card-val">' + displayMetric(post.comments) + '</div></div>' +
-        '<div class="card"><div class="card-label">Shares</div><div class="card-val">' + displayMetric(post.shares) + '</div></div>';
+      if (error) error.style.display = 'none';
+
+      let post = facebookPublicationPosts.get(safeStr(facebookPostId));
+      if (!post) {
+        for (const p of facebookPublicationPosts.values()) {
+          if (p && (p.id === facebookPostId || p.internalPostId === facebookPostId || p.facebookPostId === facebookPostId)) {
+            post = p;
+            break;
+          }
+        }
+      }
+
+      if (!post) {
+        const foundSched = (Array.isArray(cachedSchedules) ? cachedSchedules : []).find(s => s && (s.facebook_post_id === facebookPostId || s.post_id === facebookPostId || s.id === facebookPostId));
+        if (foundSched) {
+          post = {
+            id: foundSched.facebook_post_id || foundSched.post_id,
+            internalPostId: foundSched.post_id,
+            message: foundSched.post_body,
+            createdTime: foundSched.published_at || foundSched.scheduled_at,
+            topicTitle: foundSched.topic_title,
+            fullPicture: foundSched.image_url,
+          };
+        }
+      }
+
+      if (!post) {
+        try {
+          const res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(facebookPostId));
+          if (res.ok) {
+            const data = await res.json();
+            const p = data.post;
+            if (p) {
+              post = {
+                id: p.facebook_post_id || p.id,
+                internalPostId: p.id,
+                message: p.latest_body || p.body,
+                createdTime: p.published_at || p.created_at,
+                topicTitle: p.topic_title,
+                fullPicture: p.image_url,
+              };
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (!post) {
+        alert('Could not find details for this published post.');
+        return;
+      }
+
+      const contentEl = document.getElementById('fb-post-detail-content');
+      if (contentEl) {
+        contentEl.value = safeStr(post.message || post.story);
+        contentEl.dataset.facebookPostId = safeStr(post.id);
+        contentEl.dataset.internalPostId = safeStr(post.internalPostId);
+      }
+
+      const metaEl = document.getElementById('fb-post-detail-meta');
+      if (metaEl) {
+        metaEl.textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable') + (post.topicTitle ? ' · Topic: ' + safeStr(post.topicTitle) : '');
+      }
+
+      const statsEl = document.getElementById('fb-post-detail-stats');
+      if (statsEl) {
+        const displayMetric = value => value == null ? 'Not available' : Number(value).toLocaleString();
+        statsEl.innerHTML = '<div class="card"><div class="card-label">Views</div><div class="card-val">' + displayMetric(post.views) + '</div></div>' +
+          '<div class="card"><div class="card-label">Unique views</div><div class="card-val">' + displayMetric(post.uniqueViews) + '</div></div>' +
+          '<div class="card"><div class="card-label">Reactions</div><div class="card-val">' + displayMetric(post.reactions) + '</div></div>' +
+          '<div class="card"><div class="card-label">Comments</div><div class="card-val">' + displayMetric(post.comments) + '</div></div>' +
+          '<div class="card"><div class="card-label">Shares</div><div class="card-val">' + displayMetric(post.shares) + '</div></div>';
+      }
+
       const imageWrap = document.getElementById('fb-post-detail-image-wrap');
       const image = document.getElementById('fb-post-detail-image');
-      document.getElementById('fb-post-image-url').value = '';
-      document.getElementById('fb-post-image-file').value = '';
-      document.getElementById('fb-post-remove-image').checked = false;
-      document.getElementById('fb-post-detail-content').dataset.internalPostId = safeStr(post.internalPostId);
-      if (post.fullPicture) { image.src = safeStr(post.fullPicture); imageWrap.style.display = 'block'; }
-      else { image.removeAttribute('src'); imageWrap.style.display = 'none'; }
+      const removeBtn = document.getElementById('fb-post-remove-image-btn');
+      const hasPic = Boolean(post.fullPicture || post.imageUrl);
+
+      if (image && imageWrap) {
+        if (hasPic) {
+          image.src = safeStr(post.fullPicture || post.imageUrl);
+          imageWrap.style.display = 'block';
+        } else {
+          image.removeAttribute('src');
+          imageWrap.style.display = 'none';
+        }
+      }
+      if (removeBtn) {
+        removeBtn.style.display = hasPic ? 'inline-block' : 'none';
+      }
+
       const link = document.getElementById('fb-post-detail-link');
-      if (post.permalinkUrl) { link.href = safeStr(post.permalinkUrl); link.style.display = 'inline-block'; }
-      else link.style.display = 'none';
+      if (link) {
+        if (post.permalinkUrl) { link.href = safeStr(post.permalinkUrl); link.style.display = 'inline-block'; }
+        else link.style.display = 'none';
+      }
+
       const hideButton = document.getElementById('fb-post-hide-button');
-      hideButton.textContent = post.isHidden ? 'Unhide' : 'Hide';
-      hideButton.dataset.facebookPostId = safeStr(post.id);
+      if (hideButton) {
+        hideButton.textContent = post.isHidden ? 'Unhide' : 'Hide';
+        hideButton.dataset.facebookPostId = safeStr(post.id);
+      }
+
       openModal('facebook-post-modal');
+    }
+
+    async function removeFacebookPostAttachedImage() {
+      const textarea = document.getElementById('fb-post-detail-content');
+      const internalPostId = safeStr(textarea?.dataset?.internalPostId);
+      if (!internalPostId) return;
+
+      if (!confirm('Are you sure you want to remove the image from this post?')) return;
+
+      try {
+        const res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken }
+        });
+        if (res.ok) {
+          const imgWrap = document.getElementById('fb-post-detail-image-wrap');
+          const img = document.getElementById('fb-post-detail-image');
+          const removeBtn = document.getElementById('fb-post-remove-image-btn');
+          if (imgWrap) imgWrap.style.display = 'none';
+          if (img) img.removeAttribute('src');
+          if (removeBtn) removeBtn.style.display = 'none';
+          showPublicationAlert('Image removed from post.', true);
+          await loadFacebookPublications(false);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(safeStr(errData.error, 'Failed to remove image.'));
+        }
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
     }
 
     async function saveFacebookPostEdit() {
@@ -2570,51 +2714,8 @@ export function getAdminScripts(): string {
     }
 
     async function saveFacebookPostImage() {
-      const textarea = document.getElementById('fb-post-detail-content');
-      const facebookPostId = safeStr(textarea.dataset.facebookPostId);
-      const post = facebookPublicationPosts.get(facebookPostId);
-      const fileInput = document.getElementById('fb-post-image-file');
-      const urlInput = document.getElementById('fb-post-image-url');
-      const removeImage = document.getElementById('fb-post-remove-image').checked;
-      const file = fileInput.files && fileInput.files[0];
-      let internalPostId = safeStr(textarea.dataset.internalPostId);
-      try {
-        if (!removeImage && !file && !safeStr(urlInput.value).trim()) throw new Error('Choose an image file, enter an image URL, or select Remove image.');
-        if (!internalPostId) {
-          const syncResponse = await guardedFetch('/api/admin/facebook/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: '{}' });
-          const syncData = await syncResponse.json().catch(() => ({}));
-          if (!syncResponse.ok || !syncData.success) throw new Error(safeStr(syncData.error, 'Could not sync this Facebook post before changing its image.'));
-          await loadFacebookPublications(false);
-          const refreshed = facebookPublicationPosts.get(facebookPostId);
-          internalPostId = safeStr(refreshed?.internalPostId);
-          textarea.dataset.internalPostId = internalPostId;
-          if (!internalPostId) throw new Error('This post could not be linked to local history for image editing.');
-        }
-
-        let response;
-        if (removeImage) {
-          response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
-        } else if (file) {
-          const form = new FormData();
-          form.append('file', file);
-          response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', { method: 'POST', headers: { 'x-csrf-token': csrfToken }, body: form });
-        } else {
-          response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(internalPostId) + '/image', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ url: urlInput.value.trim() }) });
-        }
-        const imageResult = await response.json().catch(() => ({}));
-        if (!response.ok || !imageResult.success) throw new Error(safeStr(imageResult.error, 'Image could not be saved locally.'));
-
-        const facebookResponse = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(internalPostId) + '/update-image', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: '{}' });
-        const facebookResult = await facebookResponse.json().catch(() => ({}));
-        if (!facebookResponse.ok || !facebookResult.success) throw new Error(safeStr(facebookResult.error, 'The local image was saved, but Facebook did not accept the media update.'));
-        closeModal('facebook-post-modal');
-        showPublicationAlert('Post image updated on Facebook and in local history.', true);
-        await loadFacebookPublications(false);
-      } catch (error) {
-        const element = document.getElementById('fb-post-detail-error');
-        element.textContent = error instanceof Error ? error.message : String(error);
-        element.style.display = 'block';
-      }
+      // Replaced by unified Image Library picker
+      openDraftImageSelectorModalForPublication();
     }
 
     async function toggleFacebookPostHidden() {
@@ -4317,15 +4418,23 @@ export function getAdminScripts(): string {
     }
 
     function openScheduledPostDetailModal(scheduleId, postId) {
+      const sched = (Array.isArray(cachedSchedules) ? cachedSchedules : []).find(s => s && (s.id === scheduleId || s.post_id === postId));
+      const post = (Array.isArray(cachedPosts) ? cachedPosts : []).find(p => p && p.id === postId) || (sched ? { title: sched.post_title, body: sched.post_body, status: sched.status } : null);
+
+      // If already published, redirect directly to unified published post modal
+      if ((sched && (sched.status === 'published' || sched.post_status === 'published')) || (post && post.status === 'published')) {
+        const fbPostId = sched?.facebook_post_id || post?.facebook_post_id || postId;
+        openFacebookPostDetails(fbPostId);
+        return;
+      }
+
       const idInput = document.getElementById('sched-detail-schedule-id');
       const postInput = document.getElementById('sched-detail-post-id');
       const bodyInput = document.getElementById('sched-detail-post-body');
+      const dateInput = document.getElementById('sched-detail-date');
+      const timeInput = document.getElementById('sched-detail-time');
       const statusBadge = document.getElementById('sched-detail-status-badge');
-      const timeSpan = document.getElementById('sched-detail-time');
       const conflictBanner = document.getElementById('sched-detail-conflict-banner');
-
-      const sched = (Array.isArray(cachedSchedules) ? cachedSchedules : []).find(s => s && (s.id === scheduleId || s.post_id === postId));
-      const post = (Array.isArray(cachedPosts) ? cachedPosts : []).find(p => p && p.id === postId) || (sched ? { title: sched.post_title, body: sched.post_body, status: sched.status } : null);
 
       if (idInput) idInput.value = safeStr(scheduleId);
       if (postInput) postInput.value = safeStr(postId);
@@ -4334,11 +4443,52 @@ export function getAdminScripts(): string {
       if (statusBadge) {
         const st = safeUpper(sched?.status || post?.status, 'SCHEDULED');
         statusBadge.textContent = st;
-        statusBadge.className = 'status-badge ' + (st === 'PUBLISHED' ? 'status-healthy' : st === 'SCHEDULED' || st === 'PENDING' ? 'status-active' : 'status-alert');
+        statusBadge.className = 'status-badge ' + (st === 'PUBLISHED' ? 'status-healthy' : 'status-active');
       }
 
-      if (timeSpan) {
-        timeSpan.textContent = sched?.scheduled_at ? formatDateUtcSafe(sched.scheduled_at) : 'Future';
+      // Populate scheduled date and time
+      const scheduledAtStr = sched?.scheduled_at;
+      if (scheduledAtStr && !isNaN(new Date(scheduledAtStr).getTime())) {
+        const d = new Date(scheduledAtStr);
+        if (dateInput) {
+          dateInput.value = d.toISOString().split('T')[0];
+          dateInput.min = new Date().toISOString().split('T')[0];
+        }
+        if (timeInput) {
+          const hh = String(d.getUTCHours()).padStart(2, '0');
+          const mm = String(d.getUTCMinutes()).padStart(2, '0');
+          timeInput.value = hh + ':' + mm;
+        }
+      } else {
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        if (dateInput) {
+          dateInput.value = tomorrow.toISOString().split('T')[0];
+          dateInput.min = new Date().toISOString().split('T')[0];
+        }
+        if (timeInput) timeInput.value = '10:00';
+      }
+
+      // Populate image
+      const imageWrap = document.getElementById('sched-detail-image-wrap');
+      const imageEl = document.getElementById('sched-detail-image');
+      const imageIdInput = document.getElementById('sched-detail-image-id');
+      const removeFlagInput = document.getElementById('sched-detail-remove-image-flag');
+      const imageNameEl = document.getElementById('sched-detail-image-name');
+
+      if (removeFlagInput) removeFlagInput.value = 'false';
+
+      const existingImgUrl = sched?.image_url || post?.image_url;
+      const existingImgId = sched?.curated_image_id || post?.curated_image_id;
+
+      if (existingImgUrl) {
+        if (imageEl) imageEl.src = existingImgUrl;
+        if (imageWrap) imageWrap.style.display = 'block';
+        if (imageIdInput) imageIdInput.value = safeStr(existingImgId);
+        if (imageNameEl) imageNameEl.textContent = 'Illustration attached';
+      } else {
+        if (imageWrap) imageWrap.style.display = 'none';
+        if (imageIdInput) imageIdInput.value = '';
+        if (imageNameEl) imageNameEl.textContent = 'No image attached';
       }
 
       if (conflictBanner) {
@@ -4349,34 +4499,85 @@ export function getAdminScripts(): string {
       openModal('scheduled-post-detail-modal');
     }
 
+    function removeScheduledModalImage() {
+      const wrap = document.getElementById('sched-detail-image-wrap');
+      const imgId = document.getElementById('sched-detail-image-id');
+      const flag = document.getElementById('sched-detail-remove-image-flag');
+      const name = document.getElementById('sched-detail-image-name');
+      if (wrap) wrap.style.display = 'none';
+      if (imgId) imgId.value = '';
+      if (flag) flag.value = 'true';
+      if (name) name.textContent = 'Image removed (click Save to confirm)';
+    }
+
     async function saveScheduledPostEdits() {
       const postId = safeStr(document.getElementById('sched-detail-post-id')?.value).trim();
       const body = safeStr(document.getElementById('sched-detail-post-body')?.value).trim();
+      const dateVal = safeStr(document.getElementById('sched-detail-date')?.value).trim();
+      const timeVal = safeStr(document.getElementById('sched-detail-time')?.value, '10:00').trim();
+      const imageId = safeStr(document.getElementById('sched-detail-image-id')?.value).trim();
+      const removeImage = document.getElementById('sched-detail-remove-image-flag')?.value === 'true';
 
-      if (!postId || !body) return;
+      if (!postId || !body) {
+        alert('Post content cannot be empty.');
+        return;
+      }
+      if (!dateVal) {
+        alert('Scheduled date is required.');
+        return;
+      }
+
+      const scheduledMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
+      if (isNaN(scheduledMs) || scheduledMs < Date.now()) {
+        alert('A post cannot be scheduled in the past. Please select a future date and time.');
+        return;
+      }
+      const scheduledAt = new Date(scheduledMs).toISOString();
 
       try {
-        const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId), {
+        // 1. Save body text
+        const resBody = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
           body: JSON.stringify({ body })
         });
-        if (res.ok) {
-          closeModal('scheduled-post-detail-modal');
-          loadSchedulesData();
-          loadContentData();
-
-          const post = (Array.isArray(cachedPosts) ? cachedPosts : []).find(p => p && p.id === postId);
-          if (post && (post.status === 'published' || post.facebook_post_id)) {
-            await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-              body: JSON.stringify({ content: body })
-            });
-          }
+        if (!resBody.ok) {
+          const errData = await resBody.json().catch(() => ({}));
+          throw new Error(safeStr(errData.error, 'Failed to save post text.'));
         }
+
+        // 2. Save schedule date/time
+        const resSched = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ scheduledAt })
+        });
+        if (!resSched.ok) {
+          const errData = await resSched.json().catch(() => ({}));
+          throw new Error(safeStr(errData.error, 'Failed to update schedule date and time.'));
+        }
+
+        // 3. Save image if modified
+        if (removeImage) {
+          await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/assign-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ action: 'remove' })
+          });
+        } else if (imageId) {
+          await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/assign-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ imageId })
+          });
+        }
+
+        closeModal('scheduled-post-detail-modal');
+        await loadSchedulesData();
+        await loadContentData();
       } catch (err) {
         console.error('Failed to save scheduled post edits:', err);
+        alert(err instanceof Error ? err.message : String(err));
       }
     }
 
@@ -4720,8 +4921,11 @@ export function getAdminScripts(): string {
         const isToday = (year === todayYear && month === todayMonth && day === todayDate);
 
         const dayItems = (Array.isArray(schedules) ? schedules : []).filter(s => {
-          if (!s || !s.scheduled_at) return false;
-          const d = new Date(s.scheduled_at);
+          if (!s) return false;
+          const isPub = (s.status === 'published' || s.post_status === 'published' || s.published_at);
+          const targetDateStr = (isPub && s.published_at) ? s.published_at : s.scheduled_at;
+          if (!targetDateStr) return false;
+          const d = new Date(targetDateStr);
           return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
         });
 
@@ -4729,13 +4933,23 @@ export function getAdminScripts(): string {
         html += '<div class="calendar-day-num"><span>' + day + '</span>' + (isToday ? '<span style="font-size:0.65rem; color:#60a5fa;">TODAY</span>' : '') + '</div>';
 
         dayItems.forEach(item => {
-          const timeStr = item.scheduled_at ? new Date(item.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00';
+          const isPub = (item.status === 'published' || item.post_status === 'published' || item.published_at);
+          const targetDateStr = (isPub && item.published_at) ? item.published_at : item.scheduled_at;
+          const timeStr = targetDateStr ? new Date(targetDateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00';
           const preview = escapeHtml(safeStr(item.post_body, 'Post').slice(0, 90));
           const schedIdStr = safeStr(item.id);
           const postIdStr = safeStr(item.post_id);
-          html += '<div class="calendar-item-chip" style="cursor:pointer;" title="' + preview + '" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">';
-          html += '<span class="calendar-item-time">' + timeStr + '</span>' + preview;
-          html += '</div>';
+          const fbPostId = safeStr(item.facebook_post_id);
+
+          if (isPub) {
+            html += '<div class="calendar-item-chip" style="cursor:pointer; opacity:0.65; background:rgba(255,255,255,0.06); border-left:3px solid var(--accent-emerald);" title="[Published] ' + preview + '" onclick="openFacebookPostDetails(&quot;' + (fbPostId || postIdStr) + '&quot;)">';
+            html += '<span class="calendar-item-time" style="color:var(--accent-emerald);">Published ' + timeStr + '</span>' + preview;
+            html += '</div>';
+          } else {
+            html += '<div class="calendar-item-chip" style="cursor:pointer;" title="' + preview + '" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">';
+            html += '<span class="calendar-item-time">' + timeStr + '</span>' + preview;
+            html += '</div>';
+          }
         });
 
         html += '</div>';
@@ -4785,6 +4999,13 @@ export function getAdminScripts(): string {
         const catSelect = document.getElementById('image-category-filter');
         currentImageCategoryFilter = catSelect ? catSelect.value.trim() : '';
 
+        const gridEl = document.getElementById('image-library-grid');
+        if (gridEl) {
+          gridEl.innerHTML = Array.from({ length: 8 }).map(() =>
+            '<div class="skeleton-card" style="min-height:260px; border-radius:8px;"></div>'
+          ).join('');
+        }
+
         const url = '/api/admin/images?status=' + encodeURIComponent(currentImageStatusTab) +
           '&category=' + encodeURIComponent(currentImageCategoryFilter) +
           '&search=' + encodeURIComponent(currentImageSearchQuery) +
@@ -4793,6 +5014,7 @@ export function getAdminScripts(): string {
         const res = await guardedFetch(url);
         if (!res.ok) {
           console.error('Failed to load images:', res.status);
+          if (gridEl) gridEl.innerHTML = '<div style="grid-column: 1 / -1; text-align:center; color:var(--accent-rose); padding:3rem;">Failed to load image library.</div>';
           return;
         }
 
@@ -4816,6 +5038,8 @@ export function getAdminScripts(): string {
         renderImageLibraryGrid(cachedImages);
       } catch (err) {
         console.error('Failed to load image library data:', err);
+        const gridEl = document.getElementById('image-library-grid');
+        if (gridEl) gridEl.innerHTML = '<div style="grid-column: 1 / -1; text-align:center; color:var(--accent-rose); padding:3rem;">Failed to connect to server.</div>';
       }
     }
 
@@ -4838,6 +5062,7 @@ export function getAdminScripts(): string {
         const license = escapeHtml(safeStr(img.license, 'Custom'));
         const status = safeUpper(img.status, 'PENDING');
         const usageCount = Number(img.usage_count || 0);
+        const historicalCount = Number(img.historical_usage_count || 0);
 
         let statusBadgeClass = 'status-disabled';
         if (status === 'APPROVED') statusBadgeClass = 'status-healthy';
@@ -4846,11 +5071,22 @@ export function getAdminScripts(): string {
 
         const isChecked = selectedImageIds.has(imgId) ? 'checked' : '';
 
+        let usageHtml = '';
+        if (usageCount > 0 && historicalCount > 0) {
+          usageHtml = '<span style="color:var(--accent-emerald);">Active in ' + usageCount + ' post(s)</span> &bull; <span style="color:var(--text-muted);">Published ' + historicalCount + 'x</span>';
+        } else if (usageCount > 0) {
+          usageHtml = '<span style="color:var(--accent-emerald);">Active in ' + usageCount + ' post(s)</span>';
+        } else if (historicalCount > 0) {
+          usageHtml = '<span style="color:var(--accent-cyan);">Published ' + historicalCount + 'x</span> &bull; <span style="color:var(--text-muted);">No active draft</span>';
+        } else {
+          usageHtml = '<span style="color:var(--accent-blue);">Never used</span>';
+        }
+
         return '<div class="image-card" id="img-card-' + imgId + '">' +
             '<div style="position:relative;">' +
               '<input type="checkbox" class="img-select-checkbox" data-id="' + imgId + '" ' + isChecked + ' onchange="updateImageSelectionState()" style="position:absolute; top:8px; left:8px; z-index:2;" />' +
-              '<button type="button" class="img-preview-btn" style="width:100%;display:block;" onclick="openImageLightboxModal(\\x27' + escapeHtml(sourceUrl) + '\\x27, \\x27' + escapeHtml(title) + '\\x27)" aria-label="Preview image: ' + escapeHtml(title) + '">' +
-                '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" class="image-card-preview" />' +
+              '<button type="button" class="img-preview-btn" style="width:100%;display:block;" onclick="openImageLightboxModal(&quot;' + escapeHtml(sourceUrl) + '&quot;, &quot;' + escapeHtml(title) + '&quot;)" aria-label="Preview image: ' + escapeHtml(title) + '">' +
+                '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" class="image-card-preview" loading="lazy" decoding="async" />' +
               '</button>' +
               '<span class="status-badge ' + statusBadgeClass + '" style="position:absolute; top:8px; right:8px; font-size:0.65rem;">' + status + '</span>' +
             '</div>' +
@@ -4864,14 +5100,14 @@ export function getAdminScripts(): string {
                 keywords +
               '</div>' +
               '<div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">' +
-                (usageCount > 0 ? '<span style="color:var(--accent-emerald);">Used ' + usageCount + ' time(s)</span>' : '<span style="color:var(--accent-blue);">Unused asset</span>') +
+                usageHtml +
                 (img.reserved_post_id ? ' &bull; <span style="color:var(--accent-amber);">Reserved</span>' : '') +
               '</div>' +
               '<div class="image-card-actions">' +
-                (status !== 'APPROVED' ? '<button class="btn-primary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="quickApproveImage(\\x27' + imgId + '\\x27)">Approve</button>' : '') +
-                (status !== 'REJECTED' ? '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--accent-amber);" onclick="quickRejectImage(\\x27' + imgId + '\\x27)">Reject</button>' : '') +
-                '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="openEditImageModal(\\x27' + imgId + '\\x27)">Edit</button>' +
-                '<button class="btn-logout" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="deleteImage(\\x27' + imgId + '\\x27)">Delete</button>' +
+                (status !== 'APPROVED' ? '<button class="btn-primary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="quickApproveImage(&quot;' + imgId + '&quot;)">Approve</button>' : '') +
+                (status !== 'REJECTED' ? '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--accent-amber);" onclick="quickRejectImage(&quot;' + imgId + '&quot;)">Reject</button>' : '') +
+                '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="openEditImageModal(&quot;' + imgId + '&quot;)">Edit</button>' +
+                '<button class="btn-logout" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="deleteImage(&quot;' + imgId + '&quot;)">Delete</button>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -5409,35 +5645,63 @@ export function getAdminScripts(): string {
       }
     }
 
-    // Draft & Publication Illustration Selector Modal Handlers
+    // Draft, Scheduled & Publication Illustration Selector Modal Handlers
     let currentDraftPostId = null;
     let currentPublicationId = null;
+    let currentImageTargetContext = 'direct'; // 'direct', 'post-modal', 'scheduled-modal', 'publication-modal'
     let draftApprovedImages = [];
 
-    async function openDraftImageSelectorModal(postId) {
-      currentDraftPostId = postId;
-      currentPublicationId = null;
-      selectedDraftImageId = null;
-      document.getElementById('draft-selector-post-id').value = postId;
-      document.getElementById('draft-selector-search').value = '';
-      document.getElementById('draft-selector-category').value = '';
-      const commitBtn = document.getElementById('confirm-assign-draft-img-btn');
-      if (commitBtn) commitBtn.disabled = true;
+    function openDraftImageSelectorModalForDraft() {
+      const postId = document.getElementById('post-edit-id')?.value;
+      openDraftImageSelectorModal(postId, 'post-modal');
+    }
 
-      openModal('draft-image-selector-modal');
-      await fetchDraftApprovedImages();
+    function openDraftImageSelectorModalForScheduled() {
+      const postId = document.getElementById('sched-detail-post-id')?.value;
+      openDraftImageSelectorModal(postId, 'scheduled-modal');
     }
 
     async function openDraftImageSelectorModalForPublication() {
       const textarea = document.getElementById('fb-post-detail-content');
-      const fbPostId = safeStr(textarea.dataset.facebookPostId);
-      const internalId = safeStr(textarea.dataset.internalPostId);
+      const fbPostId = safeStr(textarea?.dataset?.facebookPostId);
+      const internalId = safeStr(textarea?.dataset?.internalPostId);
       currentPublicationId = fbPostId || internalId;
       currentDraftPostId = internalId || fbPostId;
+      openDraftImageSelectorModal(currentPublicationId, 'publication-modal');
+    }
+
+    function removePostModalImage() {
+      const imgInput = document.getElementById('post-selected-image-id');
+      const previewImg = document.getElementById('post-image-preview');
+      const wrap = document.getElementById('post-image-preview-wrap');
+      const flag = document.getElementById('post-remove-image-flag');
+      if (imgInput) imgInput.value = '';
+      if (previewImg) previewImg.removeAttribute('src');
+      if (wrap) wrap.style.display = 'none';
+      if (flag) flag.value = 'true';
+    }
+
+    function removeScheduledModalImage() {
+      const imgInput = document.getElementById('sched-detail-image-id');
+      const previewImg = document.getElementById('sched-detail-image');
+      const wrap = document.getElementById('sched-detail-image-wrap');
+      const flag = document.getElementById('sched-detail-remove-image-flag');
+      if (imgInput) imgInput.value = '';
+      if (previewImg) previewImg.removeAttribute('src');
+      if (wrap) wrap.style.display = 'none';
+      if (flag) flag.value = 'true';
+    }
+
+    async function openDraftImageSelectorModal(postId, targetContext = 'direct') {
+      currentDraftPostId = postId;
+      currentImageTargetContext = targetContext;
       selectedDraftImageId = null;
-      document.getElementById('draft-selector-post-id').value = currentPublicationId;
-      document.getElementById('draft-selector-search').value = '';
-      document.getElementById('draft-selector-category').value = '';
+      const pidInput = document.getElementById('draft-selector-post-id');
+      if (pidInput) pidInput.value = postId || '';
+      const sInput = document.getElementById('draft-selector-search');
+      if (sInput) sInput.value = '';
+      const cInput = document.getElementById('draft-selector-category');
+      if (cInput) cInput.value = '';
       const commitBtn = document.getElementById('confirm-assign-draft-img-btn');
       if (commitBtn) commitBtn.disabled = true;
 
@@ -5450,8 +5714,8 @@ export function getAdminScripts(): string {
       if (grid) grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-muted);">Loading approved illustrations...</div>';
 
       try {
-        const search = document.getElementById('draft-selector-search').value.trim();
-        const category = document.getElementById('draft-selector-category').value.trim();
+        const search = document.getElementById('draft-selector-search')?.value?.trim() || '';
+        const category = document.getElementById('draft-selector-category')?.value?.trim() || '';
 
         const url = currentDraftPostId
           ? '/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/image-library?search=' + encodeURIComponent(search) + '&category=' + encodeURIComponent(category)
@@ -5493,7 +5757,7 @@ export function getAdminScripts(): string {
         const isSelected = selectedDraftImageId === id ? 'selected' : '';
 
         return '<div class="image-select-card ' + isSelected + '" id="draft-img-card-' + id + '" onclick="selectDraftIllustration(\\x27' + id + '\\x27)">' +
-            '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" style="width:100%; height:110px; object-fit:cover;" />' +
+            '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" style="width:100%; height:110px; object-fit:cover;" loading="lazy" />' +
             '<div style="padding:0.5rem;">' +
               '<div style="font-size:0.8rem; font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="' + title + '">' + title + '</div>' +
               '<div style="font-size:0.75rem; color:var(--accent-cyan); font-weight:500;">' + category + '</div>' +
@@ -5516,38 +5780,82 @@ export function getAdminScripts(): string {
     async function confirmAssignDraftIllustration() {
       if (!selectedDraftImageId) return;
 
-      try {
-        let res;
-        if (currentPublicationId) {
-          res = await guardedFetch('/api/admin/publications/' + encodeURIComponent(currentPublicationId) + '/image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-            body: JSON.stringify({ imageId: selectedDraftImageId }),
-          });
-        } else if (currentDraftPostId) {
-          res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/assign-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-            body: JSON.stringify({ imageId: selectedDraftImageId }),
-          });
-        }
-        if (!res) return;
+      const chosenImg = draftApprovedImages.find(img => img && img.id === selectedDraftImageId);
+      const chosenUrl = chosenImg ? (chosenImg.source_url || chosenImg.r2_key || '') : '';
 
-        const data = await res.json();
-        if (data.success) {
+      try {
+        if (currentImageTargetContext === 'post-modal') {
+          const imgInput = document.getElementById('post-selected-image-id');
+          const previewImg = document.getElementById('post-image-preview');
+          const wrap = document.getElementById('post-image-preview-wrap');
+          const flag = document.getElementById('post-remove-image-flag');
+          const badge = document.getElementById('post-image-name-badge');
+          if (imgInput) imgInput.value = selectedDraftImageId;
+          if (previewImg && chosenUrl) previewImg.src = chosenUrl;
+          if (wrap) wrap.style.display = 'block';
+          if (flag) flag.value = 'false';
+          if (badge) badge.textContent = chosenImg?.title || 'Selected from Image Library';
           closeModal('draft-image-selector-modal');
-          if (currentPublicationId) {
-            closeModal('facebook-post-modal');
+          return;
+        }
+
+        if (currentImageTargetContext === 'scheduled-modal') {
+          const imgInput = document.getElementById('sched-detail-image-id');
+          const previewImg = document.getElementById('sched-detail-image');
+          const wrap = document.getElementById('sched-detail-image-wrap');
+          const flag = document.getElementById('sched-detail-remove-image-flag');
+          const name = document.getElementById('sched-detail-image-name');
+          if (imgInput) imgInput.value = selectedDraftImageId;
+          if (previewImg && chosenUrl) previewImg.src = chosenUrl;
+          if (wrap) wrap.style.display = 'block';
+          if (flag) flag.value = 'false';
+          if (name) name.textContent = chosenImg?.title || 'Selected from Image Library';
+          closeModal('draft-image-selector-modal');
+          return;
+        }
+
+        if (currentImageTargetContext === 'publication-modal' || currentPublicationId) {
+          const pubTarget = currentPublicationId || currentDraftPostId;
+          const res = await guardedFetch('/api/admin/publications/' + encodeURIComponent(pubTarget) + '/image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ imageId: selectedDraftImageId }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            closeModal('draft-image-selector-modal');
+            const fbImage = document.getElementById('fb-post-detail-image');
+            const fbWrap = document.getElementById('fb-post-detail-image-wrap');
+            const removeBtn = document.getElementById('fb-post-remove-image-btn');
+            if (fbImage && chosenUrl) fbImage.src = chosenUrl;
+            if (fbWrap) fbWrap.style.display = 'block';
+            if (removeBtn) removeBtn.style.display = 'inline-block';
             showPublicationAlert(safeStr(data.message, 'Publication image updated successfully.'), true);
             await loadFacebookPublications(false);
           } else {
-            loadContentData();
+            alert(safeStr(data.error || data.message, 'Failed to update publication image.'));
           }
-        } else {
-          alert(safeStr(data.error || data.message, 'Failed to assign image.'));
+          return;
+        }
+
+        // Default / direct assignment to post draft
+        if (currentDraftPostId) {
+          const res = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(currentDraftPostId) + '/assign-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ imageId: selectedDraftImageId }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            closeModal('draft-image-selector-modal');
+            await loadContentData();
+          } else {
+            alert(safeStr(data.error || data.message, 'Failed to assign image.'));
+          }
         }
       } catch (err) {
         console.error('Error assigning image:', err);
+        alert(err instanceof Error ? err.message : String(err));
       }
     }
 
@@ -5568,7 +5876,7 @@ export function getAdminScripts(): string {
           alert(safeStr(data.error, 'Failed to remove illustration from draft.'));
         }
       } catch (err) {
-        console.error('Error removing draft illustration:', err);
+        console.error('Error removing illustration:', err);
       }
     }
 
@@ -5681,6 +5989,12 @@ export function getAdminScripts(): string {
     window.updateImageSelectionState = updateImageSelectionState;
     window.executeImageBulkAction = executeImageBulkAction;
     window.openDraftImageSelectorModal = openDraftImageSelectorModal;
+    window.openDraftImageSelectorModalForDraft = openDraftImageSelectorModalForDraft;
+    window.openDraftImageSelectorModalForScheduled = openDraftImageSelectorModalForScheduled;
+    window.removePostModalImage = removePostModalImage;
+    window.removeScheduledModalImage = removeScheduledModalImage;
+    window.removeFacebookPostAttachedImage = removeFacebookPostAttachedImage;
+
     window.openDraftImageSelectorModalForPublication = openDraftImageSelectorModalForPublication;
     window.filterDraftImageSelector = filterDraftImageSelector;
     window.selectDraftIllustration = selectDraftIllustration;

@@ -1083,11 +1083,19 @@ export function renderAdminHtml(): string {
             <textarea id="post-input-content" class="form-input" style="min-height:140px; font-family:inherit;" required placeholder="Write post content..."></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label">Image</label>
-            <img id="post-image-preview" alt="Post image preview" style="display:none; width:100%; max-height:220px; object-fit:contain; margin-bottom:0.5rem; border-radius:6px;" />
-            <input type="url" id="post-input-image-url" class="form-input" placeholder="https://… image URL" />
-            <input type="file" id="post-input-image-file" class="form-input" accept="image/jpeg,image/png,image/webp" style="margin-top:0.5rem;" />
-            <label style="display:flex; gap:0.5rem; align-items:center; margin-top:0.5rem;"><input type="checkbox" id="post-remove-image" /> Remove image</label>
+            <label class="form-label" style="font-weight:600;">Post Image</label>
+            <div id="post-image-preview-wrap" style="display:none; margin-bottom:0.75rem; position:relative;">
+              <img id="post-image-preview" alt="Post image preview" style="display:block; width:100%; max-height:220px; object-fit:contain; border-radius:6px; background:#18191a;" />
+              <button type="button" class="btn-secondary" style="position:absolute; top:8px; right:8px; font-size:0.75rem; padding:0.25rem 0.5rem; background:rgba(0,0,0,0.7);" onclick="removePostModalImage()">Remove image</button>
+            </div>
+            <input type="hidden" id="post-selected-image-id" value="" />
+            <input type="hidden" id="post-remove-image-flag" value="false" />
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button type="button" class="btn-secondary" style="font-size:0.85rem;" onclick="openDraftImageSelectorModalForDraft()">
+                🖼️ Choose from Image Library
+              </button>
+              <span id="post-image-name-badge" style="font-size:0.8rem; color:var(--text-muted);">No image selected</span>
+            </div>
             <div id="post-image-sync-note" style="display:none; color:var(--text-muted); font-size:0.8rem; margin-top:0.4rem;">Image changes are sent to Facebook. Meta may reject media edits on an existing post.</div>
           </div>
           <div class="form-group">
@@ -1294,7 +1302,7 @@ export function renderAdminHtml(): string {
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
           <span id="sched-detail-status-badge" class="status-badge status-healthy">Scheduled</span>
-          <span id="sched-detail-time" style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">--</span>
+          <span id="sched-detail-header-time" style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">--</span>
         </div>
 
         <!-- Conflict Alert Banner -->
@@ -1312,8 +1320,35 @@ export function renderAdminHtml(): string {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Post</label>
+          <label class="form-label" for="sched-detail-post-body">Post Content</label>
           <textarea id="sched-detail-post-body" class="form-input" rows="6"></textarea>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-top:1rem;">
+          <div class="form-group">
+            <label class="form-label" for="sched-detail-date">Scheduled Date (UTC)</label>
+            <input type="date" id="sched-detail-date" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sched-detail-time">Scheduled Time (UTC)</label>
+            <input type="time" id="sched-detail-time" class="form-input" />
+          </div>
+        </div>
+
+        <div class="form-group" style="border-top:1px solid var(--border-color); padding-top:1rem; margin-top:1rem;">
+          <label class="form-label" style="font-weight:600;">Attached Post Image</label>
+          <div id="sched-detail-image-wrap" style="display:none; margin-bottom:0.75rem; position:relative;">
+            <img id="sched-detail-image" alt="Scheduled post image" style="display:block; width:100%; max-height:220px; object-fit:contain; border-radius:6px; background:#18191a;" />
+            <button type="button" class="btn-secondary" style="position:absolute; top:8px; right:8px; font-size:0.75rem; padding:0.25rem 0.5rem; background:rgba(0,0,0,0.7);" onclick="removeScheduledModalImage()">Remove image</button>
+          </div>
+          <input type="hidden" id="sched-detail-image-id" value="" />
+          <input type="hidden" id="sched-detail-remove-image-flag" value="false" />
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <button type="button" class="btn-secondary" style="font-size:0.85rem;" onclick="openDraftImageSelectorModalForScheduled()">
+              🖼️ Choose from Image Library
+            </button>
+            <span id="sched-detail-image-name" style="font-size:0.8rem; color:var(--text-muted);">No image attached</span>
+          </div>
         </div>
       </div>
       <div class="modal-footer">

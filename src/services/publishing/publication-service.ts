@@ -1105,7 +1105,7 @@ export class PublicationService {
                   pub.sync_status as pub_sync_status, pub.fb_content_hash, pub.pushed_content_hash,
                   pub.fb_image_url, pub.pushed_image_url,
                   p.current_version, p.sync_status as post_sync_status, pv.content as local_content,
-                  pi.url as local_image_url
+                  pi.url as local_image_url, pi.curated_image_id as local_curated_image_id
            FROM publications pub
            JOIN posts p ON pub.post_id = p.id
            JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
@@ -1126,6 +1126,7 @@ export class PublicationService {
           post_sync_status: string;
           local_content: string;
           local_image_url?: string | null;
+          local_curated_image_id?: string | null;
         }>();
 
       const items = pubRows.results || [];
@@ -1176,8 +1177,8 @@ export class PublicationService {
         const fbHash = this.hashContent(fbMsg);
         const localHash = this.hashContent(item.local_content);
 
-        // Backfill photos from Facebook for posts created before local image storage existed.
-        // Never replace an image explicitly selected in the app.
+        // Backfill photos from Facebook only for posts created before local image storage existed.
+        // NEVER replace an image explicitly selected or linked in the app.
         if (res.post.fullPicture && !item.local_image_url) {
           await this.db.prepare(
             `INSERT OR IGNORE INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
@@ -1188,42 +1189,12 @@ export class PublicationService {
           ).run();
         }
 
-        if (!item.fb_image_url) {
-          await this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = ? WHERE id = ?')
-            .bind(res.post.fullPicture || null, item.local_image_url || res.post.fullPicture || null, item.publication_id).run();
-        } else {
-          const facebookImageChanged = (res.post.fullPicture || null) !== item.fb_image_url;
-          const localImageChanged = (item.local_image_url || null) !== (item.pushed_image_url || null);
-          if (facebookImageChanged && localImageChanged) {
-            conflicts++;
-            await this.db.batch([
-              this.db.prepare("UPDATE publications SET sync_status = 'CONFLICT', fb_last_check_at = ?, fb_image_url = ? WHERE id = ?")
-                .bind(nowIso, res.post.fullPicture || null, item.publication_id),
-              this.db.prepare("UPDATE posts SET sync_status = 'CONFLICT' WHERE id = ?").bind(item.post_id),
-            ]);
-            continue;
-          }
-          if (localImageChanged) {
-            await this.db.batch([
-              this.db.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD', fb_last_check_at = ? WHERE id = ?").bind(nowIso, item.publication_id),
-              this.db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(item.post_id),
-            ]);
-            continue;
-          }
-          if (facebookImageChanged) {
-            const imageStatements = [
-              this.db.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(item.post_id, item.current_version),
-            ];
-            if (res.post.fullPicture) {
-              imageStatements.push(this.db.prepare(
-                `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, verification_status, visual_verification_status, created_at)
-                 VALUES (?, ?, ?, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
-              ).bind(crypto.randomUUID(), item.post_id, item.current_version, res.post.fullPicture, res.post.permalinkUrl || res.post.fullPicture, nowIso));
-            }
-            imageStatements.push(this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = ? WHERE id = ?')
-              .bind(res.post.fullPicture || null, res.post.fullPicture || null, item.publication_id));
-            await this.db.batch(imageStatements);
-          }
+        // Always update Facebook CDN URL tracking on publications table without modifying local post_images curated asset
+        await this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = COALESCE(pushed_image_url, ?) WHERE id = ?')
+          .bind(res.post.fullPicture || null, item.local_image_url || res.post.fullPicture || null, item.publication_id).run();
+
+        if (item.local_curated_image_id) {
+          await recalculateCuratedImageUsage(this.db, item.local_curated_image_id);
         }
 
         // Case 1: FB message matches local content or matches pushed content hash -> SYNCED (No-op)
@@ -1926,6 +1897,11 @@ export class PublicationService {
           nowIso,
         ),
     ]);
+
+    await recalculateCuratedImageUsage(this.db, newCuratedImageId);
+    if (oldCuratedImageId) {
+      await recalculateCuratedImageUsage(this.db, oldCuratedImageId);
+    }
 
     await this.auditLogger?.log({
       eventType: 'PUBLICATION_IMAGE_CHANGE_SUCCEEDED',

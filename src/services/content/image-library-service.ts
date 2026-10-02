@@ -28,6 +28,7 @@ export interface CuratedImageRow {
   discovery_query: string | null;
   discovery_score: number;
   usage_count: number;
+  historical_usage_count?: number;
   last_used_at: string | null;
   used_in_post_id: string | null;
   reserved_post_id: string | null;
@@ -397,6 +398,13 @@ export class ImageLibraryService {
       .first<{ current_version: number }>();
     const currentVersion = postRow?.current_version ?? 1;
 
+    // Detect previous image attached to this post
+    const prevPi = await this.db
+      .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ? AND version_number = ?')
+      .bind(postId, currentVersion)
+      .first<{ curated_image_id: string | null }>();
+    const prevImageId = prevPi?.curated_image_id || null;
+
     const nowIso = new Date().toISOString();
 
     // Batch database updates safely
@@ -435,12 +443,17 @@ export class ImageLibraryService {
       ),
     ]);
 
+    await recalculateCuratedImageUsage(this.db, imageId);
+    if (prevImageId && prevImageId !== imageId) {
+      await recalculateCuratedImageUsage(this.db, prevImageId);
+    }
+
     await this.auditLogger.log({
       eventType: 'IMAGE_RESERVED_FOR_DRAFT',
       entityType: 'curated_image',
       entityId: imageId,
       actor: isManual ? 'admin' : 'system',
-      details: { postId, isManual },
+      details: { postId, isManual, previousImageId: prevImageId },
     });
   }
 
@@ -448,10 +461,20 @@ export class ImageLibraryService {
    * Releases an image reservation held by a post draft.
    */
   async releaseDraftReservation(postId: string): Promise<void> {
+    const prevPi = await this.db
+      .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ?')
+      .bind(postId)
+      .first<{ curated_image_id: string | null }>();
+    const prevImageId = prevPi?.curated_image_id || null;
+
     await this.db
       .prepare('UPDATE curated_images SET reserved_post_id = NULL WHERE reserved_post_id = ?')
       .bind(postId)
       .run();
+
+    if (prevImageId) {
+      await recalculateCuratedImageUsage(this.db, prevImageId);
+    }
   }
 
   /**
@@ -459,12 +482,20 @@ export class ImageLibraryService {
    * Updates usage count, last_used_at, used_in_post_id, and clears reservation.
    */
   async markImageAsPublished(imageId: string, postId: string): Promise<void> {
+    const nowIso = new Date().toISOString();
     await this.db
-      .prepare('UPDATE curated_images SET reserved_post_id = NULL WHERE reserved_post_id = ?')
-      .bind(postId)
+      .prepare(
+        `UPDATE curated_images
+         SET usage_count = usage_count + 1,
+             historical_usage_count = historical_usage_count + 1,
+             last_used_at = ?,
+             used_in_post_id = ?,
+             reserved_post_id = NULL,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(nowIso, postId, nowIso, imageId)
       .run();
-
-    await recalculateCuratedImageUsage(this.db, imageId);
 
     await this.auditLogger.log({
       eventType: 'IMAGE_PUBLISHED',
@@ -477,6 +508,7 @@ export class ImageLibraryService {
 
   /**
    * Returns a paginated list of curated images with counts by status.
+   * Efficient: queries persisted indexed columns without expensive sequential re-calculations on read.
    */
   async listImages(options: {
     status?: string;
@@ -495,13 +527,11 @@ export class ImageLibraryService {
     const categoryFilter = (options.category || '').trim();
     const searchTerm = (options.search || '').trim().toLowerCase();
 
-    await recalculateAllCuratedImageUsages(this.db).catch(() => {});
-
     const whereClauses: string[] = ["status != 'DELETED'"];
     const bindings: unknown[] = [];
 
     if (statusFilter === 'USED') {
-      whereClauses.push('usage_count > 0');
+      whereClauses.push('(usage_count > 0 OR COALESCE(historical_usage_count, 0) > 0)');
     } else if (statusFilter !== 'ALL') {
       whereClauses.push('status = ?');
       bindings.push(statusFilter);
@@ -534,14 +564,14 @@ export class ImageLibraryService {
       .bind(...bindings, limit, offset)
       .all<CuratedImageRow>();
 
-    // Counts summary
+    // Counts summary across active library
     const countsRes = await this.db
       .prepare(
         `SELECT
           SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pending,
           SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END) as approved,
           SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) as rejected,
-          SUM(CASE WHEN usage_count > 0 THEN 1 ELSE 0 END) as used,
+          SUM(CASE WHEN usage_count > 0 OR COALESCE(historical_usage_count, 0) > 0 THEN 1 ELSE 0 END) as used,
           COUNT(*) as total
          FROM curated_images WHERE status != 'DELETED'`,
       )
@@ -616,62 +646,109 @@ export function getPublicImageUrl(
 }
 
 /**
- * Derives and synchronizes exact usage statistics for a Curated Image asset
- * directly from published post & publication relationships in the database.
- * Deduplicates multiple post/publication rows pointing to the same Facebook publication.
+ * Derives and synchronizes exact usage statistics for a Curated Image asset.
+ * Enforces one canonical state:
+ * - currentUsageCount (usage_count): count of active posts referencing this image at their current version
+ * - historicalUsageCount: total times this image was published to Facebook/external provider
+ * - used_in_post_id: most recent active post using the asset
+ * - reserved_post_id: post ID if an active draft/scheduled post reserves it; cleared when published or reassigned
  */
 export async function recalculateCuratedImageUsage(db: D1Database, imageId: string): Promise<void> {
   if (!imageId) return;
 
-  const res = await db
+  const curImg = await db
+    .prepare('SELECT id, source_url, r2_key FROM curated_images WHERE id = ?')
+    .bind(imageId)
+    .first<{ id: string; source_url: string | null; r2_key: string | null }>();
+
+  if (!curImg) return;
+
+  const publicUrl = getPublicImageUrl(curImg);
+
+  // 1. Calculate CURRENT usage: count of active posts currently using this image in their current version
+  const currentUsageRes = await db
+    .prepare(
+      `SELECT COUNT(DISTINCT p.id) as current_count,
+              MAX(p.id) as latest_post_id
+       FROM posts p
+       JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
+       WHERE (pi.curated_image_id = ?
+              OR (pi.curated_image_id IS NULL AND (pi.source_id = ? OR (pi.url IS NOT NULL AND pi.url != '' AND (pi.url = ? OR (? != '' AND pi.url = ?))))))
+         AND p.status != 'rejected'`,
+    )
+    .bind(imageId, imageId, curImg.source_url || '', publicUrl, publicUrl)
+    .first<{ current_count: number; latest_post_id: string | null }>();
+
+  const currentCount = currentUsageRes?.current_count || 0;
+  const usedInPostId = currentCount > 0 ? currentUsageRes?.latest_post_id || null : null;
+
+  // 2. Calculate HISTORICAL usage: count of distinct publications where this image was published
+  // Look across publications joined with post_images, direct publication pushed_image_url, and audit_log
+  const pubRes = await db
     .prepare(
       `SELECT COUNT(DISTINCT CASE WHEN pub.facebook_post_id IS NOT NULL AND TRIM(pub.facebook_post_id) != '' THEN pub.facebook_post_id ELSE pub.post_id END) as pub_count,
-              MAX(pub.published_at) as max_published_at,
-              MAX(pub.post_id) as latest_post_id
+              MAX(pub.published_at) as max_published_at
        FROM publications pub
        JOIN post_images pi ON pi.post_id = pub.post_id
-       JOIN curated_images ci ON ci.id = ?
-       WHERE (pi.curated_image_id = ci.id OR pi.source_id = ci.id OR (ci.source_url IS NOT NULL AND ci.source_url != '' AND pi.url = ci.source_url))
+       WHERE (pi.curated_image_id = ?
+              OR (pi.curated_image_id IS NULL AND (pi.source_id = ? OR (pi.url IS NOT NULL AND pi.url != '' AND (pi.url = ? OR (? != '' AND pi.url = ?))))))
          AND pub.status = 'published'`,
     )
+    .bind(imageId, imageId, curImg.source_url || '', publicUrl, publicUrl)
+    .first<{ pub_count: number; max_published_at: string | null }>();
+
+  // Check audit_log for historical IMAGE_PUBLISHED events for this image
+  const auditRes = await db
+    .prepare(
+      `SELECT COUNT(DISTINCT CASE WHEN json_extract(details, '$.postId') IS NOT NULL THEN json_extract(details, '$.postId') ELSE id END) as audit_pub_count,
+              MAX(created_at) as max_audit_time
+       FROM audit_log
+       WHERE event_type = 'IMAGE_PUBLISHED' AND entity_id = ?`,
+    )
     .bind(imageId)
-    .first<{ pub_count: number; max_published_at: string | null; latest_post_id: string | null }>();
+    .first<{ audit_pub_count: number; max_audit_time: string | null }>();
 
-  const pubCount = res?.pub_count || 0;
-  const nowIso = new Date().toISOString();
-  const lastUsedAt = res?.max_published_at || (pubCount > 0 ? nowIso : null);
-  const usedInPostId = pubCount > 0 ? res?.latest_post_id || null : null;
+  const historicalCount = Math.max(pubRes?.pub_count || 0, auditRes?.audit_pub_count || 0);
 
-  // Determine reserved_post_id state:
-  // If reserved_post_id points to a post that is NOT published, keep it reserved.
-  // If reserved_post_id points to a post that IS published, clear reservation (since it is now published).
-  const curImg = await db
-    .prepare('SELECT reserved_post_id FROM curated_images WHERE id = ?')
-    .bind(imageId)
-    .first<{ reserved_post_id: string | null }>();
-
-  let reservedPostId = curImg?.reserved_post_id || null;
-  if (reservedPostId) {
-    const isPub = await db
-      .prepare(`SELECT 1 FROM publications WHERE post_id = ? AND status = 'published' LIMIT 1`)
-      .bind(reservedPostId)
-      .first();
-    if (isPub) {
-      reservedPostId = null;
-    }
+  // Latest published timestamp
+  const pubTime = pubRes?.max_published_at || null;
+  const auditTime = auditRes?.max_audit_time || null;
+  let lastUsedAt: string | null;
+  if (pubTime && auditTime) {
+    lastUsedAt = new Date(pubTime) > new Date(auditTime) ? pubTime : auditTime;
+  } else {
+    lastUsedAt = pubTime || auditTime || (historicalCount > 0 ? new Date().toISOString() : null);
   }
+
+  // 3. Determine reservation state:
+  // Only held if an active, UNPUBLISHED post (draft, approved, scheduled) is currently linked to this image
+  const draftUsage = await db
+    .prepare(
+      `SELECT p.id FROM posts p
+       JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
+       WHERE (pi.curated_image_id = ?
+              OR (pi.curated_image_id IS NULL AND (pi.source_id = ? OR (pi.url IS NOT NULL AND pi.url != '' AND (pi.url = ? OR (? != '' AND pi.url = ?))))))
+         AND p.status IN ('draft', 'approved', 'scheduled')
+       ORDER BY p.updated_at DESC LIMIT 1`,
+    )
+    .bind(imageId, imageId, curImg.source_url || '', publicUrl, publicUrl)
+    .first<{ id: string }>();
+
+  const reservedPostId = draftUsage?.id || null;
+  const nowIso = new Date().toISOString();
 
   await db
     .prepare(
       `UPDATE curated_images
        SET usage_count = ?,
+           historical_usage_count = ?,
            last_used_at = ?,
            used_in_post_id = ?,
            reserved_post_id = ?,
            updated_at = ?
        WHERE id = ?`,
     )
-    .bind(pubCount, lastUsedAt, usedInPostId, reservedPostId, nowIso, imageId)
+    .bind(currentCount, historicalCount, lastUsedAt, usedInPostId, reservedPostId, nowIso, imageId)
     .run();
 }
 

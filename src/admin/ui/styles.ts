@@ -1772,6 +1772,45 @@ export function getAdminCss(): string {
       opacity: 0.9;
       transform: scale(1.02);
     }
+
+    /* SKELETON LOADING & SHIMMER */
+    .skeleton-card {
+      background: rgba(255, 255, 255, 0.02) !important;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      animation: pulseShimmer 1.8s ease-in-out infinite;
+    }
+    @keyframes pulseShimmer {
+      0% { opacity: 0.5; }
+      50% { opacity: 0.85; }
+      100% { opacity: 0.5; }
+    }
+    .skeleton-box {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 4px;
+    }
+
+    /* SCHEDULED QUEUE SECTIONS */
+    .schedule-section-header {
+      background: rgba(255, 255, 255, 0.025);
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      padding: 0.6rem 1rem;
+    }
+    .schedule-published-dimmed {
+      opacity: 0.72;
+      background: rgba(255, 255, 255, 0.015);
+      transition: opacity 0.15s ease;
+    }
+    .schedule-published-dimmed:hover {
+      opacity: 0.92;
+    }
   `;
 }
 

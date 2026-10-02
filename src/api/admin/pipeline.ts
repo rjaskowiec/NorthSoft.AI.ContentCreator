@@ -216,10 +216,11 @@ pipelineRouter.get('/schedules', async (c) => {
   const schedulesRes = await db
     .prepare(
       `SELECT s.id, s.post_id, s.scheduled_at, s.timezone, s.status, s.created_at,
-              p.title as post_title, p.idea_id, p.quality_score, p.quality_decision, p.current_version,
+              p.title as post_title, p.status as post_status, p.idea_id, p.quality_score, p.quality_decision, p.current_version,
               pv.content as post_body, ci.title as topic_title, ci.source_title, ci.source_url,
-              pi.url as image_url, pi.visual_verification_status as image_status,
-              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id
+              pi.url as image_url, pi.curated_image_id, pi.visual_verification_status as image_status,
+              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
+              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as published_at
        FROM schedules s
        JOIN posts p ON s.post_id = p.id
        LEFT JOIN content_ideas ci ON ci.id = p.idea_id
@@ -238,8 +239,8 @@ pipelineRouter.get('/schedules', async (c) => {
              )
            )
          )
-       ORDER BY s.scheduled_at ASC
-       LIMIT 20`,
+       ORDER BY CASE WHEN s.status = 'pending' THEN 0 ELSE 1 END, s.scheduled_at ASC
+       LIMIT 100`,
     )
     .all();
 
