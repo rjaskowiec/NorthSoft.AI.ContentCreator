@@ -1573,6 +1573,8 @@ export function getAdminCss(): string {
       font-size: 0.75rem;
       color: #fda4af;
       margin-top: 0.25rem;
+    }
+    }
 
     /* IMAGE LIBRARY STYLES */
     .image-card {
