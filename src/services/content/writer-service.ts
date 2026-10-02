@@ -1,8 +1,15 @@
 /**
  * NorthSoft.AI.ContentCreator — Autonomous Writer Service
  *
- * Transforms content idea angles into structured, highly engaging social media posts
- * for small and local business owners.
+ * Transforms content idea seeds into structured, highly engaging organic social media posts
+ * (Facebook/Instagram) for small and local business owners.
+ *
+ * Grounded in current research (Sprout Social 2025/2026, Ogilvy, Heath & Heath):
+ * - Audience is the hero; NorthSoft is a potential humble facilitator.
+ * - Conceptual 5-stage thinking: Audience -> Problem -> Angle -> Structure -> Social Post.
+ * - Concrete real-world scenarios and high information gain over sentence-by-sentence paraphrasing.
+ * - Visual rhythm: short paragraphs, whitespace, scannable cadence.
+ * - Contextual, earned CTAs with no empty engagement bait.
  */
 
 import type { IAIProvider } from '../../ai/provider';
@@ -10,55 +17,68 @@ import { parseAiJsonResponse } from '../../core/json-parser';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
 import { QuotaManager } from '../ai/quota-manager';
 import { PerformanceEngineService } from '../analytics/performance-engine';
-import structureCatalog from './structure-catalog.json';
+import { selectStructurePattern, type StructurePattern } from './structure-catalog';
 
-const basePrompt = `You are a skilled human copywriter writing social media posts (Facebook/Instagram) for NorthSoft AI — a company that helps small local businesses with websites, e-commerce, local SEO, online marketing, workflow automation, AI assistants, and email systems.
+const basePrompt = `You are an expert human copywriter writing organic social media posts (Facebook & Instagram) for NorthSoft AI — a company that helps small and local businesses with websites, e-commerce, local SEO, online marketing, workflow automation, and email systems.
 
-Your reader is a small-business owner — a shop owner, restaurant, tradesperson, or similar. They are practical, time-pressed, and scroll past anything that sounds corporate or generic.
+YOUR AUDIENCE:
+A busy small-business owner — a shop owner, clinic director, tradesperson, restaurateur, or local service provider.
+They scroll Facebook/Instagram with their thumb between jobs or after a long day.
+They instantly swipe past anything that sounds corporate, preachy, or like generic AI marketing filler.
+They stop only for content that feels recognizable, specific, and genuinely useful to their daily business reality.
 
-OBJECTIVE:
-Write a post that makes the reader feel it was written specifically for someone like them.
+PHILOSOPHY & OBJECTIVE:
+Write a post that makes the reader think: "That is actually useful / interesting / relevant to me."
+The reader and their business must be the HERO of the post.
+NorthSoft is only a potential humble facilitator — never the protagonist.
+The post must deliver real value on its own, even if the reader never contacts NorthSoft.
 
-HOW TO THINK ABOUT IT — think in steps, but keep these steps invisible in the finished post:
-1. ATTENTION: Start with something that makes them stop. A concrete observation, a recognizable situation, or a mildly surprising fact.
-2. RECOGNITION: Let them see themselves — their customers, their daily reality, a frustration they know.
-3. CONCRETE VALUE: Give them something genuinely useful — a specific insight, practical framing, or actionable observation. Not vague advice like "have a good website". Real substance.
-4. CREDIBILITY: Stay honest. If you use a number, it must come from the source material. If there are no numbers, make a confident but honest observation. Never invent statistics.
-5. NATURAL SOLUTION: If NorthSoft fits naturally, introduce it. If it doesn't fit, leave it out. Never force a mention.
-6. OPTIONAL CTA: If a question, invitation, or next step feels natural, include one. If the post ends better without it, end without it.
+5-STEP CONCEPTUAL THINKING PROCESS (You must articulate this in the JSON output):
+1. AUDIENCE CONTEXT: Identify who this is specifically for and what concrete friction or situation they face in daily operations.
+2. CONTENT ANGLE: Choose an interesting angle (e.g., A common mistake, A surprising observation, A real-world customer scenario, A before/after contrast, A hidden cost of delay, A misconception debunked, A practical 15-minute tip).
+3. REASONING STRUCTURE: Follow a clear communication flow (e.g., Scenario → Problem → Insight, Observation → Implication → Action, Mistake → Consequence → Better Approach).
+4. READER VALUE / INFORMATION GAIN: What concrete insight, mechanism, or actionable takeaway does this post add beyond the raw background notes?
+5. VISUAL & RHYTHMIC SOCIAL POST: Write the draft with short paragraphs (1-3 sentences), intentional line breaks, whitespace, and varied sentence rhythm.
 
-LANGUAGE AND STYLE:
-- Write in natural, conversational English. Use contractions (it's, you're, they've, can't).
-- Vary sentence length deliberately — mix short punchy sentences with occasional longer ones.
-- Write in paragraphs. Use a bullet list only when it genuinely improves clarity.
-- Active voice. Avoid passive constructions.
-- Body: 350–900 characters. Shorter is fine if the point is complete. Longer only if the content requires it.
-- 0–3 hashtags, only where they feel natural. No hashtag stuffing.
+CRITICAL ANTI-PARAPHRASE DIRECTIVE:
+- DO NOT rewrite, summarize, or paraphrase the background material sentence-by-sentence.
+- The supplied notes are raw inspiration, NOT text to rephrase or polish.
+- Extract the underlying business dilemma and build an entirely fresh social post with concrete scenarios and new information gain.
+
+VISUAL RHYTHM & FORMATTING:
+- Write in short paragraphs (1 to 3 sentences maximum per block).
+- Separate paragraphs with blank lines for mobile scannability.
+- Vary sentence length deliberately — mix punchy short lines with explanatory sentences.
+- NEVER write a single solid block / wall of text.
+- Use natural contractions (it's, you're, they've, can't, don't, isn't, here's, won't).
+- Body length: typically 250–850 characters. Punchy and complete.
+
+CTA & ENGAGEMENT RULES:
+- DO NOT append generic engagement questions like "What's the one thing you wish you could improve about your website?".
+- DO NOT use lazy engagement bait ("What do you think? Drop a comment below!").
+- Posts do NOT require a question to be successful. A strong conclusion often works best without a question.
+- If NorthSoft fits naturally, introduce it as a low-pressure helper at the very end. If it does not fit, leave it out.
+- Never force an aggressive CTA ("Contact NorthSoft today to unlock your potential").
 
 WHAT TO AVOID:
-- Corporate jargon: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "revolutionizing the way", "leverage synergy", "maximize conversion".
-- Promotional filler: "In today's digital world...", "As a business owner, you know..."
-- Abstract claims without specifics.
-- Fabricated statistics or exaggerated claims.
-- Forcing a NorthSoft mention when it doesn't fit naturally.
-- Forcing a CTA when the post works better without one.
-- Mandatory emojis — use only when they add genuine personality.
+- Corporate buzzwords: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "revolutionizing the way", "leverage synergy", "maximize conversion".
+- Generic AI marketing clichés: "In today's digital world...", "As a business owner, you know...", "reach more customers and build a stronger online presence", "seen, remembered and trusted", "take your business to the next level", "ready to take the next step", "we're here to help".
+- Abstract claims without specifics or mechanisms.
+- Fabricating statistics or research. If a number is used, it must come from the source material.
 
-STRUCTURE GUIDANCE:
-A suggested structure will be provided below. Treat it as a starting point, not a rigid template.
-Override it entirely if a more natural structure emerges from the content.
-The goal is a post that feels human — not one that follows a template.
-
-Return ONLY a valid JSON object with this schema:
+Return ONLY a valid JSON object matching this schema:
 {
+  "audienceContext": "Who this is specifically for and what real-world friction/situation they are experiencing right now",
+  "contentAngle": "The specific angle chosen (e.g. Common mistake, Surprising observation, Real-world customer scenario, Before/after contrast, Hidden cost, Practical tip)",
+  "reasoningStructure": "The selected communication structure (e.g. SCENARIO -> PROBLEM -> INSIGHT, OBSERVATION -> IMPLICATION -> ACTION)",
+  "readerValue": "The concrete insight, mechanism, or takeaway added beyond the raw material",
   "title": "Short post headline",
-  "body": "Full post text in natural English",
-  "language": "en",
-  "tone": "conversational",
+  "body": "Full post text formatted with short paragraphs, whitespace, and varied sentence rhythm",
+  "ctaType": "none | soft_invitation | discussion | explore_setup | contact",
+  "callToAction": "Optional natural closing line — omit if the post ends better without one",
   "claims": [{ "text": "Key factual observation", "sourceIds": ["src-1"] }],
   "hashtags": ["#optional"],
-  "imageSearchQuery": "2-8 word visual scene or metaphor (e.g. 'plumber checking phone for bookings')",
-  "callToAction": "Optional closing line or question — omit if the post ends better without one"
+  "imageSearchQuery": "2-8 word visual scene or metaphor (e.g. 'plumber checking phone on job site')"
 }`;
 
 export interface FactualClaim {
@@ -78,6 +98,12 @@ export interface PostDraft {
   callToAction?: string;
   imageSearchQuery?: string;
   generatedAt: string;
+  // Conceptual thinking stages
+  audienceContext?: string;
+  contentAngle?: string;
+  reasoningStructure?: string;
+  readerValue?: string;
+  ctaType?: string;
 }
 
 export interface ResearchSourceItem {
@@ -97,35 +123,6 @@ export interface ResearchTopicItem {
 }
 
 export class WriterService {
-  /**
-   * Selects a structural pattern from the catalog.
-   * Uses recent performance metrics to weight successful patterns higher.
-   */
-  private async selectStructurePattern(perfEngine: PerformanceEngineService): Promise<string> {
-    const patterns = structureCatalog as Array<{ id: string; name: string; description: string; pattern: string }>;
-    const profile = await perfEngine.getActiveProfile(this.db).catch(() => null);
-    const weightMap: Record<string, number> = {};
-    patterns.forEach((p) => (weightMap[p.id] = 1));
-    if (profile && profile.successfulPatterns) {
-      for (const sp of profile.successfulPatterns) {
-        for (const p of patterns) {
-          if (sp.toLowerCase().includes(p.name.toLowerCase())) {
-            weightMap[p.id] = (weightMap[p.id] ?? 1) + 1;
-          }
-        }
-      }
-    }
-    const weightedList: string[] = [];
-    for (const p of patterns) {
-      const w = weightMap[p.id] ?? 1;
-      for (let i = 0; i < w; i++) weightedList.push(p.id);
-    }
-    if (weightedList.length === 0) return '';
-    const chosenId = weightedList[Math.floor(Math.random() * weightedList.length)];
-    const chosen = patterns.find((p) => p.id === chosenId);
-    return chosen ? `Suggested structure: ${chosen.name}\nPattern: ${chosen.pattern}\nDescription: ${chosen.description}` : '';
-  }
-
   private quotaManager: QuotaManager;
 
   constructor(
@@ -144,7 +141,9 @@ export class WriterService {
     sources: ResearchSourceItem[],
     extraContext?: string,
     correctionHint?: string,
-  ): Promise<{ draft?: PostDraft; deferred?: boolean; error?: string }> {
+    attemptNumber = 1,
+    previousPatternId?: string,
+  ): Promise<{ draft?: PostDraft; deferred?: boolean; error?: string; chosenPattern?: StructurePattern }> {
     // 1. Pre-invocation Neuron Budget Check (estimated 1500 tokens/neurons for Writer)
     const capacity = await this.quotaManager.checkCapacity(
       this.db,
@@ -160,9 +159,25 @@ export class WriterService {
       };
     }
 
-    // 2. Select a narrative structure hint
+    // 2. Select a reasoning structure pattern from catalog
     const perfEngine = new PerformanceEngineService();
-    const structureHint = await this.selectStructurePattern(perfEngine).catch(() => '');
+    const { pattern: chosenPattern, guidancePrompt: structureHint } = await selectStructurePattern(
+      perfEngine,
+      this.db,
+      attemptNumber,
+      previousPatternId,
+    ).catch(() => ({
+      pattern: {
+        id: 'scenario_problem_insight',
+        name: 'Scenario → Problem → Insight',
+        description: 'Immersive customer scenario leading to a practical insight',
+        pattern: 'scenario → problem → insight',
+        bestFor: 'General business topics',
+        openingCadence: 'A concrete scenario',
+        transitionGuidance: 'Connect scenario to friction',
+      },
+      guidancePrompt: 'Suggested structure: Scenario → Hidden Problem → Practical Insight',
+    }));
 
     // 3. Retrieve style hints from performance engine
     const styleHintsJson = await perfEngine.extractStyleHints(this.db).catch(() => null);
@@ -240,37 +255,73 @@ export class WriterService {
       }
     }
 
-    // 5. Assemble full system context (style hints + structure hint + extra context)
+    // 5. Assemble full system context (structure hint + style hints + regeneration directive)
     let fullExtraContext = extraContext ?? '';
     if (structureHint) {
       fullExtraContext += `\n\n${structureHint}`;
     }
+
     if (styleHintsJson) {
-      fullExtraContext +=
-        `\n\n<<< STYLE_HINTS >>>\n` +
-        `These hints describe tendencies of high-performing posts — treat as guidance, not prescriptions:\n` +
-        styleHintsJson +
-        `\n<<< END STYLE_HINTS >>>`;
+      try {
+        const hints = JSON.parse(styleHintsJson);
+        const lines: string[] = [];
+        if (hints.hookPatterns && Array.isArray(hints.hookPatterns) && hints.hookPatterns.length > 0) {
+          lines.push(`- High-performing opening hooks: ${hints.hookPatterns.join(', ')}`);
+        }
+        if (hints.audienceRecognition) {
+          lines.push(`- Audience recognition focus: ${hints.audienceRecognition} (addressing concrete daily friction)`);
+        }
+        if (hints.preferredRhythm) {
+          lines.push(`- Rhythm guidance: ${hints.preferredRhythm}`);
+        }
+        if (lines.length > 0) {
+          fullExtraContext +=
+            `\n\n<<< HISTORICAL_PERFORMANCE_TENDENCIES >>>\n` +
+            `Qualitative tendencies from past high-performing posts — treat as guidance, not prescriptions:\n` +
+            lines.join('\n') +
+            `\n<<< END_HISTORICAL_PERFORMANCE_TENDENCIES >>>`;
+        }
+      } catch {
+        fullExtraContext +=
+          `\n\n<<< STYLE_HINTS >>>\n` +
+          `These hints describe tendencies of high-performing posts — treat as guidance, not prescriptions:\n` +
+          styleHintsJson +
+          `\n<<< END STYLE_HINTS >>>`;
+      }
     }
+
     if (correctionHint) {
       fullExtraContext +=
-        `\n\nREGENERATION GUIDANCE — the previous draft was rejected for the following reason:\n${correctionHint}\n` +
-        `Address these specific issues in the new draft. Do not reproduce the same structure.`;
+        `\n\n<<< STRATEGIC_REGENERATION_DIRECTIVE — ATTEMPT #${attemptNumber} >>>\n` +
+        `The previous draft failed quality evaluation for the following specific reasons:\n` +
+        `${correctionHint}\n\n` +
+        `MANDATORY REGENERATION RULES:\n` +
+        `- PIVOT TO A COMPLETELY DIFFERENT ANGLE AND STRUCTURE.\n` +
+        `- DO NOT repeat previous phrasing, hook, or sentence flow.\n` +
+        `- DO NOT write a single block of text — use short paragraphs and whitespace.\n` +
+        `- Ground the post in an immediate real-world business situation (what a customer experiences, what the owner faces).\n` +
+        `- Add genuine information gain rather than paraphrasing the source.\n` +
+        `<<< END_STRATEGIC_REGENERATION_DIRECTIVE >>>`;
     }
 
     const systemPrompt = fullExtraContext ? `${basePrompt}\n\n${fullExtraContext}` : basePrompt;
 
-    // 6. Build research context (user message)
+    // 6. Build research context (user message) with raw background framing
     const researchContext =
+      `<<< RAW_BACKGROUND_MATERIAL >>>\n` +
+      `CRITICAL NOTICE: The text below represents RAW BACKGROUND NOTES only. Do NOT summarize or rewrite it sentence-by-sentence.\n` +
+      `Extract the underlying business dilemma and construct a fresh, original social media post with a concrete scenario and high information gain.\n\n` +
       `Topic Title: ${topic.title}\n` +
-      `Content Angle: ${topic.content_angle || topic.description}\n` +
-      `Hook: ${topic.hook || topic.title}\n` +
       `Category/Pillar: ${topic.category}\n` +
+      `Background Notes / Idea Seed: ${topic.description || topic.title}\n` +
+      (topic.content_angle ? `Suggested Seed Angle: ${topic.content_angle}\n` : '') +
+      (topic.hook ? `Suggested Hook Seed: ${topic.hook}\n` : '') +
       performanceContext +
       `Sources:\n` +
       sources
         .map((s) => `[ID: ${s.id}] Title: ${s.title}\nURL: ${s.url}\nSummary: ${s.summary}`)
-        .join('\n---\n');
+        .join('\n---\n') +
+      `\n<<< END_RAW_BACKGROUND_MATERIAL >>>`;
 
     const { systemPrompt: boundedSystem, userPrompt } = formatResearchPromptPayload(
       systemPrompt,
@@ -284,7 +335,7 @@ export class WriterService {
           { role: 'system', content: boundedSystem },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.3,
+        temperature: 0.7, // Elevated temperature for creative angle discovery, variation, and natural voice
         maxTokens: 1500,
         responseFormat: 'json',
       });
@@ -346,9 +397,15 @@ export class WriterService {
             ? parsed.imageSearchQuery.trim().slice(0, 120)
             : undefined,
         generatedAt: new Date().toISOString(),
+        audienceContext: typeof parsed.audienceContext === 'string' ? parsed.audienceContext : undefined,
+        contentAngle: typeof parsed.contentAngle === 'string' ? parsed.contentAngle : undefined,
+        reasoningStructure:
+          typeof parsed.reasoningStructure === 'string' ? parsed.reasoningStructure : chosenPattern?.name,
+        readerValue: typeof parsed.readerValue === 'string' ? parsed.readerValue : undefined,
+        ctaType: typeof parsed.ctaType === 'string' ? parsed.ctaType : undefined,
       };
 
-      return { draft };
+      return { draft, chosenPattern };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return { error: msg };

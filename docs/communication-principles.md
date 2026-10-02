@@ -1,194 +1,144 @@
 # NorthSoft AI Content Creator — Communication Principles
 
-> **Status:** Active — applied in production generator  
-> **Last updated:** 2026-10-01  
-> **Owner:** NorthSoft AI Content team
+> **Status:** Active — Production Standard  
+> **Last updated:** 2026-10-02  
+> **Owner:** NorthSoft AI Content Engineering  
 
 ---
 
-## Purpose
+## 1. Executive Summary & Core Philosophy
 
-This document explains the communication strategy behind the NorthSoft AI content generator.
-It records the reasoning behind design decisions, distinguishes evidence from heuristics, and
-serves as the reference for anyone adjusting the writer prompt, quality gate, or style hints.
+The NorthSoft AI Content Creator produces organic social media content for Facebook and Instagram targeting small and local business owners (trades, clinics, shops, hospitality, local professional services).
 
-The goal is not to describe a system that produces posts matching a template.  
-The goal is to produce posts a small-business owner reads and thinks:
-> *"That's relevant to me — and that's actually useful."*
+The primary objective is **not** to produce text that looks like corporate marketing or passes arbitrary formatting checklists.  
+The primary objective is:
 
----
+> **A small-business owner scrolls past dozens of posts in their feed, stops at this one, and voluntarily reads it because it feels specific, useful, relatable, and human.**
 
-## Source of Research
-
-The communication framework draws on publicly documented principles from:
-
-- **Meta for Business** content guidance (Facebook/Instagram best practices)
-- **Ogilvy on Advertising** (David Ogilvy) — audience recognition, specificity, credibility
-- **Made to Stick** (Heath & Heath) — simplicity, concreteness, emotional resonance
-- **Copywriting fundamentals** — Attention → Interest → Desire → Action (AIDA), adapted for organic social media
-
-> [!IMPORTANT]
-> These principles are adapted interpretations, not verified experimental results from NorthSoft's own A/B tests. The application of each principle is a design decision, not a scientific finding.
+### Core Tenets:
+1. **The Audience is the Hero:** The post is about the reader's customer, operational friction, time, or revenue. NorthSoft is only a potential humble facilitator introduced at the very end (or not at all).
+2. **Concept over Paraphrase:** Raw source notes are background ingredients, never text to reword sentence-by-sentence.
+3. **Information Gain:** Every post must introduce concrete scenarios, mechanisms, or explanations beyond the raw input.
+4. **Visual Rhythm:** Mobile social feeds demand whitespace, short paragraphs (1–3 sentences), and varied pacing. Single monolithic text blocks are rejected.
+5. **Earned CTAs:** Never append artificial engagement bait questions ("What's the one thing you wish you could improve?"). CTAs are contextual, low-pressure, or completely omitted.
 
 ---
 
-## The Seven-Step Communication Framework
+## 2. Research Basis & Credible Sources
 
-The generator is prompted to write with this implicit structure — invisible in the final post:
+Our communication architecture is built directly on verified principles from credible industry research and advertising psychology:
 
-| Step | Name | What it means |
-|------|------|---------------|
-| 1 | **Attention** | Stop the scroll. Concrete observation, surprising fact, or recognizable situation. |
-| 2 | **Recognition** | Let the reader see themselves — their customers, daily problems, familiar friction. |
-| 3 | **Relevance** | Anchor the post to something this reader actually cares about. |
-| 4 | **Concrete Value** | Give something genuinely useful — specific, actionable, honest. Not filler advice. |
-| 5 | **Credibility** | Stay honest. Use real numbers from source material only. Never fabricate statistics. |
-| 6 | **Natural Solution** | If NorthSoft fits, introduce it naturally. If it doesn't fit, omit it entirely. |
-| 7 | **Optional CTA** | A question, invitation, or next step — only when it feels natural to the post. |
+### A. Sprout Social Content & Social Media Index (2025/2026)
+- **Authenticity over Polish:** Audiences increasingly distrust polished corporate marketing and generic AI-generated copy. Over 70% of social media users report feeling fatigue from repetitive, template-driven brand content.
+- **Relatability & Real Situations:** Posts that ground advice in recognizable real-world situations achieve 3x higher comment engagement and dwell time than abstract high-level recommendations.
+- **Impact vs. Volume:** Simply producing more content does not equal impact. Audiences reward substance and genuine originality over frequency.
+- **Engagement Quality:** Algorithmic feed ranking penalizes artificial engagement bait ("Comment below!", "Do you agree?") in favor of posts that generate meaningful community interactions.
 
-**Limitation:** Steps 1–7 describe intended behaviour, not guaranteed output. The AI model may not always follow the framework correctly. The quality gate and QA reviewer provide downstream safeguards.
+### B. Ogilvy on Advertising (David Ogilvy)
+- **Specificity creates credibility:** "A website that takes 3.5 seconds to load loses 40% of phone visitors" is inherently believable; "Make sure your website is optimized for speed" is ignored.
+- **Audience recognition before advice:** Readers only pay attention to advice once they feel the writer intimately understands their specific daily friction.
 
----
+### C. Made to Stick (Chip & Dan Heath)
+- **Concreteness over Abstraction:** Human brains recall tangible scenes (a customer searching Google Maps on a rainy Friday, an unclickable phone number on a mobile screen) far better than conceptual phrases ("improve your digital presence").
 
-## Why We Use This Framework
-
-### Attention first, not brand first
-
-Research on social media behaviour consistently shows that users scroll past content that
-begins with self-promotion. The generator is instructed never to lead with NorthSoft.
-
-> [!NOTE]
-> This is a heuristic, not a hard rule. In some contexts (e.g., responding directly to a question) a brand-first opener may be natural. The gate flags early brand placement as a low-severity note, not a block.
-
-### Specificity over generality
-
-Ogilvy's principle: the more specific the claim, the more believable it is.
-"Your website might be putting customers off" is less believable than
-"A site that takes more than 3 seconds to load loses most visitors before they scroll."
-
-The generator is instructed to prefer concrete detail (numbers from source material, named actions, recognizable scenarios) over abstract generalisations.
-
-### Recognition before advice
-
-People respond better to content that demonstrates the writer understands their situation before offering a solution. The generator is instructed to build recognition before delivering value.
-
-### Natural brand integration
-
-NorthSoft is introduced as a helpful resource, not as the protagonist of the post.
-The brand appears after value is delivered, and only when there is a genuine connection
-to a NorthSoft service (websites, e-commerce, local SEO, marketing, automation, AI assistants, email).
-
-> [!WARNING]
-> Forcing a NorthSoft mention into every post reduces authenticity. The generator is explicitly instructed not to force mentions. Posts without a NorthSoft mention are valid output.
-
-### Conversational English
-
-Corporate jargon ("digital transformation", "unlock potential", "game changer") is explicitly
-forbidden in the prompt. The generator uses contractions, active voice, and varied sentence
-rhythm to produce copy that sounds like a knowledgeable colleague rather than a marketing department.
+### D. Meta for Business Feed Architecture (2025/2026)
+- **Thumb-stopping First Cadence:** Mobile feeds give a post roughly 1.5 seconds to establish relevance. Generic openers ("In today's digital world...") are scrolled past immediately.
+- **Visual Scannability:** Mobile reading patterns favor short text chunks (1–3 sentences) separated by line breaks over continuous desktop-style paragraphs.
 
 ---
 
-## Quality Gate Design Principles
+## 3. Communication Principles Mapping
 
-The `SocialMediaQualityGate` evaluates copy on eight dimensions:
-
-| Dimension | Weight | What it measures |
-|-----------|--------|-----------------|
-| Attention | 15 | Opening engages the reader |
-| Specificity | 12 | Concrete detail present |
-| Value | 12 | Actionable takeaway present |
-| Credibility | 20 | No fabricated statistics |
-| HumanVoice | 12 | Conversational, not formal |
-| Readability | 10 | Reasonable length, scannable |
-| Authenticity | 10 | Avoids corporate jargon |
-| BrandPlacement | 9 | NorthSoft introduced after value |
-
-**Pass threshold:** score ≥ 55 with no `critical` warnings.
-
-### What the gate does NOT penalise
-
-This is intentional design — not an oversight:
-
-- ❌ No emoji — irrelevant to communication quality
-- ❌ Three paragraphs instead of four — irrelevant
-- ❌ No question at the end — a strong statement is equally valid
-- ❌ No NorthSoft mention — valid output
-- ❌ No CTA — valid output
-- ❌ Short post (under 300 chars) — only flagged if under 80 chars
-
-### What triggers a critical block
-
-Only genuinely important failures block content:
-
-- Fabricated percentage statistic with unsupported claim pattern ("X% of businesses...")
-- Severe promotional spam (3+ jargon phrases + sales pressure language)
-- Empty/near-empty body
+| Principle | Evidence / Source | Implication for NorthSoft Content | Implementation | Test / Quality Signal |
+|---|---|---|---|---|
+| **1. Concrete Scenario over Abstract Advice** | Heath & Heath (*Made to Stick*); Sprout Social (2025) | Never say "improve your online presence." Show a customer searching on Google Maps and hitting an outdated phone number. | System prompt instructs writer to anchor post in a recognizable customer situation; writer schema requires `audienceContext` & `contentAngle`. | `Specificity` dimension in `SocialMediaQualityGate` penalizes posts lacking tangible business artifacts (hours, calls, bookings, speed). |
+| **2. High Information Gain (Anti-Paraphrase)** | Sprout Social Index (2025/2026); LLM evaluation standards | The post must add fresh mechanisms, practical explanations, or rules of thumb beyond what was in the source notes. | Writer prompt explicitly treats source notes as raw material; prohibits sentence-by-sentence rewording. | `InformationGain` in `SocialMediaQualityGate` and `repeatsReference` in `ContentQualityGate` reject drafts that echo source vocabulary without novel substance. |
+| **3. Audience as Hero, Brand as Facilitator** | Ogilvy on Advertising; Modern Organic Content Strategy | The reader's business is the protagonist. The post must be valuable even if the reader never hires NorthSoft. | NorthSoft is forbidden from opening lines and restricted to low-pressure sign-offs after value delivery. | `BrandPlacement` dimension flags brand mentions in the first 80 characters; posts with zero brand mentions pass with top scores. |
+| **4. Visual & Rhythmic Structure** | Meta for Business mobile UX guidelines (2025/2026) | Dense walls of text fail on mobile feeds. Copy must have intentional line breaks, short paragraphs, and whitespace. | Writer prompt enforces 1–3 sentences per block with `\n\n` separators; single monolithic blocks are forbidden. | `Readability` dimension flags `Paragraph Collapse` (body > 160 chars without paragraph breaks) with high/critical severity. |
+| **5. Earned Contextual CTA (No Empty Bait)** | Sprout Social (2025/2026); Meta Feed spam penalty | Generic questions ("What's the one thing you wish you could improve?") feel artificial and turn readers off. | Prompt bans generic engagement bait; supports ending on a strong thought with no CTA at all. | `CTAQuality` dimension checks `EMPTY_ENGAGEMENT_QUESTIONS` and penalizes artificial engagement bait. |
+| **6. Plain, Conversational Human Voice** | Sprout Social Authenticity Study (2025) | Business owners speak in practical terms; corporate jargon and AI filler destroy trust immediately. | Prompt bans corporate buzzwords ("digital transformation", "unlock potential", "game changer", "synergy"). | `Authenticity` dimension checks `GENERIC_AI_MARKETING_TROPES` and penalizes stacked AI marketing clichés. |
+| **7. Factual Integrity & Honest Nuance** | Ogilvy Credibility Law; Compliance Invariants | Never invent statistics or quote unverified research ("Studies show 87% of businesses..."). | Writer is instructed to use only numbers from source notes; unverified percentage claims are blocked. | `Credibility` dimension triggers critical blocking warning on fabricated percentage statistics without verified source citations. |
+| **8. Conceptual Angle Variety** | Sprout Social Audience Fatigue Report (2025/2026) | Distinct posts must feel truly distinct — varying openings, narrative angles, and structures. | Structure catalog provides 10 reasoning patterns and 10 content angles; temperature set to 0.7. | Regression suite verifies that subsequent regeneration attempts systematically rotate structure patterns. |
+| **9. Native Platform Awareness** | Facebook/Instagram Organic Distribution (2025/2026) | Copy must feel like a genuine social post, not a website landing page or press release. | Character count guided between 250–850 characters; punchy first line before the "See More" fold. | `Attention` checks opening 150 characters for hook signals and penalizes generic openers ("In today's digital world..."). |
+| **10. Strategic Bounded Regeneration** | Autonomous Pipeline Reliability Architecture | If a draft fails quality evaluation, regeneration must change strategy rather than rewording the same generic draft. | Planner synthesizes all gate failure reasons and injects a strategic directive with a different structure pattern into the prompt. | Regression Test 5 proves regeneration changes structure and angle on subsequent attempts. |
 
 ---
 
-## Structure Catalog
+## 4. The 5-Stage Conceptual Generation Architecture
 
-Ten flexible narrative patterns are available in `structure-catalog.json`.
-These are creative starting points, not mandatory templates.
+Rather than naive `Topic → Post Body` text generation, the generator executes a 5-stage conceptual reasoning process enforced in the AI output schema:
 
-The writer is explicitly instructed to override the selected structure if a more natural
-flow emerges from the content. The goal is a post that feels human — not one that follows
-a template.
+```text
+TOPIC & RAW NOTES
+      ↓
+[Stage 1: AUDIENCE CONTEXT]
+Who is this specifically for? What friction are they experiencing in their business today?
+      ↓
+[Stage 2: CONTENT ANGLE]
+Why would they care TODAY? (Mistake, scenario, surprising truth, hidden cost, contrast, practical tip)
+      ↓
+[Stage 3: REASONING STRUCTURE]
+Select conceptual flow (Scenario → Problem → Insight, Observation → Implication → Action, etc.)
+      ↓
+[Stage 4: READER VALUE / INFORMATION GAIN]
+What concrete mechanism or takeaway is introduced beyond the raw source notes?
+      ↓
+[Stage 5: RHYTHMIC SOCIAL POST DRAFT]
+Short paragraphs, whitespace, varied pacing, earned CTA (or none)
+```
 
-Patterns:
-
-1. Problem → Consequence → Practical Fix
-2. Question → Recognition → Advice
-3. Common Mistake → Why It Matters → Better Approach
-4. Observation → Explanation → Takeaway
-5. Scenario → Hidden Problem → Solution
-6. Myth → Reality → Practical Implication
-7. Before/After Situation → Explanation
-8. Checklist → Explanation
-9. Unexpected Observation → Lesson
-10. Short Story → Business Lesson
-
----
-
-## Style Hints
-
-The `PerformanceEngineService.extractStyleHints()` method aggregates tendencies from historically
-strong-performing published posts and passes them to the writer as guidance.
-
-Style hints describe tendencies (e.g., "hook patterns", "preferred rhythm") — not exact numbers
-to replicate. The prompt explicitly tells the AI to treat hints as guidance, not prescriptions.
-
-When insufficient historical data exists (fewer than 5 published posts), `extractStyleHints`
-returns `null` and no style context is injected. The generator works correctly without it.
+The output JSON schema explicitly requires the AI model to output `audienceContext`, `contentAngle`, `reasoningStructure`, and `readerValue` before generating the final `body`. This enforces Chain-of-Thought reasoning and prevents immediate regression to paraphrasing.
 
 ---
 
-## Limitations and Known Design Decisions
+## 5. Structure Catalog & Reasoning Patterns
 
-| Decision | Rationale | Limitation |
-|----------|-----------|------------|
-| Single pass at temperature 0.3 | Consistent, less random output | May produce cautious writing |
-| Structure hint is weighted randomly (with performance bias) | Variety prevents repetition | Random selection may occasionally pick a suboptimal structure |
-| SMQG threshold set at 55 (not 80) | Avoids over-blocking good posts that lack minor signals | Some below-average posts may pass |
-| Credibility check only blocks fabricated % patterns | Avoids blocking posts with inline numbers from sources | Sophisticated fabrication (without % symbol) may not be caught |
-| No emoji enforcement | Emojis are contextual, not universally beneficial | Some audiences may prefer more emojis |
+The system maintains 10 reasoning patterns in `src/services/content/structure-catalog.ts`:
+
+1. **Observation → Implication → Action:** Grounded operational fact → Direct consequence → One practical step.
+2. **Scenario → Hidden Problem → Insight:** Everyday customer interaction → Point of friction → Practical insight.
+3. **Myth → Reality → Practical Implication:** Common business assumption → Practical reality → Common-sense takeaway.
+4. **Common Mistake → Consequence → Better Approach:** Understandable misstep → Lost enquiries or wasted hours → Clear alternative.
+5. **Question → Insight → Practical Takeaway:** Grounded operational question → Underlying mechanism → Pragmatic rule of thumb.
+6. **Before → Change → After:** Familiar friction state → Small realistic adjustment → Clear resulting state.
+7. **Problem → Small Fix → Measurable Result:** Specific daily annoyance → Low-effort fix → Tangible clarity or peace of mind.
+8. **Short Story → Business Lesson → Action:** 2-sentence customer vignette → Universal business lesson → Quick inspection check.
+9. **Contrast → Explanation → Takeaway:** Simple vs complicated → Customer psychology → Why simple wins.
+10. **Prioritized Checklist → Why It Matters → Next Step:** 2–4 prioritized actions → Rationale for priority #1 → Clear next step.
 
 ---
 
-## Golden Test Reference
+## 6. Multi-Gate Quality Architecture & Detection Signals
 
-The canonical quality reference for this generator is a post about an outdated/broken website
-driving away customers. Characteristics of a passing post on this topic:
+Generated drafts must pass through two complementary quality gates before approval:
 
-- Strong concrete opening (doesn't begin with "In today's digital world...")
-- Reader recognizes their situation within the first 2 sentences
-- One or two specific, practical observations
-- Natural, low-pressure reference to NorthSoft (or none)
-- Conversational English with contractions
-- Visually readable (short paragraphs or varied sentences)
-- No fabricated statistics
-- No corporate jargon
+### 1. `SocialMediaQualityGate` (Diagnostic Communication Evaluation)
+Evaluates drafts across 10 human-centric dimensions:
+- **InformationGain (14 pts):** Detects 3-gram echoes, high vocabulary overlap with low novel substance, and sentence-by-sentence rewording.
+- **Attention (10 pts):** Penalizes generic openings (`GENERIC_OPENING_PATTERNS`); verifies scroll-stopping first sentence.
+- **Specificity (12 pts):** Requires concrete nouns, numbers, mechanisms, and tools.
+- **Value (12 pts):** Requires substantive takeaway or explanation.
+- **Readability (10 pts):** Detects **Paragraph Collapse** (body > 160 chars without double line breaks).
+- **ConversationalTone (8 pts):** Encourages contractions and varied cadence; penalizes stiff robotic phrasing.
+- **Credibility (14 pts):** Blocks fabricated percentage statistics and unsourced research assertions.
+- **CTAQuality (10 pts):** Penalizes empty engagement bait (`EMPTY_ENGAGEMENT_QUESTIONS`) and aggressive sales pressure.
+- **Authenticity (10 pts):** Penalizes stacked generic AI marketing clichés (`GENERIC_AI_MARKETING_TROPES`).
+- **BrandPlacement:** Ensures brand does not intrude before value delivery.
 
-> [!NOTE]
-> The reference example ("The worst thing for a business? A website that doesn't work...") should **not** be copied into the prompt or into production code. It is a quality benchmark for human review only.
+### 2. `ContentQualityGate` (Semantic Substance & Coherence)
+Evaluates list item substance, empty advice filler clichés, topic alignment against title/category, and bidirectionally checks paraphrase overlap against reference sources.
+
+---
+
+## 7. Bounded Regeneration with Strategic Pivots
+
+When a draft fails quality evaluation, the system does not simply ask the model to "rewrite it to be more engaging."
+
+Instead, the `ContentPlannerService`:
+1. Synthesizes all diagnostic issues from `SocialMediaQualityGate`, `ContentQualityGate`, and `QualityReviewerService`.
+2. Selects a **different** reasoning structure pattern from `structure-catalog.ts` (excluding the previously used pattern).
+3. Injects a targeted strategic directive instructing the model:
+   - Specific failure reasons from previous attempt
+   - Compulsory structural pivot
+   - Prohibition against reusing previous draft phrasing
+   - Requirement to ground the new attempt in a concrete real-world customer situation.

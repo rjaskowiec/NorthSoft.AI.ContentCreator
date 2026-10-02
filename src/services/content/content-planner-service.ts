@@ -176,6 +176,7 @@ export class ContentPlannerService {
 
     // 4. Generation & Bounded Regeneration Loop (Max 3 attempts = 2 retries)
     let correctionHint: string | undefined;
+    let lastPatternId: string | undefined;
     for (let attempt = 1; attempt <= 3; attempt++) {
       const versionNumber = baseVersion + attempt;
       currentVersion = versionNumber;
@@ -206,7 +207,17 @@ export class ContentPlannerService {
       }
 
       // 4a. Call Writer AI BEFORE inserting post record in DB
-      const genRes = await writerService.generateDraft(topicRow, sources, undefined, correctionHint);
+      const genRes = await writerService.generateDraft(
+        topicRow,
+        sources,
+        undefined,
+        correctionHint,
+        attempt,
+        lastPatternId,
+      );
+      if (genRes.chosenPattern) {
+        lastPatternId = genRes.chosenPattern.id;
+      }
       if (genRes.deferred) {
         runErrorMessage = `Writer deferred: ${genRes.error}`;
         break;
@@ -236,9 +247,21 @@ export class ContentPlannerService {
       }
 
       lastDraft = genRes.draft;
-      // Evaluate Social Media Quality Gate
+
+      // Evaluate Social Media Quality Gate with full topic & reference context
+      const referenceTexts = [
+        topicRow.description,
+        topicRow.content_angle,
+        ...sources.map((s) => s.summary),
+      ].filter((text): text is string => Boolean(text));
+
       const smqg = new SocialMediaQualityGate();
-      const smqgResult = smqg.evaluate(lastDraft);
+      const smqgResult = smqg.evaluate(lastDraft, {
+        topicTitle: topicRow.title,
+        referenceTexts,
+        angle: lastDraft.contentAngle,
+        structure: lastDraft.reasoningStructure,
+      });
       smqgPass = smqgResult.pass;
       if (!smqgPass) {
         await this.auditLogger.log({
@@ -248,19 +271,17 @@ export class ContentPlannerService {
           actor: 'system',
           details: { score: smqgResult.score, warnings: smqgResult.warnings, attempt },
         });
-        // Build corrective feedback for next regeneration attempt
-        const criticalWarnings = smqgResult.warnings.filter((w) => w.severity === 'critical' || w.severity === 'high');
-        if (criticalWarnings.length > 0) {
-          correctionHint = criticalWarnings.map((w) => `[${w.dimension}] ${w.reason}`).join('\n');
-        }
-      } else {
-        correctionHint = undefined; // Clear hint if this attempt passed
       }
       const metadataJson = JSON.stringify({
         claims: lastDraft.claims,
         hashtags: lastDraft.hashtags,
         cta: lastDraft.callToAction,
         imageSearchQuery: lastDraft.imageSearchQuery,
+        audienceContext: lastDraft.audienceContext,
+        contentAngle: lastDraft.contentAngle,
+        reasoningStructure: lastDraft.reasoningStructure,
+        readerValue: lastDraft.readerValue,
+        ctaType: lastDraft.ctaType,
       });
 
       // 4b. Image Selection via Curated Image Library (Only APPROVED images may be used)
@@ -575,6 +596,27 @@ export class ContentPlannerService {
       if (finalDecision === 'BLOCKED') {
         break;
       }
+
+      // Build synthesized multi-gate corrective feedback for next regeneration attempt
+      const failureIssues: string[] = [];
+      if (!smqgPass) {
+        failureIssues.push(...smqgResult.warnings.map((w) => `[SMQG-${w.dimension}] ${w.reason}`));
+      }
+      if (!contentQualityResult.passed) {
+        failureIssues.push(...contentQualityResult.reasons.map((r) => `[ContentSubstance] ${r}`));
+      }
+      if (qaReview.verdict !== 'PASS') {
+        failureIssues.push(...qaReview.factualIssues.map((f) => `[FactCheck] ${f}`));
+        failureIssues.push(...qaReview.requiredChanges.map((c) => `[RequiredChange] ${c}`));
+      }
+      if (!staticResult.valid) {
+        failureIssues.push(...staticResult.errors.map((e) => `[Validation] ${e}`));
+      }
+
+      correctionHint =
+        failureIssues.length > 0
+          ? failureIssues.join('\n')
+          : 'Previous draft failed quality gate. Pivot to a concrete customer scenario and provide high information gain.';
     }
 
     // 5. Handle Case Where Generation Failed — Clean up any created D1 rows so NO incomplete post remains

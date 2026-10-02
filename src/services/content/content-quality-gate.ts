@@ -2,10 +2,10 @@
  * NorthSoft.AI.ContentCreator — Content Quality Gate Service
  *
  * Evaluates semantic quality, substantive value, list item substance, empty advice filler detection,
- * topic alignment, and CTA quality BEFORE post persistence to D1 or publication.
+ * topic alignment, paragraph structure, and CTA quality BEFORE post persistence to D1 or publication.
  *
  * Prevents "AI Content Fillers" (empty advice, tautological 3-step lists like "Buy/Prepare/Eat",
- * generic clichés, topic mismatch, or slapped-on auto-suffix CTAs).
+ * generic clichés, topic mismatch, paraphrase echoes, or slapped-on auto-suffix CTAs).
  */
 
 import type { PostDraft } from './writer-service';
@@ -43,13 +43,24 @@ export const GENERIC_FILLER_CLICHES = [
   /\bbuy\s+[a-z]+\b/i,
   /\bprepare\s+[a-z]+\b/i,
   /\beat\s+[a-z]+\b/i,
+  /\btake\s+(?:your\s+)?business\s+to\s+the\s+next\s+level\b/i,
+  /\bunlock\s+(?:your|the)\s+potential\b/i,
+  /\bin\s+today's\s+(?:fast-paced|digital)\s+world\b/i,
+  /\bbuild\s+a\s+stronger\s+online\s+presence\b/i,
+  /\bstand\s+out\s+from\s+the\s+competition\b/i,
+  /\breach\s+more\s+customers\b/i,
+  /\bgrow\s+your\s+business\b/i,
+  /\bready\s+to\s+take\s+the\s+next\s+step\b/i,
+  /\bwe'?re\s+here\s+to\s+help\b/i,
+  /\bseen,\s*remembered,?\s*(?:and|&)\s*trusted\b/i,
 ];
 
-// Generic slapped-on uncontextualized CTAs
+// Generic slapped-on uncontextualized CTAs and empty bait
 export const GENERIC_SLAPPED_ON_CTAS = [
   /^(?:what\s+do\s+you\s+think\??\s*)?follow\s+(?:us\s+)?for\s+more(?:\s+tips)?!?$/i,
   /^(?:what\s+do\s+you\s+think\??\s*)?like\s+and\s+subscribe(?:\s+for\s+more)?!?$/i,
   /^follow\s+for\s+more[!.]*$/i,
+  /\bwhat'?s\s+(?:the\s+)?(?:one|1)\s+thing\s+you\s+(?:wish\s+you\s+could|would)\s+improve\b/i,
 ];
 
 export class ContentQualityGate {
@@ -144,30 +155,46 @@ export class ContentQualityGate {
       }
     }
 
-    // A topic/source teaser is context for the writer, not a finished post. Reject
-    // drafts that mostly repeat a long reference without adding meaningful detail.
-    const bodyWords = new Set(body.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+    // 4. Paraphrase / Reference Echo Detection
+    const stopWords = new Set([
+      'a', 'an', 'the', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by',
+      'from', 'it', 'this', 'that', 'these', 'those', 'you', 'your', 'we', 'our', 'they', 'their', 'i', 'me', 'my', 'can',
+      'will', 'be', 'have', 'has', 'do', 'does', 'did', 'so', 'if', 'as', 'what', 'which', 'who', 'how', 'when', 'where',
+    ]);
+    const bodyWords = (body.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => !stopWords.has(w));
+    const bodyWordSet = new Set(bodyWords);
     const bodyLength = body.replace(/\s+/g, ' ').trim().length;
+
     const repeatsReference = [topicTitle, ...referenceTexts].some((reference) => {
       const normalizedReference = (reference || '').replace(/\s+/g, ' ').trim();
-      const referenceWords = new Set(
-        normalizedReference.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [],
-      );
+      const referenceWords = (normalizedReference.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => !stopWords.has(w));
+      const referenceWordSet = new Set(referenceWords);
 
-      if (normalizedReference.length < 80 || referenceWords.size < 10 || bodyWords.size < 10) {
+      if (normalizedReference.length < 50 || referenceWordSet.size < 6 || bodyWordSet.size < 6) {
         return false;
       }
 
       let sharedWords = 0;
-      for (const word of referenceWords) {
-        if (bodyWords.has(word)) sharedWords++;
+      for (const word of referenceWordSet) {
+        if (bodyWordSet.has(word)) sharedWords++;
       }
 
-      const referenceCoverage = sharedWords / referenceWords.size;
-      const bodyCoverage = sharedWords / bodyWords.size;
+      const referenceCoverage = sharedWords / referenceWordSet.size;
+      const bodyCoverage = sharedWords / bodyWordSet.size;
       const lengthRatio = bodyLength / normalizedReference.length;
 
-      return referenceCoverage >= 0.85 && bodyCoverage >= 0.85 && lengthRatio >= 0.65 && lengthRatio <= 1.5;
+      // 1. Literal repetition
+      if (referenceCoverage >= 0.85 && bodyCoverage >= 0.85 && lengthRatio >= 0.65 && lengthRatio <= 1.5) {
+        return true;
+      }
+
+      // 2. Paraphrase with appended engagement question (substantive core is 100% recycled from reference)
+      const novelSubstantiveWords = bodyWords.filter((w) => !referenceWordSet.has(w));
+      if (bodyCoverage >= 0.65 && novelSubstantiveWords.length < 8 && clichéMatches >= 1) {
+        return true;
+      }
+
+      return false;
     });
 
     if (repeatsReference) {
@@ -175,17 +202,17 @@ export class ContentQualityGate {
       reasons.push('Post mostly repeats the topic or source summary without adding useful information.');
     }
 
-    // 4. CTA Quality Check
+    // 5. CTA Quality Check
     const lastLine = lines.length > 0 ? lines[lines.length - 1]! : '';
     for (const ctaPattern of GENERIC_SLAPPED_ON_CTAS) {
-      if (ctaPattern.test(lastLine)) {
+      if (ctaPattern.test(lastLine) || ctaPattern.test(body)) {
         ctaQuality = false;
-        reasons.push('CTA quality failure: post ends with a generic, uncontextualized CTA suffix.');
+        reasons.push('CTA quality failure: post ends with a generic, uncontextualized CTA suffix or empty engagement bait.');
         break;
       }
     }
 
-    // 5. Substantive Value Check
+    // 6. Substantive Value Check
     if (!listItemSubstance || !noEmptyAdvice) {
       substantiveValue = false;
     }
@@ -196,8 +223,8 @@ export class ContentQualityGate {
     if (!noEmptyAdvice) score -= 30;
     if (!logicalCoherence) score -= 25;
     if (!topicAlignment) score -= 25;
-    if (!ctaQuality) score -= 15;
-    if (!substantiveValue) score -= 20;
+    if (!ctaQuality) score -= 20;
+    if (!substantiveValue) score -= 25;
 
     score = Math.max(0, Math.min(100, score));
 
