@@ -10,7 +10,7 @@ import { parseAiJsonResponse } from '../../core/json-parser';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
 import { QuotaManager } from '../ai/quota-manager';
 import { PerformanceEngineService } from '../analytics/performance-engine';
-import structureCatalog from './structure-catalog.json' assert { type: 'json' };
+import structureCatalog from './structure-catalog.json';
 
 const basePrompt = `You are a skilled human copywriter writing social media posts (Facebook/Instagram) for NorthSoft AI — a company that helps small local businesses with websites, e-commerce, local SEO, online marketing, workflow automation, AI assistants, and email systems.
 

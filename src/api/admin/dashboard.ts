@@ -203,7 +203,7 @@ dashboardRouter.get('/dashboard', async (c) => {
 
   // 6. Recent Human-Readable Activity
   const auditLogger = new D1AuditLogger(db);
-  let recentActivity: unknown[] = [];
+  let recentActivity: unknown[];
   try {
     recentActivity = await auditLogger.query({ limit: 5 });
   } catch {

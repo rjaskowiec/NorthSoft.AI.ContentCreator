@@ -4,6 +4,7 @@ import type { IMetaPublisher, MetaPublisherConfigStatus } from '../../publishing
 import type { IMailGatewayClient } from '../mail/mail-service.js';
 import { NotificationService } from '../notifications/notification-service.js';
 import { PerformanceEngineService } from '../analytics/performance-engine.js';
+import { getPublicImageUrl, recalculateCuratedImageUsage } from '../content/image-library-service.js';
 
 export async function validateImageUrl(
   url: string,
@@ -483,9 +484,11 @@ export class PublicationService {
       }
     }
 
+    const canonicalImageUrl = postRow.image_url ? getPublicImageUrl(postRow.image_url) : undefined;
+
     // 6.6. MEDIA ACCESSIBILITY PRE-VALIDATION: Confirm image URL returns HTTP 200 before calling Meta API
-    if (postRow.image_url) {
-      const mediaVal = await validateImageUrl(postRow.image_url).catch(() => ({
+    if (canonicalImageUrl) {
+      const mediaVal = await validateImageUrl(canonicalImageUrl).catch(() => ({
         valid: true,
         error: undefined,
         httpStatus: undefined,
@@ -498,7 +501,7 @@ export class PublicationService {
           actor,
           details: {
             reason: 'IMAGE_NOT_ACCESSIBLE',
-            imageUrl: postRow.image_url,
+            imageUrl: canonicalImageUrl,
             httpStatus: mediaVal.httpStatus,
             error: mediaVal.error,
           },
@@ -507,7 +510,7 @@ export class PublicationService {
         return {
           success: false,
           code: 'IMAGE_NOT_ACCESSIBLE',
-          message: `Publication blocked: Image URL '${postRow.image_url}' is not accessible or invalid (${mediaVal.error}).`,
+          message: `Publication blocked: Image URL '${canonicalImageUrl}' is not accessible or invalid (${mediaVal.error}).`,
           retryable: false,
         };
       }
@@ -518,7 +521,7 @@ export class PublicationService {
       postVersionId: postRow.version_id,
       message: postRow.body,
       idempotencyKey,
-      imageUrl: postRow.image_url,
+      imageUrl: canonicalImageUrl,
     });
 
     // 8. HANDLE PUBLISH RESULT
@@ -1696,7 +1699,7 @@ export class PublicationService {
       };
     }
 
-    const newImageUrl = (newImg.source_url || newImg.r2_key || '').trim();
+    const newImageUrl = getPublicImageUrl(newImg);
     if (!newImageUrl) {
       return { success: false, error: `Selected image has no valid source URL.`, code: 'INVALID_IMAGE_URL' };
     }
@@ -1793,92 +1796,74 @@ export class PublicationService {
       }
 
       // Meta API Succeeded! Now commit local D1 changes atomically:
-      if (currentPi) {
-        await this.db
-          .prepare(
-            `UPDATE post_images
-             SET curated_image_id = ?, url = ?, selection_source = 'MANUAL', verified_at = ?
-             WHERE post_id = ? AND version_number = ?`,
-          )
-          .bind(newCuratedImageId, newImageUrl, nowIso, postId, postRow.current_version)
-          .run();
-      } else {
-        await this.db
-          .prepare(
-            `INSERT INTO post_images (
-              id, post_id, version_number, url, alt_text, source_url, source_id,
-              curated_image_id, selection_source, created_at, verified_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`,
-          )
-          .bind(
-            crypto.randomUUID(),
-            postId,
-            postRow.current_version,
-            newImageUrl,
-            newImg.title || 'Post Image',
-            newImg.original_page_url || newImageUrl,
-            newImg.id,
-            newCuratedImageId,
-            nowIso,
-            nowIso,
-          )
-          .run();
-      }
-
-      // Update publication pushed_image_url and fb_image_url
-      await this.db
-        .prepare(
-          `UPDATE publications
-           SET pushed_image_url = ?, fb_image_url = ?, sync_status = 'SYNCED', updated_at = ?
-           WHERE id = ?`,
-        )
-        .bind(newImageUrl, newImageUrl, nowIso, pubRecord.id)
-        .run();
-
-      // Image Library: mark new image as published
-      await this.db
-        .prepare(
-          `UPDATE curated_images
-           SET usage_count = usage_count + 1,
-               last_used_at = ?,
-               used_in_post_id = ?,
-               reserved_post_id = NULL,
-               updated_at = ?
-           WHERE id = ?`,
-        )
-        .bind(nowIso, postId, nowIso, newCuratedImageId)
-        .run();
-
-      // Image Library: release old image if no longer used by other published posts
-      if (oldCuratedImageId) {
-        const otherPubsRes = await this.db
-          .prepare(
-            `SELECT COUNT(*) as cnt
-             FROM publications pub
-             JOIN post_images pi ON pi.post_id = pub.post_id
-             WHERE pi.curated_image_id = ? AND pub.status = 'published' AND pub.post_id != ?`,
-          )
-          .bind(oldCuratedImageId, postId)
-          .first<{ cnt: number }>();
-
-        const otherCount = otherPubsRes?.cnt || 0;
-        if (otherCount === 0) {
+      try {
+        if (currentPi) {
           await this.db
             .prepare(
-              `UPDATE curated_images
-               SET usage_count = MAX(0, usage_count - 1), used_in_post_id = NULL, updated_at = ?
-               WHERE id = ?`,
+              `UPDATE post_images
+               SET curated_image_id = ?, url = ?, selection_source = 'MANUAL', verified_at = ?
+               WHERE post_id = ? AND version_number = ?`,
             )
-            .bind(nowIso, oldCuratedImageId)
+            .bind(newCuratedImageId, newImageUrl, nowIso, postId, postRow.current_version)
             .run();
         } else {
           await this.db
             .prepare(
-              `UPDATE curated_images SET usage_count = MAX(0, usage_count - 1), updated_at = ? WHERE id = ?`,
+              `INSERT INTO post_images (
+                id, post_id, version_number, url, alt_text, source_url, source_id,
+                curated_image_id, selection_source, created_at, verified_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`,
             )
-            .bind(nowIso, oldCuratedImageId)
+            .bind(
+              crypto.randomUUID(),
+              postId,
+              postRow.current_version,
+              newImageUrl,
+              newImg.title || 'Post Image',
+              newImg.original_page_url || newImageUrl,
+              newImg.id,
+              newCuratedImageId,
+              nowIso,
+              nowIso,
+            )
             .run();
         }
+
+        // Update publication pushed_image_url and fb_image_url
+        await this.db
+          .prepare(
+            `UPDATE publications
+             SET pushed_image_url = ?, fb_image_url = ?, sync_status = 'SYNCED', updated_at = ?
+             WHERE id = ?`,
+          )
+          .bind(newImageUrl, newImageUrl, nowIso, pubRecord.id)
+          .run();
+
+        // Image Library: Recalculate usage counts directly from database relationships
+        await recalculateCuratedImageUsage(this.db, newCuratedImageId);
+        if (oldCuratedImageId) {
+          await recalculateCuratedImageUsage(this.db, oldCuratedImageId);
+        }
+      } catch (dbErr: unknown) {
+        const dbMsg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_IMAGE_CHANGE_FAILED',
+          entityType: 'post',
+          entityId: postId,
+          actor,
+          details: {
+            reason: 'LOCAL_DB_SYNC_FAILED',
+            facebookPostId: fbPostId,
+            error: dbMsg,
+            newImageId: newCuratedImageId,
+            newImageUrl,
+          },
+        });
+        return {
+          success: false,
+          error: `Facebook image updated, but local database sync failed: ${dbMsg}`,
+          code: 'DATABASE_SYNC_FAILED',
+        };
       }
 
       await this.auditLogger?.log({

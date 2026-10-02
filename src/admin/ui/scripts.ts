@@ -5681,6 +5681,7 @@ export function getAdminScripts(): string {
     window.updateImageSelectionState = updateImageSelectionState;
     window.executeImageBulkAction = executeImageBulkAction;
     window.openDraftImageSelectorModal = openDraftImageSelectorModal;
+    window.openDraftImageSelectorModalForPublication = openDraftImageSelectorModalForPublication;
     window.filterDraftImageSelector = filterDraftImageSelector;
     window.selectDraftIllustration = selectDraftIllustration;
     window.confirmAssignDraftIllustration = confirmAssignDraftIllustration;

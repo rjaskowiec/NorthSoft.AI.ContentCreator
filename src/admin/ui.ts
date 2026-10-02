@@ -1224,13 +1224,14 @@ export function renderAdminHtml(): string {
         <div id="fb-post-detail-image-wrap" style="display:none; margin-bottom:1rem;">
           <img id="fb-post-detail-image" alt="Facebook post image" style="display:block; width:100%; max-height:420px; object-fit:contain; border-radius:8px; background:#18191a;" />
         </div>
-        <div class="form-group">
-          <label class="form-label" for="fb-post-image-url">Post image</label>
-          <input type="url" id="fb-post-image-url" class="form-input" placeholder="https://… image URL" />
-          <input type="file" id="fb-post-image-file" class="form-input" accept="image/jpeg,image/png,image/webp" style="margin-top:0.5rem;" />
-          <label style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;"><input type="checkbox" id="fb-post-remove-image" /> Remove image</label>
-          <button type="button" class="btn-secondary" style="margin-top:0.5rem;" onclick="saveFacebookPostImage()">Save image</button>
-          <button type="button" class="btn-primary" style="margin-top:0.5rem; margin-left:0.5rem;" onclick="openDraftImageSelectorModalForPublication()">Choose from Image Library</button>
+        <div class="form-group" style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 1rem;">
+          <label class="form-label" style="font-weight:600;">Attached Post Image</label>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
+            Images must be selected from the approved Image Library to maintain full referential consistency across Facebook and local history.
+          </p>
+          <button type="button" class="btn-primary" onclick="openDraftImageSelectorModalForPublication()">
+            🖼️ Choose Image from Library
+          </button>
         </div>
         <a id="fb-post-detail-link" href="#" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook →</a>
         <div id="fb-post-detail-error" class="alert-error" style="display:none; margin-top:1rem;"></div>

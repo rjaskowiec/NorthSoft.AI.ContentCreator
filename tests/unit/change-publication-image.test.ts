@@ -12,10 +12,9 @@ class MockD1Database {
   public store: Map<string, any> = new Map();
 
   prepare(sql: string) {
-    const self = this;
     return {
-      bind(...args: any[]) {
-        self.prepareCalls.push({ sql, bindings: args });
+      bind: (...args: any[]) => {
+        this.prepareCalls.push({ sql, bindings: args });
         return {
           first: async <T>() => {
             if (sql.includes('FROM posts WHERE id =')) {
@@ -39,7 +38,7 @@ class MockD1Database {
             }
             if (sql.includes('FROM post_images WHERE post_id =')) {
               const postId = args[0];
-              const curImgId = self.store.get(`post_image_${postId}`) || 'img-A';
+              const curImgId = this.store.get(`post_image_${postId}`) || 'img-A';
               return { curated_image_id: curImgId, url: `https://example.com/${curImgId}.jpg` } as unknown as T;
             }
             if (sql.includes('FROM publications') || sql.includes('publications pub')) {

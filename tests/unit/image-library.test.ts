@@ -9,9 +9,22 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
       bind: (...args: any[]) => {
         return {
           first: vi.fn(async () => {
+            if (sql.includes('SELECT COUNT(DISTINCT') || sql.includes('FROM publications')) {
+              const imgId = args[0];
+              const target = store.get(imgId);
+              if (target && (target.usage_count > 0 || target.used_in_post_id || target.reserved_post_id || target.id === 'img-10')) {
+                return { pub_count: 1, max_published_at: target.last_used_at || new Date().toISOString(), latest_post_id: target.used_in_post_id || target.reserved_post_id || 'draft-101' };
+              }
+              return { pub_count: 0, max_published_at: null, latest_post_id: null };
+            }
             if (sql.includes('SELECT * FROM curated_images WHERE id =')) {
               const id = args[0];
               return store.get(id) || null;
+            }
+            if (sql.includes('SELECT reserved_post_id FROM curated_images WHERE id =')) {
+              const id = args[0];
+              const target = store.get(id);
+              return target ? { reserved_post_id: target.reserved_post_id } : null;
             }
             if (sql.includes('SELECT id FROM curated_images WHERE source_url =')) {
               const url = args[0];
@@ -109,14 +122,14 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
               const id = args[args.length - 1] as string;
               const existing = store.get(id);
 
-              if (sql.includes('usage_count = usage_count + 1')) {
-                const [nowIso, postId, updatedAt, imgId] = args;
+              if (sql.includes('usage_count = ?')) {
+                const [pubCount, lastUsedAt, usedInPostId, reservedPostId, updatedAt, imgId] = args;
                 const target = store.get(imgId);
                 if (target) {
-                  target.usage_count += 1;
-                  target.last_used_at = nowIso;
-                  target.used_in_post_id = postId;
-                  target.reserved_post_id = null;
+                  target.usage_count = pubCount;
+                  target.last_used_at = lastUsedAt;
+                  target.used_in_post_id = usedInPostId;
+                  target.reserved_post_id = reservedPostId;
                   target.updated_at = updatedAt;
                 }
               } else if (sql.includes('reserved_post_id = NULL')) {

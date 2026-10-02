@@ -459,19 +459,12 @@ export class ImageLibraryService {
    * Updates usage count, last_used_at, used_in_post_id, and clears reservation.
    */
   async markImageAsPublished(imageId: string, postId: string): Promise<void> {
-    const nowIso = new Date().toISOString();
     await this.db
-      .prepare(
-        `UPDATE curated_images
-         SET usage_count = usage_count + 1,
-             last_used_at = ?,
-             used_in_post_id = ?,
-             reserved_post_id = NULL,
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(nowIso, postId, nowIso, imageId)
+      .prepare('UPDATE curated_images SET reserved_post_id = NULL WHERE reserved_post_id = ?')
+      .bind(postId)
       .run();
+
+    await recalculateCuratedImageUsage(this.db, imageId);
 
     await this.auditLogger.log({
       eventType: 'IMAGE_PUBLISHED',
@@ -501,6 +494,8 @@ export class ImageLibraryService {
     const statusFilter = (options.status || 'ALL').toUpperCase().trim();
     const categoryFilter = (options.category || '').trim();
     const searchTerm = (options.search || '').trim().toLowerCase();
+
+    await recalculateAllCuratedImageUsages(this.db).catch(() => {});
 
     const whereClauses: string[] = ["status != 'DELETED'"];
     const bindings: unknown[] = [];
@@ -565,3 +560,130 @@ export class ImageLibraryService {
     };
   }
 }
+
+/**
+ * Resolves the canonical, publicly accessible absolute HTTP/HTTPS URL for a curated image asset.
+ * Guarantees that Cloudflare R2 bucket images are served via the application's public `/media/:key` endpoint
+ * so Meta Graph API and external services can retrieve the media reliably without authentication.
+ */
+export function getPublicImageUrl(
+  input: { source_url?: string | null; r2_key?: string | null } | string | null | undefined,
+  origin = 'https://ai.northsoft.is',
+): string {
+  if (!input) return '';
+
+  const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+    let key = trimmed;
+    if (key.startsWith('/media/')) key = key.substring(7);
+    else if (key.startsWith('media/')) key = key.substring(6);
+    else if (key.startsWith('images/')) key = key.substring(7);
+    else if (key.startsWith('/images/')) key = key.substring(8);
+
+    return `${cleanOrigin}/media/${key}`;
+  }
+
+  const r2Key = (input.r2_key || '').trim();
+  const sourceUrl = (input.source_url || '').trim();
+
+  if (r2Key) {
+    let key = r2Key;
+    if (key.startsWith('images/')) key = key.substring(7);
+    else if (key.startsWith('/images/')) key = key.substring(8);
+    else if (key.startsWith('/media/')) key = key.substring(7);
+    else if (key.startsWith('media/')) key = key.substring(6);
+    return `${cleanOrigin}/media/${key}`;
+  }
+
+  if (sourceUrl) {
+    if (/^https?:\/\//i.test(sourceUrl)) {
+      return sourceUrl;
+    }
+    let key = sourceUrl;
+    if (key.startsWith('/media/')) key = key.substring(7);
+    else if (key.startsWith('media/')) key = key.substring(6);
+    else if (key.startsWith('images/')) key = key.substring(7);
+    else if (key.startsWith('/images/')) key = key.substring(8);
+    return `${cleanOrigin}/media/${key}`;
+  }
+
+  return '';
+}
+
+/**
+ * Derives and synchronizes exact usage statistics for a Curated Image asset
+ * directly from published post & publication relationships in the database.
+ * Deduplicates multiple post/publication rows pointing to the same Facebook publication.
+ */
+export async function recalculateCuratedImageUsage(db: D1Database, imageId: string): Promise<void> {
+  if (!imageId) return;
+
+  const res = await db
+    .prepare(
+      `SELECT COUNT(DISTINCT CASE WHEN pub.facebook_post_id IS NOT NULL AND TRIM(pub.facebook_post_id) != '' THEN pub.facebook_post_id ELSE pub.post_id END) as pub_count,
+              MAX(pub.published_at) as max_published_at,
+              MAX(pub.post_id) as latest_post_id
+       FROM publications pub
+       JOIN post_images pi ON pi.post_id = pub.post_id
+       JOIN curated_images ci ON ci.id = ?
+       WHERE (pi.curated_image_id = ci.id OR pi.source_id = ci.id OR (ci.source_url IS NOT NULL AND ci.source_url != '' AND pi.url = ci.source_url))
+         AND pub.status = 'published'`,
+    )
+    .bind(imageId)
+    .first<{ pub_count: number; max_published_at: string | null; latest_post_id: string | null }>();
+
+  const pubCount = res?.pub_count || 0;
+  const nowIso = new Date().toISOString();
+  const lastUsedAt = res?.max_published_at || (pubCount > 0 ? nowIso : null);
+  const usedInPostId = pubCount > 0 ? res?.latest_post_id || null : null;
+
+  // Determine reserved_post_id state:
+  // If reserved_post_id points to a post that is NOT published, keep it reserved.
+  // If reserved_post_id points to a post that IS published, clear reservation (since it is now published).
+  const curImg = await db
+    .prepare('SELECT reserved_post_id FROM curated_images WHERE id = ?')
+    .bind(imageId)
+    .first<{ reserved_post_id: string | null }>();
+
+  let reservedPostId = curImg?.reserved_post_id || null;
+  if (reservedPostId) {
+    const isPub = await db
+      .prepare(`SELECT 1 FROM publications WHERE post_id = ? AND status = 'published' LIMIT 1`)
+      .bind(reservedPostId)
+      .first();
+    if (isPub) {
+      reservedPostId = null;
+    }
+  }
+
+  await db
+    .prepare(
+      `UPDATE curated_images
+       SET usage_count = ?,
+           last_used_at = ?,
+           used_in_post_id = ?,
+           reserved_post_id = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(pubCount, lastUsedAt, usedInPostId, reservedPostId, nowIso, imageId)
+    .run();
+}
+
+/**
+ * Recalculates usage statistics and reservation states across all images in the library.
+ */
+export async function recalculateAllCuratedImageUsages(db: D1Database): Promise<void> {
+  const images = await db.prepare('SELECT id FROM curated_images').all<{ id: string }>();
+  if (images && images.results) {
+    for (const img of images.results) {
+      await recalculateCuratedImageUsage(db, img.id);
+    }
+  }
+}
+

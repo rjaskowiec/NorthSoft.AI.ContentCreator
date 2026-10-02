@@ -184,8 +184,8 @@ contentRouter.post('/content/posts/:id/image', csrfProtection, async (c) => {
   const { ImageLibraryService } = await import('../../services/content/image-library-service');
   const imgLib = new ImageLibraryService(db);
 
-  let curatedImageId = '';
-  let imageUrl = '';
+  let curatedImageId: string;
+  let imageUrl: string;
 
   try {
     if ((c.req.header('content-type') || '').includes('multipart/form-data')) {

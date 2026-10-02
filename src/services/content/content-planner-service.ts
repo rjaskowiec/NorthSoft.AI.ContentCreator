@@ -148,7 +148,7 @@ export class ContentPlannerService {
     const originalRegenerationCount = existingPost?.regeneration_count || 0;
     let currentVersion = existingPost?.current_version || 0;
     let finalDecision: 'PASS' | 'FAIL' | 'BLOCKED' = 'FAIL';
-    let smqgPass = true;
+    let smqgPass: boolean;
     let finalScore = 0;
     let lastDraft: PostDraft | undefined;
     let runErrorMessage: string | undefined;
