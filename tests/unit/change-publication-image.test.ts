@@ -112,6 +112,11 @@ describe('PublicationService — changePublicationImage', () => {
         publishEnabled: true,
       }),
       updatePostImage: vi.fn().mockResolvedValue({ success: true, httpStatus: 200 }),
+      validateToken: vi.fn(),
+      healthCheck: vi.fn(),
+      getPost: vi.fn(),
+      updatePostMessage: vi.fn(),
+      fetchPagePosts: vi.fn(),
     };
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

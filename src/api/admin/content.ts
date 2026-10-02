@@ -111,7 +111,7 @@ contentRouter.get('/content/posts', async (c) => {
   });
 });
 
-/** Search and assign an image for an existing post using hierarchical fallback. */
+/** Search and assign an image for an existing post using hierarchical fallback through Image Library. */
 contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) => {
   const postId = c.req.param('id');
   const row = await c.env.DB.prepare(
@@ -134,29 +134,33 @@ contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) 
     );
 
     if (!found) {
-      return c.json({ success: false, error: 'No legal image passed category/semantic search hierarchy. Add one by URL or upload a file.' }, 422);
+      return c.json({ success: false, error: 'No legal image passed category/semantic search hierarchy. Select one from Image Library.' }, 422);
     }
 
     const candidate = found.candidate;
-    const now = new Date().toISOString();
-    const confidence = Number((Math.min(1.0, found.score / 100)).toFixed(2));
+    const { ImageLibraryService } = await import('../../services/content/image-library-service');
+    const imgLib = new ImageLibraryService(c.env.DB);
 
-    await c.env.DB.batch([
-      c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, row.current_version),
-      c.env.DB.prepare(
-        `INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, source_id, author, author_url,
-          license, license_url, verified_at, verification_status, visual_verification_status, visual_verification_reason,
-          visual_verification_confidence, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 'accept', ?, ?, ?)`,
-      ).bind(
-        crypto.randomUUID(), postId, row.current_version, candidate.url, candidate.title || 'Selected Illustration', candidate.sourceUrl,
-        candidate.id, candidate.author, candidate.authorUrl || null, candidate.license, candidate.licenseUrl,
-        now, found.reason, confidence, now,
-      ),
-    ]);
+    const curatedImageId = await imgLib.addCandidate({
+      title: candidate.title || 'Selected Illustration',
+      sourceUrl: candidate.sourceUrl || candidate.url,
+      originalPageUrl: candidate.sourceUrl || candidate.url,
+      author: candidate.author || undefined,
+      authorUrl: candidate.authorUrl || undefined,
+      license: candidate.license || undefined,
+      licenseUrl: candidate.licenseUrl || undefined,
+      category: row.category || 'Technology & Business',
+      description: row.title,
+      score: found.score,
+    });
+
+    const targetPostId = postId || '';
+    await imgLib.updateMetadata(curatedImageId, { status: 'APPROVED' });
+    await imgLib.reserveImageForDraft(curatedImageId, targetPostId, true);
 
     return c.json({
       success: true,
+      imageId: curatedImageId,
       imageUrl: candidate.url,
       author: candidate.author,
       license: candidate.license,
@@ -170,73 +174,84 @@ contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) 
   }
 });
 
-/** Add or replace the current version's primary image using an HTTPS URL or a file upload. */
+/** Add or replace the current version's primary image via Image Library ingestion. */
 contentRouter.post('/content/posts/:id/image', csrfProtection, async (c) => {
   const db = c.env.DB;
-  const postId = c.req.param('id');
-  const post = await db.prepare('SELECT current_version FROM posts WHERE id = ?').bind(postId).first<{ current_version: number }>();
+  const postId = c.req.param('id') || '';
+  const post = await db.prepare('SELECT current_version, title FROM posts WHERE id = ?').bind(postId).first<{ current_version: number; title: string }>();
   if (!post) return c.json({ success: false, error: 'Post not found.' }, 404);
-  if (!c.env.IMAGE_BUCKET) return c.json({ success: false, error: 'Image storage is not configured.' }, 503);
 
-  let bytes: ArrayBuffer;
-  let contentType: string;
-  const provenance: { sourceUrl: string | null; author: string | null; license: string | null; licenseUrl: string | null } = {
-    sourceUrl: null, author: null, license: null, licenseUrl: null,
-  };
+  const { ImageLibraryService } = await import('../../services/content/image-library-service');
+  const imgLib = new ImageLibraryService(db);
+
+  let curatedImageId = '';
+  let imageUrl = '';
 
   try {
     if ((c.req.header('content-type') || '').includes('multipart/form-data')) {
+      if (!c.env.IMAGE_BUCKET) return c.json({ success: false, error: 'Image storage is not configured.' }, 503);
       const form = await c.req.formData();
       const file = form.get('file');
       if (!(file instanceof File)) return c.json({ success: false, error: 'Choose an image file.' }, 400);
       if (file.size < 1 || file.size > 10 * 1024 * 1024) return c.json({ success: false, error: 'Image must be smaller than 10 MB.' }, 413);
-      bytes = await file.arrayBuffer();
+      
+      const bytes = await file.arrayBuffer();
+      const data = new Uint8Array(bytes);
+      let contentType = 'image/jpeg';
+      if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) contentType = 'image/jpeg';
+      else if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) contentType = 'image/png';
+      else if (data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) contentType = 'image/webp';
+      else return c.json({ success: false, error: 'Only valid JPEG, PNG, and WebP images are supported.' }, 400);
+
+      const ext = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/png' ? 'png' : 'webp';
+      const key = `${crypto.randomUUID()}.${ext}`;
+      await c.env.IMAGE_BUCKET.put(`images/${key}`, bytes, {
+        httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
+      });
+      imageUrl = `${new URL(c.req.url).origin}/media/${key}`;
+
+      curatedImageId = await imgLib.addManualImage({
+        title: post.title || 'Uploaded Post Image',
+        sourceType: 'UPLOADED',
+        r2Key: imageUrl,
+        sourceUrl: imageUrl,
+        category: 'General',
+        status: 'APPROVED',
+      });
     } else {
-      const body = await c.req.json().catch(() => ({})) as { url?: string };
-      const sourceUrl = (body.url || '').trim();
-      if (!sourceUrl) return c.json({ success: false, error: 'Image URL is required.' }, 400);
-      const parsed = new URL(sourceUrl);
-      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-        return c.json({ success: false, error: 'Use a public HTTPS image URL.' }, 400);
+      const body = (await c.req.json().catch(() => ({}))) as { url?: string; imageId?: string };
+      if (body.imageId) {
+        curatedImageId = body.imageId;
+        const existing = await db.prepare('SELECT source_url, r2_key FROM curated_images WHERE id = ?').bind(curatedImageId).first<{ source_url: string | null; r2_key: string | null }>();
+        imageUrl = existing?.source_url || existing?.r2_key || '';
+      } else {
+        const sourceUrl = (body.url || '').trim();
+        if (!sourceUrl) return c.json({ success: false, error: 'Image URL or imageId is required.' }, 400);
+        const parsed = new URL(sourceUrl);
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+          return c.json({ success: false, error: 'Use a public HTTPS image URL.' }, 400);
+        }
+        imageUrl = sourceUrl;
+        curatedImageId = await imgLib.addManualImage({
+          title: post.title || 'URL Post Image',
+          sourceType: 'URL',
+          sourceUrl: imageUrl,
+          category: 'General',
+          status: 'APPROVED',
+        });
       }
-      bytes = await new OpenverseImageService(c.env).downloadImage(sourceUrl);
-      provenance.sourceUrl = sourceUrl;
     }
+
+    if (!curatedImageId) {
+      return c.json({ success: false, error: 'Failed to obtain Image Library ID.' }, 400);
+    }
+
+    await imgLib.reserveImageForDraft(curatedImageId, postId, true);
+    return c.json({ success: true, imageId: curatedImageId, imageUrl, message: 'Image added to Image Library and assigned to post.' });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Image could not be read.';
+    const message = err instanceof Error ? err.message : 'Image could not be ingested into Image Library.';
     return c.json({ success: false, error: message }, 400);
   }
-
-  const data = new Uint8Array(bytes);
-  if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) contentType = 'image/jpeg';
-  else if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) contentType = 'image/png';
-  else if (data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) contentType = 'image/webp';
-  else return c.json({ success: false, error: 'Only valid JPEG, PNG, and WebP images are supported.' }, 400);
-
-  const ext = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/png' ? 'png' : 'webp';
-  const key = `${crypto.randomUUID()}.${ext}`;
-  const now = new Date().toISOString();
-  await c.env.IMAGE_BUCKET.put(`images/${key}`, bytes, {
-    httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
-  });
-  const imageUrl = `${new URL(c.req.url).origin}/media/${key}`;
-  await db.batch([
-    db.prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = ?').bind(postId, post.current_version),
-    db.prepare(`INSERT INTO post_images (id, post_id, version_number, url, alt_text, source_url, author, license, license_url, verification_status, visual_verification_status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'not_checked', ?)`).bind(
-      crypto.randomUUID(), postId, post.current_version, imageUrl, 'Post image', provenance.sourceUrl,
-      provenance.author, provenance.license, provenance.licenseUrl, now,
-    ),
-  ]);
-  const publication = await db.prepare("SELECT id FROM publications WHERE post_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 1")
-    .bind(postId).first<{ id: string }>();
-  if (publication) {
-    await db.batch([
-      db.prepare("UPDATE publications SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(publication.id),
-      db.prepare("UPDATE posts SET sync_status = 'LOCAL_AHEAD' WHERE id = ?").bind(postId),
-    ]);
-  }
-  return c.json({ success: true, imageUrl, message: 'Image saved.' });
 });
 
 /** Remove the current version's primary image and release reservation. */

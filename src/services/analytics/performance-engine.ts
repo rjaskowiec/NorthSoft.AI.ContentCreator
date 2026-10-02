@@ -215,7 +215,7 @@ export class PerformanceEngineService {
 
       // Helper to pick the most common category
       const mostCommon = (map: Record<string, number>) =>
-        Object.entries(map).sort((a, b) => b[1] - a[1])[0][0];
+        Object.entries(map).sort((a, b) => b[1] - a[1])[0]?.[0] || 'MEDIUM';
 
       const payload = {
         hookPatterns: topHooks,

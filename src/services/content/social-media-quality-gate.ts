@@ -46,7 +46,6 @@ export class SocialMediaQualityGate {
   evaluate(draft: { title: string; body: string }): SMQGResult {
     const warnings: SMQGWarning[] = [];
     const body = draft.body || '';
-    const bodyLower = body.toLowerCase();
 
     const add = (dim: string, sev: SMQGWarning['severity'], reason: string) => {
       warnings.push({ dimension: dim, severity: sev, reason });
@@ -97,8 +96,6 @@ export class SocialMediaQualityGate {
     //    (percentage/multiplier claim pattern without any source indicator).
     // -------------------------------------------------------------------
     const bodyPercentages = body.match(/\d+%/g) || [];
-    const bodyMultipliers = body.match(/\d+[x×]\s*(more|fewer|better|faster|higher|lower|longer|shorter|times)/gi) || [];
-    const bodyQuantifiedClaims = [...bodyPercentages, ...bodyMultipliers];
     // Source indicator: unambiguous citation phrases that confirm the claim has a named source.
     // "research", "shows that", "data", "statistics" are NOT sufficient — they appear in unsourced claims themselves.
     const hasSourceIndicator = /\b(source|study|report|according to|survey|found that|published by|based on|cited by|per (?:the )?\w+)\b/i.test(body);

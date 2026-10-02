@@ -2,15 +2,14 @@
  * Unit Tests — Dashboard API & Operational Summary Truthfulness
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { dashboardRouter } from '../../src/api/admin/dashboard';
 import { Hono } from 'hono';
 
 class MockD1Statement {
-  constructor(private sql: string, private bindings: any[] = [], private mockData: any = {}) {}
+  constructor(private sql: string, _bindings: any[] = [], private mockData: any = {}) {}
 
-  bind(...args: any[]) {
-    this.bindings = args;
+  bind(..._args: any[]) {
     return this;
   }
 
@@ -93,13 +92,14 @@ describe('Dashboard Router — Operational Truthfulness', () => {
   });
 
   it('should return operational truth with REAL next publication time (10:00 UTC, not hardcoded 08:00)', async () => {
-    mockDb.mockData.scheduledAt = '2026-10-02T10:00:00.000Z';
+    const futureDate = '2028-10-02T10:00:00.000Z';
+    mockDb.mockData.scheduledAt = futureDate;
     const res = await app.request('/api/admin/dashboard', {}, mockEnv);
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
 
-    expect(body.nextPublication.scheduledAt).toBe('2026-10-02T10:00:00.000Z');
+    expect(body.nextPublication.scheduledAt).toBe(futureDate);
     expect(body.nextPublication.postTitle).toContain('Email Marketing');
     expect(body.nextPublication.isOverdue).toBe(false);
     expect(body.nextPublication.remainingCount).toBe(2);
@@ -111,7 +111,7 @@ describe('Dashboard Router — Operational Truthfulness', () => {
     const res = await app.request('/api/admin/dashboard', {}, mockEnv);
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
 
     expect(body.nextPublication.isOverdue).toBe(true);
     expect(body.attentionItems.length).toBeGreaterThan(0);
@@ -123,7 +123,7 @@ describe('Dashboard Router — Operational Truthfulness', () => {
     const res = await app.request('/api/admin/dashboard', {}, mockEnv);
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as any;
 
     expect(body.nextPublication.scheduledAt).toBeNull();
     expect(body.nextPublication.postTitle).toBeNull();

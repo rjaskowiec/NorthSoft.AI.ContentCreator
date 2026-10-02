@@ -191,8 +191,6 @@ describe('PublicationService Unit Tests', () => {
   });
 
   it('should process past scheduled posts (scheduledAt < now) and ignore future posts (scheduledAt > now)', async () => {
-    const publishedPosts: string[] = [];
-
     const mockDb = {
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM schedules s')) {

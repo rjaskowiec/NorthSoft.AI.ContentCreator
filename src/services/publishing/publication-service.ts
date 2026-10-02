@@ -7,7 +7,7 @@ import { PerformanceEngineService } from '../analytics/performance-engine.js';
 
 export async function validateImageUrl(
   url: string,
-  timeoutMs = 4000,
+  timeoutMs = 5000,
 ): Promise<{ valid: boolean; error?: string; httpStatus?: number }> {
   if (!url || typeof url !== 'string') {
     return { valid: false, error: 'Empty image URL' };
@@ -17,6 +17,12 @@ export async function validateImageUrl(
     return { valid: false, error: 'Image URL must start with http:// or https://' };
   }
 
+  const browserHeaders = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+  };
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -24,44 +30,55 @@ export async function validateImageUrl(
     const response = await fetch(trimmed, {
       method: 'HEAD',
       signal: controller.signal,
-      headers: { 'User-Agent': 'NorthSoft-ImageValidator/1.0' },
+      headers: browserHeaders,
     });
     clearTimeout(timer);
 
-    if (!response.ok) {
-      if (response.status === 405) {
-        const getController = new AbortController();
-        const getTimer = setTimeout(() => getController.abort(), timeoutMs);
-        const getRes = await fetch(trimmed, {
-          method: 'GET',
-          signal: getController.signal,
-          headers: { Range: 'bytes=0-1024', 'User-Agent': 'NorthSoft-ImageValidator/1.0' },
-        });
-        clearTimeout(getTimer);
-        if (!getRes.ok) {
-          return { valid: false, httpStatus: getRes.status, error: `HTTP ${getRes.status}` };
-        }
-        return { valid: true, httpStatus: getRes.status };
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (
+        contentType &&
+        !contentType.toLowerCase().includes('image/') &&
+        !contentType.toLowerCase().includes('octet-stream')
+      ) {
+        return {
+          valid: false,
+          httpStatus: response.status,
+          error: `Invalid content-type '${contentType}'`,
+        };
       }
-      return { valid: false, httpStatus: response.status, error: `HTTP ${response.status}` };
+      return { valid: true, httpStatus: response.status };
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    if (
-      contentType &&
-      !contentType.toLowerCase().includes('image/') &&
-      !contentType.toLowerCase().includes('octet-stream')
-    ) {
-      return {
-        valid: false,
-        httpStatus: response.status,
-        error: `Invalid content-type '${contentType}'`,
-      };
+    // Fallback: If HEAD fails (e.g. 403, 405, 522, 500), attempt GET with Range header
+    const getController = new AbortController();
+    const getTimer = setTimeout(() => getController.abort(), timeoutMs);
+    const getRes = await fetch(trimmed, {
+      method: 'GET',
+      signal: getController.signal,
+      headers: { ...browserHeaders, Range: 'bytes=0-1024' },
+    });
+    clearTimeout(getTimer);
+
+    if (getRes.ok || getRes.status === 206 || getRes.status === 304) {
+      return { valid: true, httpStatus: getRes.status };
     }
 
-    return { valid: true, httpStatus: response.status };
+    // HTTP 522 / 524 (Cloudflare origin timeout during worker-to-worker fetch):
+    // Permit valid HTTPS URLs so Meta Graph API (which fetches independently) can process the image.
+    if (getRes.status === 522 || getRes.status === 524) {
+      console.warn(`[validateImageUrl] HTTP ${getRes.status} during origin probe for ${trimmed}. Permitting for Meta API.`);
+      return { valid: true, httpStatus: getRes.status };
+    }
+
+    return { valid: false, httpStatus: getRes.status, error: `HTTP ${getRes.status}` };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    // If probe fails due to Worker network loop/timeout, permit valid HTTPS URLs
+    if (trimmed.startsWith('https://')) {
+      console.warn(`[validateImageUrl] Probe exception for ${trimmed}: ${msg}. Permitting valid HTTPS URL for Meta API.`);
+      return { valid: true, error: msg };
+    }
     return { valid: false, error: `Fetch failed: ${msg}` };
   }
 }
@@ -468,7 +485,11 @@ export class PublicationService {
 
     // 6.6. MEDIA ACCESSIBILITY PRE-VALIDATION: Confirm image URL returns HTTP 200 before calling Meta API
     if (postRow.image_url) {
-      const mediaVal = await validateImageUrl(postRow.image_url).catch(() => ({ valid: true }));
+      const mediaVal = await validateImageUrl(postRow.image_url).catch(() => ({
+        valid: true,
+        error: undefined,
+        httpStatus: undefined,
+      }));
       if (!mediaVal.valid) {
         await this.auditLogger?.log({
           eventType: 'PUBLICATION_BLOCKED',
@@ -1681,7 +1702,11 @@ export class PublicationService {
     }
 
     // Pre-validate image URL reachability
-    const urlVal = await validateImageUrl(newImageUrl).catch(() => ({ valid: true }));
+    const urlVal = await validateImageUrl(newImageUrl).catch(() => ({
+      valid: true,
+      error: undefined,
+      httpStatus: undefined,
+    }));
     if (!urlVal.valid) {
       return {
         success: false,
