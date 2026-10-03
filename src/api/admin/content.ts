@@ -612,6 +612,23 @@ contentRouter.delete('/content/posts/:id', csrfProtection, async (c) => {
 });
 
 /**
+ * A (re)schedule is an explicit user decision to publish again, so a previously failed
+ * publication of this post gets a fresh automatic retry budget. Without this, rescheduling
+ * reused the exhausted attempt_count and the cron failed instantly with MAX_RETRIES_EXCEEDED.
+ */
+async function resetFailedPublicationAttempts(db: D1Database, postId: string): Promise<void> {
+  if (!postId) return;
+  await db
+    .prepare(
+      `UPDATE publications
+       SET attempt_count = 0, status = 'pending', error_code = NULL, error_message = NULL, updated_at = datetime('now')
+       WHERE post_id = ? AND status != 'published'`,
+    )
+    .bind(postId)
+    .run();
+}
+
+/**
  * POST /api/admin/content/posts/:id/schedule
  * Schedules a post draft for future publication.
  */
@@ -668,6 +685,8 @@ contentRouter.post('/content/posts/:id/schedule', csrfProtection, async (c) => {
     .prepare('UPDATE posts SET status = "scheduled", updated_at = ? WHERE id = ?')
     .bind(nowIso, id)
     .run();
+
+  await resetFailedPublicationAttempts(db, id || '');
 
   return c.json({ success: true, postId: id, scheduledAt });
 });
@@ -773,6 +792,7 @@ contentRouter.post('/content/schedules/intelligent-commit', csrfProtection, asyn
 
     // Update post status to scheduled
     await db.prepare('UPDATE posts SET status = "scheduled", updated_at = ? WHERE id = ?').bind(nowIso, postId).run();
+    await resetFailedPublicationAttempts(db, postId);
 
     // Update linked topic status to scheduled
     const postRow = await db.prepare('SELECT idea_id FROM posts WHERE id = ?').bind(postId).first<{ idea_id: string }>();

@@ -376,21 +376,37 @@ export class PublicationService {
       .bind(idempotencyKey, postId, postRow.version_id)
       .first<{ id: string; status: string; attempt_count: number; schedule_id: string | null }>();
 
-    // A new schedule is a new, explicit user intent to publish: give it a fresh retry budget.
-    // Previously the attempt counter was shared across all schedules of the same post version,
-    // so once exhausted every future schedule failed instantly with MAX_RETRIES_EXCEEDED.
+    // An execution of a pending schedule (options?.scheduleId) or admin publication represents
+    // an explicit publishing action. If a previous attempt cycle had exhausted its retry limit
+    // (attempt_count >= MAX_PUBLISH_ATTEMPTS) or failed, reset the attempt budget to 0 so the
+    // post is not permanently blocked from publishing.
     if (
       pendingPub &&
       pendingPub.status !== 'publishing' &&
-      options?.scheduleId &&
-      pendingPub.schedule_id !== options.scheduleId
+      (
+        pendingPub.attempt_count >= CONTENT_INVARIANTS.MAX_PUBLISH_ATTEMPTS ||
+        (options?.scheduleId && pendingPub.schedule_id !== options.scheduleId) ||
+        actor === 'admin'
+      )
     ) {
       await this.db
-        .prepare(`UPDATE publications SET attempt_count = 0, schedule_id = ?, updated_at = datetime('now') WHERE id = ?`)
-        .bind(options.scheduleId, pendingPub.id)
+        .prepare(
+          `UPDATE publications
+           SET attempt_count = 0,
+               status = 'pending',
+               error_code = NULL,
+               error_message = NULL,
+               schedule_id = COALESCE(?, schedule_id),
+               updated_at = datetime('now')
+           WHERE id = ?`,
+        )
+        .bind(options?.scheduleId || null, pendingPub.id)
         .run();
       pendingPub.attempt_count = 0;
-      pendingPub.schedule_id = options.scheduleId;
+      pendingPub.status = 'pending';
+      if (options?.scheduleId) {
+        pendingPub.schedule_id = options.scheduleId;
+      }
     }
 
     if (pendingPub) {
