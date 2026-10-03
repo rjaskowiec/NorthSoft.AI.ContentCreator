@@ -309,12 +309,15 @@ contentRouter.post('/content/posts/:id/assign-image', csrfProtection, async (c) 
 
   if (body.action === 'remove' || !body.imageId) {
     const prevPi = await c.env.DB
-      .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ?')
-      .bind(postId)
+      .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ? AND version_number = (SELECT current_version FROM posts WHERE id = ?)')
+      .bind(postId, postId)
       .first<{ curated_image_id: string | null }>();
     const prevImageId = prevPi?.curated_image_id || null;
 
-    await c.env.DB.prepare('DELETE FROM post_images WHERE post_id = ?').bind(postId).run();
+    await c.env.DB
+      .prepare('DELETE FROM post_images WHERE post_id = ? AND version_number = (SELECT current_version FROM posts WHERE id = ?)')
+      .bind(postId, postId)
+      .run();
     await imgLib.releaseDraftReservation(postId);
 
     if (prevImageId) {

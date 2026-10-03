@@ -1574,7 +1574,6 @@ export function getAdminCss(): string {
       color: #fda4af;
       margin-top: 0.25rem;
     }
-    }
 
     /* IMAGE LIBRARY STYLES */
     .image-card {

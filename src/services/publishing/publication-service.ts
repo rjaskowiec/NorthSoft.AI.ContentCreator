@@ -163,6 +163,23 @@ export class PublicationService {
   ) {}
 
   /**
+   * Releases a held 'publishing' lock by marking the publication as failed with the real cause.
+   * Without this, early exits left the row in 'publishing' until recoverStaleLocks() mislabelled
+   * it as STALE_LOCK_TIMEOUT and burned an attempt.
+   */
+  private async releasePublicationLockAsFailed(publicationId: string, code: string, message: string): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE publications
+         SET status = 'failed', error_code = ?, error_message = ?, updated_at = datetime('now')
+         WHERE id = ? AND status = 'publishing'`,
+      )
+      .bind(code, message.slice(0, 1000), publicationId)
+      .run()
+      .catch((err) => console.error('[PublicationService] Failed to release publication lock:', err));
+  }
+
+  /**
    * Recovers stale publication locks ('publishing' status older than threshold minutes).
    * Prevents crashed Worker instances from permanently blocking future publication attempts.
    */
@@ -354,10 +371,27 @@ export class PublicationService {
 
     const pendingPub = await this.db
       .prepare(
-        `SELECT id, status, attempt_count FROM publications WHERE idempotency_key = ? OR (post_id = ? AND post_version_id = ?)`,
+        `SELECT id, status, attempt_count, schedule_id FROM publications WHERE idempotency_key = ? OR (post_id = ? AND post_version_id = ?)`,
       )
       .bind(idempotencyKey, postId, postRow.version_id)
-      .first<{ id: string; status: string; attempt_count: number }>();
+      .first<{ id: string; status: string; attempt_count: number; schedule_id: string | null }>();
+
+    // A new schedule is a new, explicit user intent to publish: give it a fresh retry budget.
+    // Previously the attempt counter was shared across all schedules of the same post version,
+    // so once exhausted every future schedule failed instantly with MAX_RETRIES_EXCEEDED.
+    if (
+      pendingPub &&
+      pendingPub.status !== 'publishing' &&
+      options?.scheduleId &&
+      pendingPub.schedule_id !== options.scheduleId
+    ) {
+      await this.db
+        .prepare(`UPDATE publications SET attempt_count = 0, schedule_id = ?, updated_at = datetime('now') WHERE id = ?`)
+        .bind(options.scheduleId, pendingPub.id)
+        .run();
+      pendingPub.attempt_count = 0;
+      pendingPub.schedule_id = options.scheduleId;
+    }
 
     if (pendingPub) {
       if (pendingPub.status === 'publishing') {
@@ -445,6 +479,27 @@ export class PublicationService {
       },
     });
 
+    try {
+      return await this.executeLockedPublication(postId, postRow, publicationId, idempotencyKey, actor, options);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.releasePublicationLockAsFailed(publicationId, 'PUBLISH_EXCEPTION', message);
+      throw err;
+    }
+  }
+
+  /**
+   * Runs the part of the publication that happens while the 'publishing' lock is held.
+   * Every non-success exit must release the lock.
+   */
+  private async executeLockedPublication(
+    postId: string,
+    postRow: { title: string; version_id: string; body: string; version_number: number; image_url?: string },
+    publicationId: string,
+    idempotencyKey: string,
+    actor: 'system' | 'admin',
+    options?: { scheduleId?: string; actor?: 'system' | 'admin' },
+  ): Promise<PublishResult> {
     // 7. INVOKE META PUBLISHER (0 AI calls, exact approved post content)
     // 6.5. PUBLISHING SAFETY CHECK: Ensure image belongs to approved library and is valid
     const piRow = await this.db
@@ -467,6 +522,11 @@ export class PublicationService {
           actor,
           details: { reason: 'IMAGE_NOT_APPROVED', imageStatus },
         });
+        await this.releasePublicationLockAsFailed(
+          publicationId,
+          'IMAGE_NOT_APPROVED',
+          `Image attached to post has status '${imageStatus}'.`,
+        );
 
         return {
           success: false,
@@ -499,6 +559,11 @@ export class PublicationService {
             error: mediaVal.error,
           },
         });
+        await this.releasePublicationLockAsFailed(
+          publicationId,
+          'IMAGE_NOT_ACCESSIBLE',
+          `Image URL '${canonicalImageUrl}' is not accessible (${mediaVal.error}).`,
+        );
 
         return {
           success: false,

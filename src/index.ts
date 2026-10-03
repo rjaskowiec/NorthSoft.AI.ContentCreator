@@ -14,6 +14,7 @@ import { adminRoutes } from './api/admin';
 import { authRoutes } from './api/auth';
 import { healthRoutes } from './api/health';
 import type { AdminSession, AdminUser } from './core/auth/session';
+import { D1AuditLogger } from './core/audit';
 import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
 import { FacebookPublisher } from './publishing/facebook-publisher';
@@ -116,15 +117,24 @@ export default {
     const orchestrator = new ContentOrchestrator(env.DB, env);
     const publisher = new FacebookPublisher(env);
     const mailClient = new NorthSoftMailGatewayClient(env);
-    const pubService = new PublicationService(env.DB, publisher, undefined, mailClient);
+    const pubService = new PublicationService(env.DB, publisher, new D1AuditLogger(env.DB), mailClient);
+
+    const tasks: Array<[string, () => Promise<unknown>]> = [
+      // Publishing first: it is time-critical and must not depend on the AI pipeline.
+      ['publishScheduledDuePosts', () => pubService.publishScheduledDuePosts()],
+      ['syncFacebookPostsToSystem', () => pubService.syncFacebookPostsToSystem()],
+      ['runPipeline', () => orchestrator.runPipeline('cron')],
+      ['sendWeeklyDigest', () => NotificationService.sendWeeklyDigest(env.DB, mailClient)],
+    ];
 
     ctx.waitUntil(
-      Promise.all([
-        orchestrator.runPipeline('cron'),
-        pubService.publishScheduledDuePosts(),
-        pubService.syncFacebookPostsToSystem(),
-        NotificationService.sendWeeklyDigest(env.DB, mailClient),
-      ]),
+      Promise.allSettled(tasks.map(([, run]) => run())).then((results) => {
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            console.error(`[cron] ${tasks[i]?.[0] ?? 'task'} failed:`, r.reason);
+          }
+        });
+      }),
     );
   },
 };

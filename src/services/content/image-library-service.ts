@@ -463,7 +463,7 @@ export class ImageLibraryService {
   async releaseDraftReservation(postId: string): Promise<void> {
     const prevPi = await this.db
       .prepare('SELECT curated_image_id FROM post_images WHERE post_id = ? AND version_number = (SELECT current_version FROM posts WHERE id = ?)')
-      .bind(postId)
+      .bind(postId, postId)
       .first<{ curated_image_id: string | null }>();
     const prevImageId = prevPi?.curated_image_id || null;
 
