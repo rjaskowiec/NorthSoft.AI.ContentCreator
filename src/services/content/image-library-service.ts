@@ -314,8 +314,12 @@ export class ImageLibraryService {
         purgedIds.push(img.id);
         await this.auditLogger
           .log({
-            action: 'IMAGE_PURGED',
-            component: 'ImageLibraryService',
+            eventType: 'IMAGE_PURGED',
+            actor: 'system',
+            entityType: 'curated_image',
+            entityId: img.id,
+            status: 'COMPLETED',
+            summary: `Purged REJECTED image ${img.id} after ${retentionDays} days`,
             details: {
               imageId: img.id,
               title: img.title,

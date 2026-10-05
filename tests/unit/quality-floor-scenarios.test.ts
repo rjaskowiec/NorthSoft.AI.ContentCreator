@@ -180,7 +180,7 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
       prepare: (sql: string) => {
         const norm = sql.replace(/\s+/g, ' ').trim();
         return {
-          bind: (...args: unknown[]) => ({
+          bind: (..._args: unknown[]) => ({
             first: async () => {
               if (norm.includes('FROM content_ideas WHERE id = ?')) {
                 return { id: ideaId, title: 'UX Investment', description: 'UX ROI calculations', category: 'WEBSITE' };
