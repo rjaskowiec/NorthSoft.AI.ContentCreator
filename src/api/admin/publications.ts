@@ -86,7 +86,7 @@ publicationsRouter.post('/publications/:id/publish', csrfProtection, async (c) =
   const auditLogger = new D1AuditLogger(db);
   const publisher = new FacebookPublisher(c.env);
   const mailClient = new NorthSoftMailGatewayClient(c.env);
-  const pubService = new PublicationService(db, publisher, auditLogger, mailClient);
+  const pubService = new PublicationService(db, publisher, auditLogger, mailClient, c.env.IMAGE_BUCKET);
 
   // Read post_id from publications or check if id is a post_id
   let postId = id;
@@ -118,7 +118,7 @@ publicationsRouter.post('/publications/:id/retry', csrfProtection, async (c) => 
   const auditLogger = new D1AuditLogger(db);
   const publisher = new FacebookPublisher(c.env);
   const mailClient = new NorthSoftMailGatewayClient(c.env);
-  const pubService = new PublicationService(db, publisher, auditLogger, mailClient);
+  const pubService = new PublicationService(db, publisher, auditLogger, mailClient, c.env.IMAGE_BUCKET);
 
   const publication = await pubService.getPublicationById(id);
   if (!publication) {
@@ -145,7 +145,7 @@ const handlePublicationImageChange = async (c: any) => {
   const auditLogger = new D1AuditLogger(db);
   const publisher = new FacebookPublisher(c.env);
   const mailClient = new NorthSoftMailGatewayClient(c.env);
-  const pubService = new PublicationService(db, publisher, auditLogger, mailClient);
+  const pubService = new PublicationService(db, publisher, auditLogger, mailClient, c.env.IMAGE_BUCKET);
 
   let body: { imageId?: string; image_id?: string };
   try {
@@ -196,7 +196,7 @@ publicationsRouter.post('/publications/manual', csrfProtection, async (c) => {
     const auditLogger = new D1AuditLogger(db);
     const publisher = new FacebookPublisher(c.env);
     const mailClient = new NorthSoftMailGatewayClient(c.env);
-    const pubService = new PublicationService(db, publisher, auditLogger, mailClient);
+    const pubService = new PublicationService(db, publisher, auditLogger, mailClient, c.env.IMAGE_BUCKET);
 
     const configStatus = publisher.getConfigStatus();
     if (configStatus.state === 'NOT_CONFIGURED') {

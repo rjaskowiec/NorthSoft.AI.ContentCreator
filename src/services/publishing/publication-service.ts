@@ -160,6 +160,7 @@ export class PublicationService {
     private publisher: IMetaPublisher,
     private auditLogger?: IAuditLogger,
     private mailClient?: IMailGatewayClient | null,
+    private imageBucket?: R2Bucket,
   ) {}
 
   /**
@@ -557,12 +558,35 @@ export class PublicationService {
 
     // 6.6. MEDIA ACCESSIBILITY PRE-VALIDATION: Confirm image URL returns HTTP 200 before calling Meta API
     if (canonicalImageUrl) {
-      const mediaVal = await validateImageUrl(canonicalImageUrl).catch(() => ({
-        valid: true,
-        error: undefined,
-        httpStatus: undefined,
-      }));
-      if (!mediaVal.valid) {
+      let isMediaValid = true;
+      let mediaError: string | undefined;
+      let mediaHttpStatus: number | undefined;
+
+      // Fast-path for internal R2 media URLs: check R2 bucket directly to avoid Worker self-subrequest deadlocks
+      const mediaMatch = canonicalImageUrl.match(/\/media\/([0-9a-f-]{36}\.(?:jpg|png|webp))/i);
+      const mediaKey = mediaMatch?.[1];
+      if (mediaKey && this.imageBucket) {
+        const r2Obj = (await this.imageBucket.head(`images/${mediaKey}`)) || (await this.imageBucket.head(mediaKey));
+        if (!r2Obj) {
+          isMediaValid = false;
+          mediaError = `Object 'images/${mediaKey}' not found in R2 storage.`;
+          mediaHttpStatus = 404;
+        } else {
+          isMediaValid = true;
+          mediaHttpStatus = 200;
+        }
+      } else {
+        const mediaVal = await validateImageUrl(canonicalImageUrl).catch(() => ({
+          valid: true,
+          error: undefined,
+          httpStatus: undefined,
+        }));
+        isMediaValid = mediaVal.valid;
+        mediaError = mediaVal.error;
+        mediaHttpStatus = mediaVal.httpStatus;
+      }
+
+      if (!isMediaValid) {
         await this.auditLogger?.log({
           eventType: 'PUBLICATION_BLOCKED',
           entityType: 'post',
@@ -571,20 +595,20 @@ export class PublicationService {
           details: {
             reason: 'IMAGE_NOT_ACCESSIBLE',
             imageUrl: canonicalImageUrl,
-            httpStatus: mediaVal.httpStatus,
-            error: mediaVal.error,
+            httpStatus: mediaHttpStatus,
+            error: mediaError,
           },
         });
         await this.releasePublicationLockAsFailed(
           publicationId,
           'IMAGE_NOT_ACCESSIBLE',
-          `Image URL '${canonicalImageUrl}' is not accessible (${mediaVal.error}).`,
+          `Image URL '${canonicalImageUrl}' is not accessible (${mediaError}).`,
         );
 
         return {
           success: false,
           code: 'IMAGE_NOT_ACCESSIBLE',
-          message: `Publication blocked: Image URL '${canonicalImageUrl}' is not accessible or invalid (${mediaVal.error}).`,
+          message: `Publication blocked: Image URL '${canonicalImageUrl}' is not accessible or invalid (${mediaError}).`,
           retryable: false,
         };
       }

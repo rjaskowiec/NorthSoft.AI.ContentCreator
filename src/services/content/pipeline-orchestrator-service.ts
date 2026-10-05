@@ -361,7 +361,7 @@ export class PipelineOrchestratorService {
     try {
       const publisher = new FacebookPublisher(this.env);
       const mailClient = new NorthSoftMailGatewayClient(this.env);
-      const pubService = new PublicationService(this.db, publisher, this.auditLogger, mailClient);
+      const pubService = new PublicationService(this.db, publisher, this.auditLogger, mailClient, this.env.IMAGE_BUCKET);
 
       const pubResult = await pubService.publishPost(postId, { actor });
 

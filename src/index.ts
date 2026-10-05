@@ -40,7 +40,10 @@ app.get('/media/:key', async (c) => {
   if (!/^[0-9a-f-]{36}\.(?:jpg|png|webp)$/.test(key)) {
     return c.notFound();
   }
-  const object = await c.env.IMAGE_BUCKET.get(`images/${key}`);
+  let object = await c.env.IMAGE_BUCKET.get(`images/${key}`);
+  if (!object) {
+    object = await c.env.IMAGE_BUCKET.get(key);
+  }
   if (!object) return c.notFound();
   const headers = new Headers();
   object.writeHttpMetadata(headers);
@@ -117,7 +120,7 @@ export default {
     const orchestrator = new ContentOrchestrator(env.DB, env);
     const publisher = new FacebookPublisher(env);
     const mailClient = new NorthSoftMailGatewayClient(env);
-    const pubService = new PublicationService(env.DB, publisher, new D1AuditLogger(env.DB), mailClient);
+    const pubService = new PublicationService(env.DB, publisher, new D1AuditLogger(env.DB), mailClient, env.IMAGE_BUCKET);
 
     const tasks: Array<[string, () => Promise<unknown>]> = [
       // Publishing first: it is time-critical and must not depend on the AI pipeline.

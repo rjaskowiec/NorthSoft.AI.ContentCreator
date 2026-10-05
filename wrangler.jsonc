@@ -24,7 +24,7 @@
     "binding": "AI"
   },
   "r2_buckets": [
-    { "binding": "IMAGE_BUCKET", "bucket_name": "northsoft-ai-content-images-dev" }
+    { "binding": "IMAGE_BUCKET", "bucket_name": "northsoft-ai-content-images" }
   ],
 
   // Worker Previews (for Cloudflare Workers preview deployments)
