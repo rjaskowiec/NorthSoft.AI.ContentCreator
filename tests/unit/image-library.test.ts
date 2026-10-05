@@ -3,21 +3,36 @@ import { ImageLibraryService, CuratedImageRow } from '../../src/services/content
 
 function createMockDb(initialRows: CuratedImageRow[] = []) {
   const store: Map<string, CuratedImageRow> = new Map(initialRows.map((r) => [r.id, { ...r }]));
+  const publishedImages: Set<string> = new Set();
 
   const prepare = vi.fn((sql: string) => {
     return {
       bind: (...args: any[]) => {
         return {
           first: vi.fn(async () => {
-            if (sql.includes('SELECT COUNT(DISTINCT') || sql.includes('FROM publications')) {
+            if (sql.includes("p.status = 'published'")) {
               const imgId = args[0];
               const target = store.get(imgId);
-              if (target && (target.usage_count > 0 || target.used_in_post_id || target.reserved_post_id || target.id === 'img-10')) {
-                return { pub_count: 1, max_published_at: target.last_used_at || new Date().toISOString(), latest_post_id: target.used_in_post_id || target.reserved_post_id || 'draft-101' };
-              }
-              return { pub_count: 0, max_published_at: null, latest_post_id: null };
+              const isPub = publishedImages.has(imgId) || (target?.usage_count || 0) > 0;
+              return { current_count: isPub ? 1 : 0, latest_post_id: target?.used_in_post_id || null };
             }
-            if (sql.includes('SELECT * FROM curated_images WHERE id =')) {
+            if (sql.includes('FROM publications')) {
+              const imgId = args[0];
+              const target = store.get(imgId);
+              const isPub = publishedImages.has(imgId) || (target?.usage_count || 0) > 0;
+              return { pub_count: isPub ? 1 : 0, max_published_at: target?.last_used_at || (isPub ? new Date().toISOString() : null) };
+            }
+            if (sql.includes('FROM audit_log')) {
+              const imgId = args[0];
+              const isPub = publishedImages.has(imgId);
+              return { audit_pub_count: isPub ? 1 : 0, max_audit_time: isPub ? new Date().toISOString() : null };
+            }
+            if (sql.includes("p.status IN ('draft', 'approved', 'scheduled')")) {
+              const imgId = args[0];
+              const target = store.get(imgId);
+              return target && target.reserved_post_id && !publishedImages.has(imgId) ? { id: target.reserved_post_id } : null;
+            }
+            if (sql.includes('FROM curated_images WHERE id =')) {
               const id = args[0];
               return store.get(id) || null;
             }
@@ -46,6 +61,13 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
             return { results: [] };
           }),
           run: vi.fn(async () => {
+            if (sql.includes('INSERT INTO audit_log')) {
+              if (args.includes('IMAGE_PUBLISHED')) {
+                const imgId = args[3];
+                if (imgId) publishedImages.add(imgId);
+              }
+              return { meta: { changes: 1 } };
+            }
             if (sql.includes('INSERT INTO curated_images')) {
               if (sql.includes("'DISCOVERED'")) {
                 const [
@@ -126,10 +148,10 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
                 const imgId = args[args.length - 1] as string;
                 const target = store.get(imgId);
                 if (target) {
-                  const pubCount = typeof args[0] === 'number' ? args[0] : ((target.usage_count || 0) + 1);
+                  const pubCount = typeof args[1] === 'number' && args[1] > 0 ? args[1] : (typeof args[0] === 'number' ? args[0] : ((target.usage_count || 0) + 1));
                   target.usage_count = pubCount;
-                  target.last_used_at = new Date().toISOString();
-                  target.reserved_post_id = null;
+                  target.last_used_at = args[2] ?? (target.last_used_at || null);
+                  target.reserved_post_id = args[4] ?? null;
                 }
               } else if (sql.includes('reserved_post_id = NULL')) {
                 const postId = args[0];

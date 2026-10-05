@@ -1319,6 +1319,14 @@ export function renderAdminHtml(): string {
           </div>
         </div>
 
+        <!-- Failure Alert Banner -->
+        <div id="sched-detail-error-banner" style="display:none; background:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.4); border-radius:8px; padding:0.85rem 1rem; margin-bottom:1rem;">
+          <div style="color:var(--accent-rose); font-weight:700; margin-bottom:0.25rem; display:flex; align-items:center; gap:0.4rem; font-size:0.85rem;">
+            <span>❌ Publication Failed</span>
+          </div>
+          <div id="sched-detail-error-text" style="font-size:0.8rem; color:var(--text-main); font-family:monospace; word-break:break-word;"></div>
+        </div>
+
         <div class="form-group">
           <label class="form-label" for="sched-detail-post-body">Post Content</label>
           <textarea id="sched-detail-post-body" class="form-input" rows="6"></textarea>

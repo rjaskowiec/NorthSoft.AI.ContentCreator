@@ -2363,11 +2363,16 @@ export function getAdminScripts(): string {
                 const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
                 const topicTitle = safeStr(sched.topic_title);
                 const topicId = safeStr(sched.idea_id);
+                const isFailed = sched.status === 'failed';
+                const statusClass = isFailed ? 'status-badge status-danger' : 'status-badge status-healthy';
+                const errorTooltip = isFailed && (sched.error_code || sched.error_message) ? ' title="' + escapeHtml((sched.error_code || '') + (sched.error_message ? ': ' + sched.error_message : '')) + '"' : '';
+                const statusHtml = '<span class="' + statusClass + '"' + errorTooltip + '>' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span>' +
+                  (isFailed && sched.error_code ? '<div style="font-size:0.7rem; color:var(--accent-rose); margin-top:0.25rem; max-width:180px; word-break:break-word;"' + errorTooltip + '>' + escapeHtml(sched.error_code) + '</div>' : '');
                 return '<tr>' +
                   '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
                   '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
                   '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
-                  '<td><span class="status-badge status-healthy">' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span></td>' +
+                  '<td>' + statusHtml + '</td>' +
                   '<td>' +
                     '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">Edit</button>' +
                     '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
@@ -4496,7 +4501,19 @@ export function getAdminScripts(): string {
       if (statusBadge) {
         const st = safeUpper(sched?.status || post?.status, 'SCHEDULED');
         statusBadge.textContent = st;
-        statusBadge.className = 'status-badge ' + (st === 'PUBLISHED' ? 'status-healthy' : 'status-active');
+        statusBadge.className = 'status-badge ' + (st === 'PUBLISHED' ? 'status-healthy' : (st === 'FAILED' ? 'status-danger' : 'status-active'));
+      }
+
+      const errorBanner = document.getElementById('sched-detail-error-banner');
+      const errorText = document.getElementById('sched-detail-error-text');
+      if (errorBanner && errorText) {
+        if (sched?.status === 'failed' && (sched?.error_code || sched?.error_message)) {
+          errorBanner.style.display = 'block';
+          errorText.textContent = (sched.error_code ? '[' + sched.error_code + '] ' : '') + (sched.error_message || 'Publication failed.');
+        } else {
+          errorBanner.style.display = 'none';
+          errorText.textContent = '';
+        }
       }
 
       // Populate scheduled date and time

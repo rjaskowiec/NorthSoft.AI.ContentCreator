@@ -220,7 +220,9 @@ pipelineRouter.get('/schedules', async (c) => {
               pv.content as post_body, ci.title as topic_title, ci.source_title, ci.source_url,
               pi.url as image_url, pi.curated_image_id, pi.visual_verification_status as image_status,
               (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
-              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as published_at
+              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as published_at,
+              (SELECT pub.error_code FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'failed' ORDER BY pub.created_at DESC LIMIT 1) as error_code,
+              (SELECT pub.error_message FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'failed' ORDER BY pub.created_at DESC LIMIT 1) as error_message
        FROM schedules s
        JOIN posts p ON s.post_id = p.id
        LEFT JOIN content_ideas ci ON ci.id = p.idea_id

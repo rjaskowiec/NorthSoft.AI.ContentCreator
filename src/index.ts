@@ -37,7 +37,7 @@ const app = new Hono<AppEnv>();
 // Object keys are random and uploads remain protected by the admin API.
 app.get('/media/:key', async (c) => {
   const key = c.req.param('key');
-  if (!/^[0-9a-f-]{36}\.(?:jpg|png|webp)$/.test(key)) {
+  if (!/^[0-9a-f-]{36}\.(?:jpe?g|png|webp)$/i.test(key)) {
     return c.notFound();
   }
   let object = await c.env.IMAGE_BUCKET.get(`images/${key}`);
@@ -49,6 +49,12 @@ app.get('/media/:key', async (c) => {
   object.writeHttpMetadata(headers);
   headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   headers.set('ETag', object.httpEtag);
+  if (!headers.get('content-type') || headers.get('content-type') === 'application/octet-stream') {
+    const ext = key.split('.').pop()?.toLowerCase();
+    if (ext === 'png') headers.set('content-type', 'image/png');
+    else if (ext === 'jpg' || ext === 'jpeg') headers.set('content-type', 'image/jpeg');
+    else if (ext === 'webp') headers.set('content-type', 'image/webp');
+  }
   return new Response(object.body, { headers });
 });
 

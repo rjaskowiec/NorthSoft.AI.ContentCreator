@@ -665,7 +665,7 @@ export async function recalculateCuratedImageUsage(db: D1Database, imageId: stri
        JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
        WHERE (pi.curated_image_id = ?
               OR (pi.curated_image_id IS NULL AND (pi.source_id = ? OR (pi.url IS NOT NULL AND pi.url != '' AND (pi.url = ? OR (? != '' AND pi.url = ?))))))
-         AND p.status != 'rejected'`,
+         AND p.status = 'published'`,
     )
     .bind(imageId, imageId, curImg.source_url || '', publicUrl, publicUrl)
     .first<{ current_count: number; latest_post_id: string | null }>();

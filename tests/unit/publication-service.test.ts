@@ -376,4 +376,79 @@ describe('PublicationService Unit Tests', () => {
     expect(result.retryable).toBe(false);
     expect(mockPublisher.publishCalls.length).toBe(0);
   });
+
+  it('should use direct R2 bucket head check and bypass HTTP fetch for internal media URLs', async () => {
+    const mockDb = {
+      prepare: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM posts p')) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            first: vi.fn().mockResolvedValue({
+              id: 'post-internal-img',
+              title: 'Internal Image Post',
+              post_status: 'scheduled',
+              version_id: 'ver-internal-img',
+              body: 'Post with internal media',
+              version_status: 'scheduled',
+              version_number: 1,
+              image_url: 'https://ai.northsoft.is/media/37732c75-a89e-4ec2-8f75-a0affd5b4c41.png',
+            }),
+          };
+        }
+        return {
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
+          run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+        };
+      }),
+    } as unknown as D1Database;
+
+    const mockPublisher = new MockMetaPublisher();
+    mockPublisher.mockExternalPostId = 'fb_internal_123';
+
+    const mockR2 = {
+      head: vi.fn().mockResolvedValue({ size: 12345 }),
+    } as unknown as R2Bucket;
+
+    const loggedEvents: any[] = [];
+    const mockLogger = {
+      log: vi.fn().mockImplementation(async (entry: any) => {
+        loggedEvents.push(entry);
+      }),
+    } as any;
+
+    const service = new PublicationService(mockDb, mockPublisher, mockLogger, null, mockR2);
+    const result = await service.publishPost('post-internal-img');
+
+    expect(result.success).toBe(true);
+    expect(mockR2.head).toHaveBeenCalledWith('images/37732c75-a89e-4ec2-8f75-a0affd5b4c41.png');
+    expect(mockPublisher.publishCalls.length).toBe(1);
+  });
+
+  it('should write audit log with POST_NOT_FOUND if post does not exist', async () => {
+    const mockDb = {
+      prepare: vi.fn().mockImplementation(() => ({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(null),
+        run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+      })),
+    } as unknown as D1Database;
+
+    const loggedEvents: any[] = [];
+    const mockLogger = {
+      log: vi.fn().mockImplementation(async (entry: any) => {
+        loggedEvents.push(entry);
+      }),
+    } as any;
+
+    const mockPublisher = new MockMetaPublisher();
+    const service = new PublicationService(mockDb, mockPublisher, mockLogger);
+
+    const result = await service.publishPost('non-existent-post');
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('POST_NOT_FOUND');
+    expect(loggedEvents.some((e) => e.eventType === 'PUBLICATION_FAILED' && e.error?.code === 'POST_NOT_FOUND')).toBe(true);
+  });
 });
+

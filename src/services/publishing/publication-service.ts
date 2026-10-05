@@ -18,6 +18,12 @@ export async function validateImageUrl(
     return { valid: false, error: 'Image URL must start with http:// or https://' };
   }
 
+  // Cloudflare Workers cannot fetch their own domain (self-subrequest deadlock).
+  // Internal media URLs are verified directly via R2 bucket binding.
+  if (trimmed.includes('/media/') || trimmed.includes('ai.northsoft.is')) {
+    return { valid: true, httpStatus: 200 };
+  }
+
   const browserHeaders = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -256,6 +262,25 @@ export class PublicationService {
     // 1. Check Publisher Control Plane Readiness State
     const publisherConfig = this.publisher.getConfigStatus();
     if (publisherConfig.state === 'NOT_CONFIGURED') {
+      await this.auditLogger?.log({
+        eventType: 'PUBLICATION_BLOCKED',
+        entityType: 'post',
+        entityId: postId,
+        actor,
+        level: 'WARNING',
+        status: 'FAILED',
+        error: {
+          code: 'META_NOT_CONFIGURED',
+          message: publisherConfig.statusMessage,
+          stage: 'config_check',
+        },
+        details: {
+          reason: 'META_NOT_CONFIGURED',
+          message: publisherConfig.statusMessage,
+          scheduleId: options?.scheduleId,
+        },
+      });
+
       return {
         success: false,
         code: 'META_NOT_CONFIGURED',
@@ -265,6 +290,25 @@ export class PublicationService {
     }
 
     if (publisherConfig.state === 'DISABLED') {
+      await this.auditLogger?.log({
+        eventType: 'PUBLICATION_BLOCKED',
+        entityType: 'post',
+        entityId: postId,
+        actor,
+        level: 'WARNING',
+        status: 'FAILED',
+        error: {
+          code: 'META_PUBLISH_DISABLED',
+          message: publisherConfig.statusMessage,
+          stage: 'config_check',
+        },
+        details: {
+          reason: 'META_PUBLISH_DISABLED',
+          message: publisherConfig.statusMessage,
+          scheduleId: options?.scheduleId,
+        },
+      });
+
       return {
         success: false,
         code: 'META_PUBLISH_DISABLED',
@@ -305,6 +349,24 @@ export class PublicationService {
       }>();
 
     if (!postRow) {
+      await this.auditLogger?.log({
+        eventType: 'PUBLICATION_FAILED',
+        entityType: 'post',
+        entityId: postId,
+        actor,
+        level: 'ERROR',
+        status: 'FAILED',
+        error: {
+          code: 'POST_NOT_FOUND',
+          message: `Post ${postId} was not found.`,
+          stage: 'post_lookup',
+        },
+        details: {
+          reason: 'POST_NOT_FOUND',
+          scheduleId: options?.scheduleId,
+        },
+      });
+
       return {
         success: false,
         code: 'POST_NOT_FOUND',
@@ -457,6 +519,25 @@ export class PublicationService {
         .run();
 
       if (!lockRes.meta.changes || lockRes.meta.changes === 0) {
+        await this.auditLogger?.log({
+          eventType: 'PUBLICATION_BLOCKED',
+          entityType: 'publication',
+          entityId: publicationId,
+          actor,
+          level: 'WARNING',
+          status: 'DEFERRED',
+          error: {
+            code: 'PUBLICATION_CONCURRENCY_LOCK_FAILED',
+            message: 'Could not acquire publication lock. Publication may be running concurrently.',
+            stage: 'lock_acquisition',
+          },
+          details: {
+            reason: 'PUBLICATION_CONCURRENCY_LOCK_FAILED',
+            postId,
+            scheduleId: options?.scheduleId,
+          },
+        });
+
         return {
           success: false,
           code: 'PUBLICATION_CONCURRENCY_LOCK_FAILED',
@@ -501,6 +582,26 @@ export class PublicationService {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       await this.releasePublicationLockAsFailed(publicationId, 'PUBLISH_EXCEPTION', message);
+      await this.auditLogger?.log({
+        eventType: 'PUBLICATION_FAILED',
+        entityType: 'publication',
+        entityId: publicationId,
+        actor,
+        level: 'ERROR',
+        status: 'FAILED',
+        operation: postRow.title,
+        correlationId: publicationId,
+        error: {
+          code: 'PUBLISH_EXCEPTION',
+          message,
+          stage: 'executeLockedPublication',
+        },
+        details: {
+          postId,
+          postVersionId: postRow.version_id,
+          error: message,
+        },
+      });
       throw err;
     }
   }
@@ -558,13 +659,13 @@ export class PublicationService {
 
     // 6.6. MEDIA ACCESSIBILITY PRE-VALIDATION: Confirm image URL returns HTTP 200 before calling Meta API
     if (canonicalImageUrl) {
-      let isMediaValid = true;
+      let isMediaValid: boolean;
       let mediaError: string | undefined;
       let mediaHttpStatus: number | undefined;
 
       // Fast-path for internal R2 media URLs: check R2 bucket directly to avoid Worker self-subrequest deadlocks
-      const mediaMatch = canonicalImageUrl.match(/\/media\/([0-9a-f-]{36}\.(?:jpg|png|webp))/i);
-      const mediaKey = mediaMatch?.[1];
+      const mediaMatch = canonicalImageUrl.match(/\/media\/([^/?#]+)/i);
+      const mediaKey = mediaMatch?.[1] ? decodeURIComponent(mediaMatch[1]) : undefined;
       if (mediaKey && this.imageBucket) {
         const r2Obj = (await this.imageBucket.head(`images/${mediaKey}`)) || (await this.imageBucket.head(mediaKey));
         if (!r2Obj) {
@@ -880,11 +981,49 @@ export class PublicationService {
         } else {
           failed++;
           if (!result.retryable) {
+            await this.auditLogger?.log({
+              eventType: 'PUBLICATION_FAILED',
+              entityType: 'schedule',
+              entityId: item.schedule_id,
+              actor: 'system',
+              level: 'ERROR',
+              status: 'FAILED',
+              error: {
+                code: result.code || 'SCHEDULED_PUBLICATION_FAILED',
+                message: result.message || 'Scheduled publication failed non-retryable',
+                stage: 'publishScheduledDuePosts',
+              },
+              details: {
+                scheduleId: item.schedule_id,
+                postId: item.post_id,
+                errorCode: result.code,
+                errorMessage: result.message,
+              },
+            });
             await this.db
               .prepare(`UPDATE schedules SET status = 'failed', updated_at = datetime('now') WHERE id = ?`)
               .bind(item.schedule_id)
               .run();
           } else {
+            await this.auditLogger?.log({
+              eventType: 'PUBLICATION_RETRY',
+              entityType: 'schedule',
+              entityId: item.schedule_id,
+              actor: 'system',
+              level: 'WARNING',
+              status: 'DEFERRED',
+              error: {
+                code: result.code || 'SCHEDULED_PUBLICATION_RETRYABLE',
+                message: result.message || 'Scheduled publication encountered retryable error, reset to pending',
+                stage: 'publishScheduledDuePosts',
+              },
+              details: {
+                scheduleId: item.schedule_id,
+                postId: item.post_id,
+                errorCode: result.code,
+                errorMessage: result.message,
+              },
+            });
             await this.db
               .prepare(`UPDATE schedules SET status = 'pending', updated_at = datetime('now') WHERE id = ?`)
               .bind(item.schedule_id)
