@@ -23,6 +23,8 @@ imagesRouter.get('/images', async (c) => {
   const offset = parseInt(c.req.query('offset') || '0', 10);
 
   const imgService = new ImageLibraryService(db);
+  c.executionCtx?.waitUntil(imgService.purgeExpiredRejectedImages(7, c.env.IMAGE_BUCKET));
+
   const result = await imgService.listImages({
     status,
     category,
@@ -371,5 +373,20 @@ imagesRouter.post('/images/bulk-action', csrfProtection, async (c) => {
     success: true,
     updatedCount,
     action,
+  });
+});
+
+/**
+ * POST /api/admin/images/purge-rejected
+ * Hard-purges REJECTED images older than 7 days.
+ */
+imagesRouter.post('/images/purge-rejected', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const imgService = new ImageLibraryService(db);
+  const result = await imgService.purgeExpiredRejectedImages(7, c.env.IMAGE_BUCKET);
+  return c.json({
+    success: true,
+    purgedCount: result.purgedCount,
+    purgedIds: result.purgedIds,
   });
 });

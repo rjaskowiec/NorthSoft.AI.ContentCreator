@@ -19,6 +19,7 @@ import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
 import { FacebookPublisher } from './publishing/facebook-publisher';
 import { ContentOrchestrator } from './services/content/content-orchestrator';
+import { ImageLibraryService } from './services/content/image-library-service';
 import { NorthSoftMailGatewayClient } from './services/mail/mail-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { PublicationService } from './services/publishing/publication-service';
@@ -134,6 +135,7 @@ export default {
       ['syncFacebookPostsToSystem', () => pubService.syncFacebookPostsToSystem()],
       ['runPipeline', () => orchestrator.runPipeline('cron')],
       ['sendWeeklyDigest', () => NotificationService.sendWeeklyDigest(env.DB, mailClient)],
+      ['purgeExpiredRejectedImages', () => new ImageLibraryService(env.DB).purgeExpiredRejectedImages(7, env.IMAGE_BUCKET)],
     ];
 
     ctx.waitUntil(

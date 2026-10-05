@@ -261,6 +261,76 @@ export class ImageLibraryService {
   }
 
   /**
+   * Permanently purges REJECTED images older than retentionDays (default: 7 days).
+   * Removes R2 stored objects, unlinks draft references, and deletes D1 rows.
+   */
+  async purgeExpiredRejectedImages(
+    retentionDays: number = 7,
+    r2Bucket?: R2Bucket,
+  ): Promise<{ purgedCount: number; purgedIds: string[] }> {
+    const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const cutoffIso = new Date(cutoffMs).toISOString();
+
+    const expiredRows = await this.db
+      .prepare(
+        `SELECT id, r2_key, title, source_url
+         FROM curated_images
+         WHERE status = 'REJECTED' AND updated_at < ?`,
+      )
+      .bind(cutoffIso)
+      .all<{ id: string; r2_key: string | null; title: string; source_url: string | null }>();
+
+    const candidates = expiredRows.results || [];
+    if (candidates.length === 0) {
+      return { purgedCount: 0, purgedIds: [] };
+    }
+
+    const purgedIds: string[] = [];
+    for (const img of candidates) {
+      if (img.r2_key && r2Bucket) {
+        try {
+          await r2Bucket.delete(img.r2_key);
+        } catch (r2Err) {
+          console.warn(`[ImageLibraryService] R2 delete failed for key ${img.r2_key}:`, r2Err);
+        }
+      }
+
+      await this.db
+        .prepare(
+          `DELETE FROM post_images
+           WHERE (curated_image_id = ? OR url IN (SELECT source_url FROM curated_images WHERE id = ? AND source_url IS NOT NULL))
+             AND post_id IN (SELECT id FROM posts WHERE status != 'published')`,
+        )
+        .bind(img.id, img.id)
+        .run()
+        .catch(() => null);
+
+      const res = await this.db
+        .prepare("DELETE FROM curated_images WHERE id = ? AND status = 'REJECTED'")
+        .bind(img.id)
+        .run();
+
+      if ((res.meta?.changes ?? 0) > 0) {
+        purgedIds.push(img.id);
+        await this.auditLogger
+          .log({
+            action: 'IMAGE_PURGED',
+            component: 'ImageLibraryService',
+            details: {
+              imageId: img.id,
+              title: img.title,
+              retentionDays,
+              reason: '7-day retention expiry for REJECTED image',
+            },
+          })
+          .catch(() => null);
+      }
+    }
+
+    return { purgedCount: purgedIds.length, purgedIds };
+  }
+
+  /**
    * Deterministic matching algorithm: Finds best APPROVED image for a post topic/content.
    * Enforces 90-day reuse exclusion policy and candidate ranking.
    */

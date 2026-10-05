@@ -55,6 +55,9 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
               let list = Array.from(store.values());
               if (sql.includes("status = 'APPROVED'")) {
                 list = list.filter((img) => img.status === 'APPROVED');
+              } else if (sql.includes("status = 'REJECTED'")) {
+                const cutoff = args[0];
+                list = list.filter((img) => img.status === 'REJECTED' && img.updated_at < cutoff);
               }
               return { results: list };
             }
@@ -138,6 +141,12 @@ function createMockDb(initialRows: CuratedImageRow[] = []) {
                 store.set(id, row);
               }
               return { meta: { changes: 1 } };
+            }
+
+            if (sql.includes('DELETE FROM curated_images')) {
+              const id = args[0];
+              const deleted = store.delete(id);
+              return { meta: { changes: deleted ? 1 : 0 } };
             }
 
             if (sql.includes('UPDATE curated_images')) {
@@ -523,6 +532,55 @@ describe('ImageLibraryService & Curated Image Operations', () => {
 
       const released = store.get('img-10');
       expect(released?.reserved_post_id).toBeNull();
+    });
+
+    it('purges REJECTED images older than 7 days and preserves active/recent images', async () => {
+      const eightDaysAgoIso = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+      const twoDaysAgoIso = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+      const expiredRejected: CuratedImageRow = {
+        id: 'img-expired',
+        title: 'Old Rejected Image',
+        source_type: 'UPLOADED',
+        source_url: 'https://example.com/old-rejected.jpg',
+        original_page_url: null, author: null, author_url: null, license: null, license_url: null,
+        category: 'AI', secondary_categories: null, keywords: 'old', tags: null, description: 'old', notes: null,
+        r2_key: 'uploads/old-rejected.jpg',
+        status: 'REJECTED',
+        discovery_query: null, discovery_score: 0, usage_count: 0, last_used_at: null, used_in_post_id: null, reserved_post_id: null,
+        created_at: eightDaysAgoIso,
+        updated_at: eightDaysAgoIso,
+      };
+
+      const recentRejected: CuratedImageRow = {
+        id: 'img-recent',
+        title: 'Recent Rejected Image',
+        source_type: 'UPLOADED',
+        source_url: 'https://example.com/recent-rejected.jpg',
+        original_page_url: null, author: null, author_url: null, license: null, license_url: null,
+        category: 'AI', secondary_categories: null, keywords: 'recent', tags: null, description: 'recent', notes: null,
+        r2_key: null,
+        status: 'REJECTED',
+        discovery_query: null, discovery_score: 0, usage_count: 0, last_used_at: null, used_in_post_id: null, reserved_post_id: null,
+        created_at: twoDaysAgoIso,
+        updated_at: twoDaysAgoIso,
+      };
+
+      const { DB, store } = createMockDb([expiredRejected, recentRejected]);
+      const service = new ImageLibraryService(DB);
+
+      const deletedKeys: string[] = [];
+      const mockR2Bucket = {
+        delete: async (key: string) => { deletedKeys.push(key); }
+      } as any;
+
+      const result = await service.purgeExpiredRejectedImages(7, mockR2Bucket);
+
+      expect(result.purgedCount).toBe(1);
+      expect(result.purgedIds).toContain('img-expired');
+      expect(store.has('img-expired')).toBe(false);
+      expect(store.has('img-recent')).toBe(true);
+      expect(deletedKeys).toContain('uploads/old-rejected.jpg');
     });
   });
 });

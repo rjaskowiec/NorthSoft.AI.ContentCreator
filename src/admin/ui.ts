@@ -617,17 +617,16 @@ export function renderAdminHtml(): string {
             <!-- Filters & Search Bar -->
             <div style="display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; align-items:center; justify-space-between;">
               <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
-                <select id="image-category-filter" class="bulk-select-status" style="width:190px;" onchange="loadImagesData()">
-                  <option value="">All Categories</option>
-                  <option value="AI">AI & Machine Learning</option>
-                  <option value="Website">Website & WebDev</option>
-                  <option value="Marketing">Marketing & SEO</option>
-                  <option value="Sales">Sales & Growth</option>
-                  <option value="Small Business">Small Business</option>
-                  <option value="Customer Experience">Customer Experience</option>
-                  <option value="Cybersecurity">Cybersecurity & Cloud</option>
-                  <option value="Technology">Technology & Software</option>
-                  <option value="General">General</option>
+                <select id="image-category-filter" class="bulk-select-status" style="width:230px;" onchange="loadImagesData()">
+                  <option value="">Wszystkie kategorie (All)</option>
+                  <option value="AI & Business Automation">🤖 AI & Business Automation</option>
+                  <option value="Websites & Landing Pages">🌐 Websites & Landing Pages</option>
+                  <option value="Marketing & Customer Acquisition">📢 Marketing & Customer Acquisition</option>
+                  <option value="Sales & Conversion Process">💼 Sales & Conversion Process</option>
+                  <option value="Small Business Productivity & Ops">⚙️ Small Business Productivity & Ops</option>
+                  <option value="Customer Experience & Trust">🤝 Customer Experience & Trust</option>
+                  <option value="Local Business & Regional Context">📍 Local Business & Regional Context</option>
+                  <option value="General">General / Inne</option>
                 </select>
                 <input type="text" id="image-search-input" class="bulk-select-status" style="width:260px; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Search keywords, title, description..." onkeyup="debounceImageSearch()" />
               </div>
@@ -1666,15 +1665,14 @@ export function renderAdminHtml(): string {
             <div>
               <label class="form-label">Category *</label>
               <select id="add-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
-                <option value="AI">AI & Machine Learning</option>
-                <option value="Website">Website & WebDev</option>
-                <option value="Marketing">Marketing & SEO</option>
-                <option value="Sales">Sales & Growth</option>
-                <option value="Small Business">Small Business</option>
-                <option value="Customer Experience">Customer Experience</option>
-                <option value="Cybersecurity">Cybersecurity & Cloud</option>
-                <option value="Technology" selected>Technology & Software</option>
-                <option value="General">General</option>
+                <option value="AI &amp; Business Automation" selected>🤖 AI &amp; Business Automation</option>
+                <option value="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option>
+                <option value="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option>
+                <option value="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option>
+                <option value="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option>
+                <option value="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option>
+                <option value="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option>
+                <option value="General">General / Inne</option>
               </select>
             </div>
           </div>
@@ -1750,15 +1748,14 @@ export function renderAdminHtml(): string {
             <div>
               <label class="form-label">Category *</label>
               <select id="edit-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
-                <option value="AI">AI & Machine Learning</option>
-                <option value="Website">Website & WebDev</option>
-                <option value="Marketing">Marketing & SEO</option>
-                <option value="Sales">Sales & Growth</option>
-                <option value="Small Business">Small Business</option>
-                <option value="Customer Experience">Customer Experience</option>
-                <option value="Cybersecurity">Cybersecurity & Cloud</option>
-                <option value="Technology">Technology & Software</option>
-                <option value="General">General</option>
+                <option value="AI &amp; Business Automation">🤖 AI &amp; Business Automation</option>
+                <option value="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option>
+                <option value="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option>
+                <option value="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option>
+                <option value="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option>
+                <option value="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option>
+                <option value="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option>
+                <option value="General">General / Inne</option>
               </select>
             </div>
           </div>
@@ -1819,32 +1816,33 @@ export function renderAdminHtml(): string {
       <!-- VIEW 1: Topic Selection Form -->
       <div id="discover-view-form" class="modal-body">
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
-          Select a standard topic from NorthSoft content pillars or active system research, or enter a custom topic to discover open-license candidate illustrations.
+          Wybierz domyślną kategorię postów, aktywny temat z badań lub opcję <strong>Custom</strong>, aby wyszukać własne słowa kluczowe.
         </p>
 
         <div class="form-group">
-          <label class="form-label" for="discover-topic-select">Topic / Subject</label>
+          <label class="form-label" for="discover-topic-select" style="font-weight:600;">Temat / Kategoria Wyszukiwania</label>
           <select id="discover-topic-select" class="form-input" onchange="handleDiscoverTopicSelectChange()">
-            <option value="">-- Loading system topics &amp; categories --</option>
+            <option value="">-- Wczytywanie kategorii i tematów --</option>
           </select>
         </div>
 
-        <div class="form-group" id="discover-custom-topic-group" style="display:none;">
-          <label class="form-label" for="discover-custom-topic-input">Custom Topic / Search Query</label>
-          <input type="text" id="discover-custom-topic-input" class="form-input" placeholder="e.g. AI-powered customer support, Modern homepage design" oninput="validateDiscoverForm()" />
+        <div class="form-group" id="discover-custom-topic-group" style="display:none; background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem;">
+          <label class="form-label" for="discover-custom-topic-input" style="color:var(--accent-blue); font-weight:600;">✏️ Wpisz własny temat / słowa kluczowe (Custom Search)</label>
+          <input type="text" id="discover-custom-topic-input" class="form-input" placeholder="np. Bezpieczeństwo danych w chmurze, Strona internetowa firmy, Obsługa klienta" oninput="validateDiscoverForm()" />
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">System wyszuka oficjalne ilustracje spełniające podane słowa kluczowe.</div>
         </div>
 
         <div class="form-group" style="margin-bottom:0.5rem;">
-          <label class="form-label" for="discover-category-select">Assigned Category</label>
+          <label class="form-label" for="discover-category-select">Przypisana kategoria w Bibliotece</label>
           <select id="discover-category-select" class="form-input">
-            <option value="Technology &amp; Business">Technology &amp; Business</option>
-            <option value="AI &amp; Business Automation">AI &amp; Business Automation</option>
-            <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
-            <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
-            <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
-            <option value="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option>
-            <option value="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option>
-            <option value="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option>
+            <option value="AI &amp; Business Automation">🤖 AI &amp; Business Automation</option>
+            <option value="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option>
+            <option value="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option>
+            <option value="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option>
+            <option value="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option>
+            <option value="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option>
+            <option value="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option>
+            <option value="General">General / Inne</option>
           </select>
         </div>
       </div>

@@ -26,6 +26,7 @@ export type AuditEventType =
   | 'POST_BLOCKED'
   | 'POST_APPROVED'
   | 'POST_REJECTED'
+  | 'IMAGE_PURGED'
   | 'ADMIN_ACTION'
   | 'CONFIG_CHANGED'
   | 'SYSTEM_ERROR'

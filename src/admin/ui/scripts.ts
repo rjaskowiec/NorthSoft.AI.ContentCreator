@@ -5516,27 +5516,37 @@ export function getAdminScripts(): string {
         const data = await res.json();
 
         if (data.success && selectEl) {
-          let html = '<option value="">-- Select a topic / category --</option>';
+          let html = '<option value="">-- Wybierz kategorię lub temat wyszukiwania --</option>';
 
           if (data.pillars && data.pillars.length > 0) {
-            html += '<optgroup label="Standard Content Pillars">';
+            html += '<optgroup label="Domyślne kategorie postów (Standard Pillars)">';
             data.pillars.forEach((p) => {
-              html += '<option value="pillar:' + escapeHtml(p.id) + '" data-query="' + escapeHtml(p.name) + '" data-category="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + '</option>';
+              const iconMap = {
+                AI: '🤖 ',
+                WEBSITE: '🌐 ',
+                MARKETING: '📢 ',
+                SALES: '💼 ',
+                SMALL_BUSINESS: '⚙️ ',
+                CUSTOMER_EXPERIENCE: '🤝 ',
+                LOCAL_BUSINESS: '📍 '
+              };
+              const icon = iconMap[p.id] || '📁 ';
+              html += '<option value="pillar:' + escapeHtml(p.id) + '" data-query="' + escapeHtml(p.name) + '" data-category="' + escapeHtml(p.name) + '">' + icon + escapeHtml(p.name) + '</option>';
             });
             html += '</optgroup>';
           }
 
           if (data.systemTopics && data.systemTopics.length > 0) {
-            html += '<optgroup label="Active System Research Topics">';
+            html += '<optgroup label="Aktywne tematy z badań (Active Research Topics)">';
             data.systemTopics.forEach((t) => {
               const cat = t.category || t.content_pillar || 'Technology & Business';
-              html += '<option value="topic:' + escapeHtml(t.id) + '" data-query="' + escapeHtml(t.title) + '" data-category="' + escapeHtml(cat) + '">' + escapeHtml(t.title) + '</option>';
+              html += '<option value="topic:' + escapeHtml(t.id) + '" data-query="' + escapeHtml(t.title) + '" data-category="' + escapeHtml(cat) + '">💡 ' + escapeHtml(t.title) + '</option>';
             });
             html += '</optgroup>';
           }
 
-          html += '<optgroup label="Custom Search">';
-          html += '<option value="__CUSTOM__">✏️ Custom topic...</option>';
+          html += '<optgroup label="Własne wyszukiwanie (Custom Search)">';
+          html += '<option value="__CUSTOM__">✏️ Custom search... (Wpisz słowa kluczowe z ręki)</option>';
           html += '</optgroup>';
 
           selectEl.innerHTML = html;
@@ -5549,7 +5559,7 @@ export function getAdminScripts(): string {
       } catch (err) {
         console.error('[DiscoverModal] Failed to fetch topics:', err);
         if (selectEl) {
-          selectEl.innerHTML = '<option value="pillar:AI" data-query="AI &amp; Business Automation" data-category="AI &amp; Business Automation">AI &amp; Business Automation</option><option value="pillar:WEBSITE" data-query="Websites &amp; Landing Pages" data-category="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option><option value="pillar:MARKETING" data-query="Marketing &amp; Customer Acquisition" data-category="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option><option value="pillar:SALES" data-query="Sales &amp; Conversion Process" data-category="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option><option value="pillar:SMALL_BUSINESS" data-query="Small Business Productivity &amp; Ops" data-category="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option><option value="pillar:CUSTOMER_EXPERIENCE" data-query="Customer Experience &amp; Trust" data-category="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option><option value="pillar:LOCAL_BUSINESS" data-query="Local Business &amp; Regional Context" data-category="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option><option value="__CUSTOM__">✏️ Custom topic...</option>';
+          selectEl.innerHTML = '<optgroup label="Domyślne kategorie postów"><option value="pillar:AI" data-query="AI &amp; Business Automation" data-category="AI &amp; Business Automation">🤖 AI &amp; Business Automation</option><option value="pillar:WEBSITE" data-query="Websites &amp; Landing Pages" data-category="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option><option value="pillar:MARKETING" data-query="Marketing &amp; Customer Acquisition" data-category="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option><option value="pillar:SALES" data-query="Sales &amp; Conversion Process" data-category="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option><option value="pillar:SMALL_BUSINESS" data-query="Small Business Productivity &amp; Ops" data-category="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option><option value="pillar:CUSTOMER_EXPERIENCE" data-query="Customer Experience &amp; Trust" data-category="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option><option value="pillar:LOCAL_BUSINESS" data-query="Local Business &amp; Regional Context" data-category="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option></optgroup><optgroup label="Własne wyszukiwanie"><option value="__CUSTOM__">✏️ Custom search... (Wpisz słowa kluczowe z ręki)</option></optgroup>';
           selectEl.value = 'pillar:AI';
           handleDiscoverTopicSelectChange();
         }
