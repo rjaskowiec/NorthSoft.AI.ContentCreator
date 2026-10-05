@@ -797,7 +797,7 @@ contentRouter.post('/content/schedules/intelligent-commit', csrfProtection, asyn
     slots?: Array<{
       postId: string;
       scheduledAtIso: string;
-      decisionMetadata?: any;
+      decisionMetadata?: Record<string, unknown>;
     }>;
   };
 
@@ -808,11 +808,17 @@ contentRouter.post('/content/schedules/intelligent-commit', csrfProtection, asyn
 
   const nowIso = new Date().toISOString();
   let committedCount = 0;
+  const committedSlots: Array<{ postId: string; scheduledAtIso: string }> = [];
 
   for (const slot of slots) {
     const postId = (slot.postId || '').trim();
-    const scheduledAt = (slot.scheduledAtIso || '').trim();
-    if (!postId || !scheduledAt) continue;
+    const requestedScheduledAt = (slot.scheduledAtIso || '').trim();
+    const scheduledMs = new Date(requestedScheduledAt).getTime();
+    if (!postId || !requestedScheduledAt || Number.isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+      return c.json({ success: false, error: 'Every proposed slot must contain a future ISO date and time.' }, 400);
+    }
+    // Store the canonical ISO representation of the exact proposal approved by the user.
+    const scheduledAt = new Date(scheduledMs).toISOString();
 
     const metadataJson = slot.decisionMetadata ? JSON.stringify(slot.decisionMetadata) : null;
     const existingSched = await db.prepare('SELECT id FROM schedules WHERE post_id = ?').bind(postId).first();
@@ -843,10 +849,12 @@ contentRouter.post('/content/schedules/intelligent-commit', csrfProtection, asyn
     }
 
     committedCount++;
+    committedSlots.push({ postId, scheduledAtIso: scheduledAt });
   }
 
   return c.json({
     success: true,
     committedCount,
+    committedSlots,
   });
 });

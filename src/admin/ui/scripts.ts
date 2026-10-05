@@ -1769,10 +1769,18 @@ export function getAdminScripts(): string {
           if (tbody) {
             if (activeProposedSlots.length > 0) {
               tbody.innerHTML = activeProposedSlots.map((slot) => {
+                const scheduledAt = new Date(slot.scheduledAtIso);
+                const hasValidScheduledAt = !isNaN(scheduledAt.getTime());
+                const scheduledDate = hasValidScheduledAt
+                  ? scheduledAt.toISOString().slice(0, 10)
+                  : safeStr(slot.scheduledDate);
+                const scheduledTime = hasValidScheduledAt
+                  ? scheduledAt.toISOString().slice(11, 16) + ' UTC'
+                  : safeStr(slot.scheduledTime, 'Time unavailable');
                 return '<tr>' +
                   '<td><strong>' + escapeHtml(safeStr(slot.postTitle)) + '</strong></td>' +
-                  '<td><span class="code-tag">' + escapeHtml(safeStr(slot.scheduledDate)) + '</span></td>' +
-                  '<td><span class="status-badge status-healthy">' + escapeHtml(safeStr(slot.scheduledTime)) + '</span></td>' +
+                  '<td><span class="code-tag">' + escapeHtml(scheduledDate) + '</span></td>' +
+                  '<td><span class="status-badge status-healthy">' + escapeHtml(scheduledTime) + '</span></td>' +
                   '<td><span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(safeStr(slot.reason)) + '</span></td>' +
                 '</tr>';
               }).join('');
@@ -1803,23 +1811,37 @@ export function getAdminScripts(): string {
       if (commitBtn) commitBtn.textContent = 'Saving schedule...';
 
       try {
+        const slotsToCommit = activeProposedSlots.map((slot) => ({
+          postId: safeStr(slot.postId).trim(),
+          scheduledAtIso: safeStr(slot.scheduledAtIso).trim(),
+          decisionMetadata: slot.decisionMetadata || undefined,
+        })).filter((slot) => slot.postId && !isNaN(new Date(slot.scheduledAtIso).getTime()));
+
+        if (slotsToCommit.length !== activeProposedSlots.length) {
+          throw new Error('One or more proposed publication times are invalid. Please calculate the schedule again.');
+        }
+
         const res = await fetch('/api/admin/content/schedules/intelligent-commit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ slots: activeProposedSlots }),
+          body: JSON.stringify({ slots: slotsToCommit }),
         });
         const data = await res.json();
-        if (res.ok && data.success) {
+        const committedSlots = Array.isArray(data.committedSlots) ? data.committedSlots : [];
+        const commitMatchesProposal = committedSlots.length === slotsToCommit.length && committedSlots.every((slot, index) =>
+          slot.postId === slotsToCommit[index].postId && slot.scheduledAtIso === slotsToCommit[index].scheduledAtIso,
+        );
+        if (res.ok && data.success && commitMatchesProposal) {
           closeModal('intelligent-schedule-modal');
           selectedPostIds.clear();
           window.TaskQueue.complete(taskId, 'Successfully scheduled ' + data.committedCount + ' posts.');
           await loadContentData();
           await loadSchedulesData();
         } else {
-          window.TaskQueue.fail(taskId, 'Commit Schedule Failed', safeStr(data.error, 'Server rejected schedule commit.'));
+          window.TaskQueue.fail(taskId, 'Commit Schedule Failed', safeStr(data.error, 'The saved schedule did not match the approved proposal.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Failure', 'Network error committing schedule.');
+        window.TaskQueue.fail(taskId, 'Commit Schedule Failed', err instanceof Error ? err.message : 'Network error committing schedule.');
       } finally {
         if (commitBtn) commitBtn.textContent = 'Accept & Commit Schedule';
       }

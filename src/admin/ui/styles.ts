@@ -1280,8 +1280,6 @@ export function getAdminCss(): string {
       color: #ffffff;
       margin-right: 0.3rem;
     }
-      margin-right: 0.3rem;
-    }
 
     /* STEPPER PROGRESS FEEDBACK */
     .pipeline-stepper {
@@ -1585,13 +1583,16 @@ export function getAdminCss(): string {
       flex-direction: column;
       transition: all 0.15s ease;
       position: relative;
+      min-width: 0;
     }
     .image-card:hover {
       border-color: var(--border-color-hover);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     }
     .image-card-preview {
+      display: block;
       width: 100%;
+      max-width: 100%;
       height: 150px;
       object-fit: cover;
       background: #090d16;
@@ -1632,6 +1633,19 @@ export function getAdminCss(): string {
       grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
       gap: 1rem;
       padding: 1rem;
+      min-width: 0;
+    }
+
+    @media (max-width: 640px) {
+      #image-library-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 0.75rem;
+        padding: 0.75rem;
+      }
+
+      .image-card-preview {
+        height: 120px;
+      }
     }
 
     /* TAB BUTTONS */
@@ -1654,12 +1668,6 @@ export function getAdminCss(): string {
       background: var(--accent-blue);
       color: #fff;
       border-color: var(--accent-blue-hover);
-    }
-      display: flex;
-      gap: 0.35rem;
-      margin-top: auto;
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--border-color);
     }
     .badge-count {
       background: rgba(255, 255, 255, 0.1);

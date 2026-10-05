@@ -640,7 +640,7 @@ export function renderAdminHtml(): string {
             </div>
 
             <!-- Image Grid Container -->
-            <div id="image-library-grid" class="image-library-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:1.25rem;">
+            <div id="image-library-grid" class="image-library-grid">
               <div style="grid-column: 1 / -1; text-align:center; color:var(--text-muted); padding:3rem;">Loading Image Library...</div>
             </div>
           </div>
