@@ -634,8 +634,11 @@ export class ContentPlannerService {
         .run();
     }
 
+    const lastReasons = (correctionHint || '').split('\n').filter(Boolean).slice(0, 4).join(' | ');
     const blockReason =
-      runErrorMessage || `Failed quality gate evaluation after ${currentVersion} attempts. Post blocked from publishing.`;
+      runErrorMessage ||
+      `Failed quality gate evaluation after ${currentVersion} attempts. Post blocked from publishing.` +
+        (lastReasons ? ` Last issues: ${lastReasons}` : '');
 
     await this.auditLogger.log({
       eventType: 'WORKFLOW_FAILED',
