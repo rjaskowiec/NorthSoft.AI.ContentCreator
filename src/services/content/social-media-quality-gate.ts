@@ -27,8 +27,9 @@ export interface SMQGResult {
   /** Score from 0 to 100 */
   score: number;
   warnings: SMQGWarning[];
-  /** Pass if score is acceptable, no critical warnings, and <= 1 high warning */
+  /** Pass if score is acceptable, no critical warnings, no high warnings, and score >= quality floor (75) */
   pass: boolean;
+  genericnessScore: number; // 0 (completely concrete/original) to 100 (heavily generic/AI template)
   dimensionScores?: Record<string, number>;
 }
 
@@ -68,6 +69,33 @@ export const GENERIC_AI_MARKETING_TROPES = [
   /\bdrive\s+results\b/i,
   /\bmake\s+an\s+impact\b/i,
   /\btransform\s+your\s+business\b/i,
+  /\byour\s+business\s+deserves\b/i,
+  /\bit'?s\s+more\s+than\s+just\b/i,
+];
+
+// Structural AI syntactic template patterns (syntactic formulas characteristic of AI output)
+export const AI_TEMPLATE_SYNTAX_PATTERNS = [
+  /\byou'?re\s+not\s+just\s+[^,.?!]+,?\s+you'?re\s+[^.?!]+/i,
+  /\bit'?s\s+not\s+(?:just\s+)?about\s+[^,.?!]+,?\s+it'?s\s+(?:all\s+)?about\s+[^.?!]+/i,
+  /\bdon'?t\s+just\s+[^,.?!]+[-—,]\s+[^.?!]+/i,
+  /\b(?:isn'?t|is\s+not)\s+just\s+[^,.?!]+,?\s+it'?s\s+[^.?!]+/i,
+  /\bthe\s+truth\s+is,?\s+/i,
+  /\bhere'?s\s+the\s+thing:?\s+/i,
+  /\bwhether\s+you'?re\s+[^,]+,\s+or\s+[^,]+,?\s+/i,
+  /\bin\s+(?:today'?s|the)\s+(?:digital|fast-paced|modern)\s+(?:age|world|landscape)\b/i,
+];
+
+// Enterprise / Academic consulting abstraction jargon alien to small business owners
+export const ENTERPRISE_CONSULTING_TERMS = [
+  /\bconvince\s+stakeholders\b/i,
+  /\btesting\s+causality\b/i,
+  /\bcalculating\s+the\s+potential\s+return\s+on\s+investment\b/i,
+  /\bcalculating\s+(?:the\s+)?ROI\b/i,
+  /\bdefining\s+business\s+value\b/i,
+  /\bstrategic\s+imperative\b/i,
+  /\bparadigm\s+shift\b/i,
+  /\bcore\s+competenc(?:y|ies)\b/i,
+  /\bmake\s+a\s+compelling\s+case\s+for\b/i,
 ];
 
 // Empty engagement bait questions
@@ -88,26 +116,33 @@ export const EMPTY_ENGAGEMENT_QUESTIONS = [
 export const GENERIC_OPENING_PATTERNS = [
   /^you\s+want\s+to\s+reach\s+more\s+customers/i,
   /^in\s+today's\s+(?:digital|fast-paced)\s+world/i,
+  /^in\s+the\s+(?:digital|modern)\s+age/i,
   /^as\s+a\s+business\s+owner,?\s+you\s+know/i,
   /^running\s+a\s+business\s+is\s+(?:hard|challenging|not\s+easy)/i,
   /^every\s+business\s+needs\s+a\s+website/i,
   /^having\s+a\s+(?:good\s+)?website\s+is\s+important/i,
   /^your\s+website\s+is\s+important\s+for\s+your\s+business/i,
+  /^your\s+business\s+is\s+more\s+than\s+just/i,
+  /^you'?re\s+not\s+just\s+/i,
   /^websites\s+are\s+important/i,
+  /^a\s+professional\s+website\s+is\s+essential/i,
+  /^businesses\s+need\s+to\b/i,
 ];
 
 export class SocialMediaQualityGate {
-  // Dimension weights — must sum to 100
+  // Dimension weights — sum to 100
   private readonly weights: Record<string, number> = {
+    Genericness: 10,
+    Authenticity: 10,
     InformationGain: 14,
     Attention: 10,
-    Specificity: 12,
-    Value: 12,
-    Credibility: 14,
-    HumanVoice: 8,
-    Readability: 10,
-    Authenticity: 10,
-    CTAQuality: 10,
+    AudienceRelevance: 12,
+    Specificity: 10,
+    Value: 10,
+    Credibility: 10,
+    HumanVoice: 4,
+    Readability: 5,
+    CTAQuality: 5,
   };
 
   /**
@@ -125,6 +160,9 @@ export class SocialMediaQualityGate {
       warnings.push({ dimension: dim, severity: sev, reason });
     };
 
+    const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
+    const lineBreaks = (body.match(/\n/g) || []).length;
+
     // -------------------------------------------------------------------
     // 0. BASIC SANITY / LENGTH CHECKS (Readability)
     // -------------------------------------------------------------------
@@ -136,8 +174,85 @@ export class SocialMediaQualityGate {
       add('Readability', 'medium', 'Post body exceeds 1600 characters — consider tightening for social feed scannability.');
     }
 
+
+
     // -------------------------------------------------------------------
-    // 1. INFORMATION GAIN & PARAPHRASE DETECTION (Weight: 14)
+    // 1. GENERICNESS & AI TEMPLATE PATTERNS (Weight: 16)
+    // -------------------------------------------------------------------
+    let genericSignalsCount = 0;
+    const aiTemplateMatches: string[] = [];
+    for (const pat of AI_TEMPLATE_SYNTAX_PATTERNS) {
+      if (pat.test(body)) {
+        aiTemplateMatches.push(pat.source);
+        genericSignalsCount += 2;
+      }
+    }
+
+    const matchedTropes: string[] = [];
+    for (const trope of GENERIC_AI_MARKETING_TROPES) {
+      if (trope.test(body)) {
+        matchedTropes.push(trope.source);
+        genericSignalsCount += 1;
+      }
+    }
+
+    // Abstract marketing keywords without operational anchoring
+    const abstractMarketingWords = (body.toLowerCase().match(/\b(customer experience|business value|digital strategy|online presence|digital transformation|business growth|online visibility)\b/g) || []).length;
+    if (abstractMarketingWords >= 2) {
+      genericSignalsCount += 1;
+    }
+
+    // Concrete operational entities count (anchor against abstraction)
+    const concreteEntityMatches = (body.toLowerCase().match(/\b(customer|booking|checkout|phone call|phone|contact form|invoice|appointment|website page|product page|google|email|mobile|screen|hours|price|prices|quote|menu|competitor|competitors|mechanic|plumber|shop|store|client|clients)\b/g) || []).length;
+
+    // Compute genericness score: 0 (completely concrete/original) to 100 (heavily generic/AI template)
+    let calculatedGenericnessScore = Math.min(100, Math.round(
+      (genericSignalsCount * 25) +
+      (abstractMarketingWords * 10) -
+      (Math.min(concreteEntityMatches, 5) * 6)
+    ));
+    calculatedGenericnessScore = Math.max(0, calculatedGenericnessScore);
+
+    if (aiTemplateMatches.length >= 1 && concreteEntityMatches < 3) {
+      add('Genericness', 'critical', `Recognizable AI syntactic template detected without concrete operational grounding ("${aiTemplateMatches[0]}"). Social posts must lead with a relatable real-world situation.`);
+    } else if (aiTemplateMatches.length >= 1) {
+      add('Genericness', 'high', `Post relies on predictable AI template syntax ("${aiTemplateMatches[0]}"). Ground in specific customer actions instead.`);
+    }
+
+    if (matchedTropes.length >= 3) {
+      add('Authenticity', 'critical', `Post contains heavily stacked generic AI marketing clichés (${matchedTropes.length} detected) that replace concrete substance.`);
+    } else if (matchedTropes.length >= 2) {
+      add('Authenticity', 'high', `Post contains multiple corporate jargon phrases or generic marketing clichés (${matchedTropes.length} detected).`);
+    } else if (matchedTropes.length === 1) {
+      add('Authenticity', 'medium', `Post contains a generic marketing cliché or corporate jargon phrase — consider rephrasing with specific language.`);
+    }
+
+    // -------------------------------------------------------------------
+    // 2. AUDIENCE RELEVANCE & SMALL BUSINESS ORIENTATION (Weight: 12)
+    // -------------------------------------------------------------------
+    const enterpriseJargonMatches: string[] = [];
+    for (const term of ENTERPRISE_CONSULTING_TERMS) {
+      if (term.test(body)) {
+        enterpriseJargonMatches.push(term.source);
+      }
+    }
+
+    if (enterpriseJargonMatches.length >= 2) {
+      add('AudienceRelevance', 'critical', `Enterprise / academic consulting language detected (${enterpriseJargonMatches.join(', ')}). Our audience is small business owners, not corporate stakeholders or consultants.`);
+    } else if (enterpriseJargonMatches.length === 1) {
+      add('AudienceRelevance', 'high', `Corporate stakeholder / consulting phrasing detected ("${enterpriseJargonMatches[0]}"). Address the direct daily friction of a small business owner.`);
+    }
+
+    // Check if post sounds like a consulting article summary rather than social media copy
+    const isConsultingSummary =
+      /\b(stakeholders?|calculating costs?|testing causality|defining business value|potential return on investment)\b/i.test(body) &&
+      paragraphs.length <= 2;
+    if (isConsultingSummary && enterpriseJargonMatches.length === 0) {
+      add('AudienceRelevance', 'high', 'Post reads as a formal article summary / consulting methodology rather than conversational social copy for a business owner.');
+    }
+
+    // -------------------------------------------------------------------
+    // 3. INFORMATION GAIN & PARAPHRASE DETECTION (Weight: 14)
     // -------------------------------------------------------------------
     const references = [
       context?.topicTitle,
@@ -201,7 +316,7 @@ export class SocialMediaQualityGate {
     }
 
     // -------------------------------------------------------------------
-    // 2. ATTENTION & HOOK (Weight: 10)
+    // 4. ATTENTION & HOOK (Weight: 10)
     // -------------------------------------------------------------------
     const firstSentence = (body.split(/[.!?\n]/)[0] || '').trim();
     let hasGenericOpening = false;
@@ -218,7 +333,7 @@ export class SocialMediaQualityGate {
       const opening = body.slice(0, 150);
       const hasHookSignal =
         /[?!]/.test(opening) ||
-        /\b(when|if|imagine|picture|ever|most|many|one thing|the truth|turns out|here's|a customer|your website|simple beats|before|nobody|is your)\b/i.test(opening) ||
+        /\b(when|if|imagine|picture|ever|most|many|one thing|the truth|turns out|here's|a customer|your website|simple beats|before|nobody|is your|let's cut through)\b/i.test(opening) ||
         /\b(customer|client|visitor|owner|shop|business)\b/i.test(opening) ||
         opening.split(/\s+/).length >= 8;
       if (!hasHookSignal && charCount >= 80) {
@@ -227,7 +342,7 @@ export class SocialMediaQualityGate {
     }
 
     // -------------------------------------------------------------------
-    // 3. SPECIFICITY (Weight: 12)
+    // 5. SPECIFICITY (Weight: 10)
     // -------------------------------------------------------------------
     const concreteDetails =
       /\d+/.test(body) || // any numbers
@@ -238,10 +353,10 @@ export class SocialMediaQualityGate {
     }
 
     // -------------------------------------------------------------------
-    // 4. VALUE & PRACTICAL INSIGHT (Weight: 12)
+    // 6. VALUE & PRACTICAL INSIGHT (Weight: 10)
     // -------------------------------------------------------------------
     const valueSignals =
-      /\b(check|review|update|try|test|add|remove|fix|change|improve|avoid|consider|make sure|ensure|set up|connect|use|enable|turn on|look at|ask|find out|see if|learn|starts with|difference between|rule of thumb|simple beats|rather than|help you)\b/i.test(body) ||
+      /\b(check|review|update|try|test|add|remove|fix|change|improve|avoid|consider|make sure|ensure|set up|connect|use|enable|turn on|look at|ask|find out|see if|learn|starts with|difference between|rule of thumb|simple beats|rather than|help you|finding a tool)\b/i.test(body) ||
       /\b(tip|key|important|worth|helpful|useful|practical|simple|quick|step|approach|strategy|mechanism|reason|free)\b/i.test(body);
 
     const hasSubstantiveSentences = body.split(/[.!?]/).filter((s) => s.trim().length > 30).length >= 2;
@@ -251,20 +366,17 @@ export class SocialMediaQualityGate {
     }
 
     // -------------------------------------------------------------------
-    // 5. READABILITY & VISUAL RHYTHM (Weight: 10)
+    // 7. READABILITY & SOCIAL FORMATTING (Weight: 6)
     // -------------------------------------------------------------------
-    const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
-    const lineBreaks = (body.match(/\n/g) || []).length;
-
-    // Paragraph Collapse Check: single solid block with no breaks
+    // Hard block on paragraph collapse: a single solid block > 160 characters
     if (charCount > 160 && paragraphs.length <= 1 && lineBreaks === 0) {
-      add('Readability', 'high', 'Paragraph collapse: post is formatted as a single monolithic block. Use short paragraphs (1-3 sentences) and intentional line breaks for mobile scannability.');
+      add('Readability', 'high', 'Paragraph collapse: post is formatted as a single monolithic block. Social copy must use short paragraphs (1-3 sentences) separated by blank lines.');
     } else if (charCount > 300 && paragraphs.length <= 1) {
       add('Readability', 'medium', 'Post lacks visual rhythm — break dense text into 2-4 short, readable chunks.');
     }
 
     // -------------------------------------------------------------------
-    // 6. HUMAN VOICE / CONVERSATIONAL TONE (Weight: 8)
+    // 8. HUMAN VOICE / CONVERSATIONAL TONE (Weight: 6)
     // -------------------------------------------------------------------
     const hasContraction = /\b(it's|you're|they're|we're|don't|can't|won't|doesn't|isn't|I'm|that's|there's|what's|here's|who's|let's|they'll|you'll|we'll)\b/i.test(body);
     const sentences = body.split(/[.!?]/).filter((s) => s.trim().length > 0);
@@ -275,7 +387,7 @@ export class SocialMediaQualityGate {
     }
 
     // -------------------------------------------------------------------
-    // 7. CREDIBILITY (Weight: 14)
+    // 9. CREDIBILITY (Weight: 10)
     // -------------------------------------------------------------------
     const bodyPercentages = body.match(/\d+%/g) || [];
     const hasSourceIndicator = /\b(source|study|report|according to|survey|found that|published by|based on|cited by|per (?:the )?\w+)\b/i.test(body);
@@ -294,7 +406,7 @@ export class SocialMediaQualityGate {
     }
 
     // -------------------------------------------------------------------
-    // 8. CTA QUALITY & EMPTY ENGAGEMENT BAIT (Weight: 10)
+    // 10. CTA QUALITY & EMPTY ENGAGEMENT BAIT (Weight: 6)
     // -------------------------------------------------------------------
     let hasEmptyEngagementBait = false;
     for (const pattern of EMPTY_ENGAGEMENT_QUESTIONS) {
@@ -308,34 +420,21 @@ export class SocialMediaQualityGate {
       add('CTAQuality', 'high', 'Empty engagement bait detected: post ends with a generic, artificial question ("What is one thing you wish you could improve..."). Remove the question or replace with a natural scenario-specific discussion.');
     }
 
-    // -------------------------------------------------------------------
-    // 9. AUTHENTICITY & GENERIC AI LANGUAGE (Weight: 10)
-    // -------------------------------------------------------------------
-    const matchedTropes: string[] = [];
-    for (const trope of GENERIC_AI_MARKETING_TROPES) {
-      if (trope.test(body)) {
-        matchedTropes.push(trope.source);
-      }
-    }
-
-    const hasUrgentSalesPressure = /\b(?:act now|limited time|urgent|don't miss out|last chance|buy now)\b/i.test(body);
-
-    if (matchedTropes.length >= 3 || (hasUrgentSalesPressure && matchedTropes.length >= 1)) {
-      add('Authenticity', 'critical', `Post reads as promotional spam or heavily stacked generic AI marketing clichés (${matchedTropes.length} detected) that replace concrete substance.`);
-    } else if (matchedTropes.length >= 2) {
-      add('Authenticity', 'high', `Post contains multiple corporate jargon phrases or generic marketing clichés that reduce authenticity — replace with concrete business language.`);
-    } else if (matchedTropes.length === 1) {
-      add('Authenticity', 'low', 'Post contains a generic marketing cliché or corporate jargon phrase — consider rephrasing with specific language.');
+    // Urgent sales pressure
+    const hasUrgentSalesPressure = /\b(?:act now[!.]*|limited time(?: only| offer)?|urgent(?:ly)?\s+(?:offer|deal|discount|consultation|call|inquiry|purchase)|don't miss out[!.]*|last chance[!.]*)\b/i.test(body) ||
+      /\bbuy now[!.]*$/im.test(body);
+    if (hasUrgentSalesPressure) {
+      add('CTAQuality', 'high', 'Urgent sales pressure detected ("act now", "limited time"). Keep invitations contextual and low-pressure.');
     }
 
     // Brand Placement check
     const brandIdx = body.search(/NorthSoft/i);
     if (brandIdx !== -1 && brandIdx < 80 && charCount > 150) {
-      add('BrandPlacement', 'low', 'NorthSoft is introduced very early — placing the brand after delivering reader value reads more authentically.');
+      add('CTAQuality', 'low', 'NorthSoft is introduced very early — placing the brand after delivering reader value reads more authentically.');
     }
 
     // -------------------------------------------------------------------
-    // COMPUTE WEIGHTED SCORE
+    // COMPUTE WEIGHTED SCORE & QUALITY FLOOR ENFORCEMENT
     // -------------------------------------------------------------------
     let score = 100;
     const dimensionScores: Record<string, number> = {};
@@ -347,10 +446,15 @@ export class SocialMediaQualityGate {
         const hasHigh = dimWarnings.some((w) => w.severity === 'high');
         const hasMed = dimWarnings.some((w) => w.severity === 'medium');
 
-        let penaltyRatio = 0.25;
+        let penaltyRatio = 0.30;
         if (hasCrit) penaltyRatio = 1.0;
-        else if (hasHigh) penaltyRatio = 0.85;
-        else if (hasMed) penaltyRatio = 0.5;
+        else if (hasHigh) penaltyRatio = 0.90;
+        else if (hasMed) penaltyRatio = 0.55;
+
+        // Additional deduction if multiple warnings exist in the dimension
+        if (dimWarnings.length > 1 && !hasCrit) {
+          penaltyRatio = Math.min(1.0, penaltyRatio + 0.15 * (dimWarnings.length - 1));
+        }
 
         const penalty = Math.round(weight * penaltyRatio);
         score -= penalty;
@@ -365,9 +469,19 @@ export class SocialMediaQualityGate {
     const hasCritical = warnings.some((w) => w.severity === 'critical');
     const highWarningsCount = warnings.filter((w) => w.severity === 'high').length;
 
-    // Pass requires: no critical warnings, at most 1 high warning, score >= 55
-    const pass = !hasCritical && highWarningsCount <= 1 && score >= 55;
+    // Strict Quality Floor for autonomous publishing:
+    // - NO critical warnings
+    // - NO high warnings (every high warning represents an unpublishable defect: AI template, paragraph collapse, consulting jargon, etc.)
+    // - Minimum score >= 75
+    // - Genericness score <= 40
+    const pass = !hasCritical && highWarningsCount === 0 && score >= 75 && calculatedGenericnessScore <= 40;
 
-    return { score, warnings, pass, dimensionScores };
+    return {
+      score,
+      warnings,
+      pass,
+      genericnessScore: calculatedGenericnessScore,
+      dimensionScores,
+    };
   }
 }

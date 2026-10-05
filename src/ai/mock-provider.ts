@@ -50,8 +50,8 @@ export class MockAIProvider implements IAIProvider {
         responseContent = JSON.stringify({
           title: 'Edge Compute Optimization with Cloudflare Workers',
           body:
-            'Cloudflare Workers enable serverless code execution directly at the network edge. ' +
-            'By deploying logic closer to users, applications achieve ultra-low latency and zero cold starts. ' +
+            'Cloudflare Workers enable serverless code execution directly at the network edge.\n\n' +
+            'By deploying logic closer to users, applications achieve ultra-low latency and zero cold starts.\n\n' +
             'This architecture dramatically simplifies global deployment while reducing cloud infrastructure overhead.',
           language: 'en',
           tone: 'professional',

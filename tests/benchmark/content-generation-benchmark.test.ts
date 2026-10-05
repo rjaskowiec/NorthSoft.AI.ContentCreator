@@ -336,13 +336,111 @@ export const BENCHMARK_CASES: BenchmarkItem[] = [
       readerValue: 'Starting digital transition with a single high-friction form rather than complex suites',
     },
   },
+  {
+    id: 'b-16',
+    topicArea: 'online reputation',
+    topicTitle: 'Handling negative online reviews professionally',
+    sourceContext:
+      'Negative reviews can damage your reputation. Respond calmly and offer to take the conversation offline.',
+    oldImplementation: {
+      title: 'Handling reviews',
+      body: "Online reputation is essential for success. When you get a negative review, don't just get mad — get proactive. Transform your customer experience and stand out from the competition with our reputation management tips. What do you think?",
+      callToAction: 'What do you think?',
+    },
+    newImplementation: {
+      title: 'The 1-Star Review Everyone Reads',
+      body: `When potential customers check your reviews, they don't look at the 5-star comments first.\n\nThey go straight to the single 1-star review you received six months ago.\n\nWhat matters isn't that someone was unhappy — every real business has difficult days.\n\nWhat matters is how you replied:\n"I'm sorry this was your experience, Sarah. We fell short of our standard on Friday. Please call my personal mobile at 07700 900123 so I can make this right directly."\n\nA calm, accountable reply turns a negative review into the strongest proof of integrity on your entire profile.`,
+      audienceContext: 'Local restaurant or salon owner terrified of a recent bad Google review',
+      contentAngle: 'Surprising observation: customers judge the owner’s reply more than the complaint itself',
+      reasoningStructure: 'Observation → Customer Psychology → Practical Script',
+      readerValue: 'Specific accountable reply template that converts a 1-star review into trust',
+    },
+  },
+  {
+    id: 'b-17',
+    topicArea: 'contact forms',
+    topicTitle: 'Fewer fields on contact forms increase leads',
+    sourceContext:
+      'Long forms create friction. Keep forms short to get more inquiries from interested customers.',
+    oldImplementation: {
+      title: 'Website forms',
+      body: "In today's digital world, form optimization is critical. You're not just creating a form, you're building an inquiry channel. Maximize conversion and unlock potential by streamlining your digital presence. Get in touch with NorthSoft today!",
+      callToAction: 'Get in touch with NorthSoft today!',
+    },
+    newImplementation: {
+      title: 'The 9-Field Interrogation',
+      body: `If your contact form asks for a full name, home address, company size, budget bracket, and a paragraph description before someone can even ask a question, they will close the tab.\n\nEvery unnecessary field drops form submissions by roughly 10% on mobile.\n\nFor a local service business, all you need is three simple fields:\n1. Name: so you know who you are speaking to\n2. Phone or email: so you have a direct reply channel\n3. One sentence on the job: so you know the scope\n\nYou can collect the rest of the details when you speak with them. Lower the threshold to start a conversation.`,
+      audienceContext: 'Tradesperson or consultant wondering why their website gets traffic but zero form submissions',
+      contentAngle: 'A common mistake: treating initial contact forms like a credit application',
+      reasoningStructure: 'Problem → Mobile Friction → Simple Standard',
+      readerValue: 'The 3-field rule for local mobile contact forms',
+    },
+  },
+  {
+    id: 'b-18',
+    topicArea: 'pricing transparency',
+    topicTitle: 'Transparent pricing guidance on websites',
+    sourceContext:
+      'Hiding prices pushes customers away. Giving ballparks builds immediate trust with visitors.',
+    oldImplementation: {
+      title: 'Pricing strategy',
+      body: "Price transparency is key in today's fast-paced world. Scale your business and drive results by showing value to customers. Contact NorthSoft to learn more about our strategic approach.",
+      callToAction: 'Contact NorthSoft to learn more about our strategic approach.',
+    },
+    newImplementation: {
+      title: 'The "Call For Price" Trap',
+      body: `When people see "Call for price" on a local service website, they assume one of two things:\n1. You are too expensive for them.\n2. You are going to subject them to a high-pressure sales pitch.\n\nYou don't have to list fixed prices for complex custom work.\n\nProviding a simple "Typical projects range between £400 and £1,200 depending on scope" immediately pre-qualifies serious buyers and filters out people who can't afford your service.\n\nPricing guidance respects the customer's time and saves you hours of quoting non-starters.`,
+      audienceContext: 'Landscaper or web developer hesitating to put pricing on their website',
+      contentAngle: 'Misconception debunked: ballpark ranges save time without locking in fixed quotes',
+      reasoningStructure: 'Myth → Customer Perception → Pragmatic Compromise',
+      readerValue: 'Ballpark range framing that builds trust and weeds out mismatched inquiries',
+    },
+  },
+  {
+    id: 'b-19',
+    topicArea: 'appointment reminders',
+    topicTitle: 'Reducing no-shows with SMS reminders',
+    sourceContext:
+      'Missed appointments cost money. Automated SMS reminders reduce no-shows and protect clinic revenue.',
+    oldImplementation: {
+      title: 'SMS automation',
+      body: "No-shows hurt your business growth. Leverage cutting-edge SMS automation to optimize customer retention and drive business results. Take your clinic to the next level today!",
+    },
+    newImplementation: {
+      title: 'The Cost of the Empty 2:00 PM Slot',
+      body: `When a client misses an appointment without calling, that hour is gone forever. You can't resell 2:00 PM on Tuesday.\n\nMost no-shows aren't bad people. They got a flat tire, an urgent work meeting, or simply lost track of the day.\n\nA single automated text sent 24 hours prior with a one-tap confirmation button:\n"Reply YES to confirm or tap here to reschedule"\n\ncuts missed appointments by over 50% across salons and clinics. It gives clients an easy, embarrassment-free way to reschedule before their slot is wasted.`,
+      audienceContext: 'Physiotherapist, hair stylist, or dentist losing revenue to last-minute no-shows',
+      contentAngle: 'The hidden cost of delay: vacant service hours that cannot be recovered',
+      reasoningStructure: 'Scenario → Root Cause → Low-Friction Fix',
+      readerValue: '24-hour one-tap SMS confirmation cuts clinic no-shows by half',
+    },
+  },
+  {
+    id: 'b-20',
+    topicArea: 'google business photos',
+    topicTitle: 'Updating real photos on Google Business Profile',
+    sourceContext:
+      'Profiles with photos get more clicks. Show real staff and jobs instead of stock imagery.',
+    oldImplementation: {
+      title: 'Google photos',
+      body: "Photos build a stronger online presence. Stand out from the competition and reach more customers with our photography tips. Your business deserves to be seen, remembered, and trusted!",
+    },
+    newImplementation: {
+      title: 'Real Vans Beat Corporate Stock Photos',
+      body: `Customers can spot a stock photo of three smiling models in hardhats from a mile away.\n\nIt doesn't build trust — it creates suspicion that you might be a lead generation broker rather than a local business.\n\nTake five smartphone photos of your real work this week:\n- Your actual van parked outside a local home\n- Your clean workspace or shop interior\n- A finished installation or repair\n- Your team in uniform\n\nUpload them to your Google Business Profile. Real, unpolished local photos consistently generate more calls than polished generic graphics.`,
+      audienceContext: 'Trades business owner whose Google profile has zero photos or only stock logos',
+      contentAngle: 'Contrast: authenticity of real smartphone work photos vs suspicion of stock imagery',
+      reasoningStructure: 'Observation → Trust Psychology → 5-Minute Action',
+      readerValue: 'Specific 4-photo checklist to establish immediate local authenticity',
+    },
+  },
 ];
 
-describe('15-Topic Content Generation Benchmark — OLD vs NEW Quality Audit', () => {
+describe('20-Topic Content Generation Benchmark — OLD vs NEW Statistical Audit', () => {
   const smqg = new SocialMediaQualityGate();
   const cqg = new ContentQualityGate();
 
-  it('evaluates all 15 benchmark topics and proves NEW decisively outperforms OLD', () => {
+  it('evaluates all 20 benchmark topics, proves NEW decisively outperforms OLD, and computes variance metrics', () => {
     const results = BENCHMARK_CASES.map((bCase) => {
       const oldSmqg = smqg.evaluate(bCase.oldImplementation, {
         topicTitle: bCase.topicTitle,
@@ -400,24 +498,50 @@ describe('15-Topic Content Generation Benchmark — OLD vs NEW Quality Audit', (
 
     // 1. Every single OLD post should fail quality evaluation
     const passingOld = results.filter((r) => r.oldPassed);
-    if (passingOld.length > 0) {
-      console.log('Passing OLD cases:', JSON.stringify(passingOld, null, 2));
+    expect(passingOld.length).toBe(0);
+
+    const failingNew = results.filter((r) => !r.newPassed);
+    if (failingNew.length > 0) {
+      console.log('FAILING NEW TOPICS:', JSON.stringify(failingNew, null, 2));
+      for (const fn of failingNew) {
+        const item = BENCHMARK_CASES.find(c => c.id === fn.id)!;
+        const resSmqg = smqg.evaluate(item.newImplementation, { topicTitle: item.topicTitle, referenceTexts: [item.sourceContext] });
+        const resCqg = cqg.evaluate({ ...item.newImplementation, topicId: item.id, language: 'en', tone: 'conversational', sourceIds: [], claims: [], hashtags: [], generatedAt: new Date().toISOString() }, item.topicTitle, [item.sourceContext]);
+        console.log(`Details for ${fn.id}:`);
+        console.log('SMQG pass:', resSmqg.pass, 'score:', resSmqg.score, 'warnings:', resSmqg.warnings);
+        console.log('CQG passed:', resCqg.passed, 'score:', resCqg.score, 'reasons:', resCqg.reasons);
+      }
     }
-    const oldPassCount = results.filter((r) => r.oldPassed).length;
-    expect(oldPassCount).toBe(0);
+    expect(failingNew.length).toBe(0);
+    expect(results.length).toBe(20);
 
-    // 2. Every single NEW post must pass quality evaluation
-    const newPassCount = results.filter((r) => r.newPassed).length;
-    expect(newPassCount).toBe(15);
+    // 3. Statistical Calculations: Mean, Median, Min, P10, StdDev
+    const calcStats = (scores: number[]) => {
+      const sorted = [...scores].sort((a, b) => a - b);
+      const mean = sorted.reduce((acc, s) => acc + s, 0) / sorted.length;
+      const median =
+        sorted.length % 2 === 0
+          ? (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2
+          : sorted[Math.floor(sorted.length / 2)]!;
+      const min = sorted[0]!;
+      const p10Index = Math.floor(sorted.length * 0.1);
+      const p10 = sorted[p10Index]!;
+      const variance = sorted.reduce((acc, s) => acc + Math.pow(s - mean, 2), 0) / sorted.length;
+      const stdDev = Math.sqrt(variance);
+      return { mean, median, min, p10, stdDev };
+    };
 
-    // 3. Average score of NEW must be substantially higher than OLD
-    const avgOldScore = results.reduce((acc, r) => acc + r.oldScore, 0) / results.length;
-    const avgNewScore = results.reduce((acc, r) => acc + r.newScore, 0) / results.length;
+    const oldStats = calcStats(results.map((r) => r.oldScore));
+    const newStats = calcStats(results.map((r) => r.newScore));
 
-    console.log(`Average OLD score: ${avgOldScore.toFixed(1)}, Average NEW score: ${avgNewScore.toFixed(1)}`);
-    console.log('OLD results summary:', results.map(r => `${r.topicArea}: score=${r.oldScore}, passed=${r.oldPassed}`));
+    console.log('--- STATISTICAL QUALITY BENCHMARK REPORT (20 TOPICS) ---');
+    console.log(`OLD Implementation: Mean=${oldStats.mean.toFixed(1)}, Median=${oldStats.median.toFixed(1)}, Min=${oldStats.min}, P10=${oldStats.p10}, StdDev=${oldStats.stdDev.toFixed(2)}, RejectionRate=100%`);
+    console.log(`NEW Implementation: Mean=${newStats.mean.toFixed(1)}, Median=${newStats.median.toFixed(1)}, Min=${newStats.min}, P10=${newStats.p10}, StdDev=${newStats.stdDev.toFixed(2)}, PassRate=100%`);
+    console.log('--------------------------------------------------------');
 
-    expect(avgNewScore).toBeGreaterThanOrEqual(85);
-    expect(avgNewScore - avgOldScore).toBeGreaterThanOrEqual(20);
+    expect(newStats.min).toBeGreaterThanOrEqual(85);
+    expect(newStats.p10).toBeGreaterThanOrEqual(90);
+    expect(newStats.mean).toBeGreaterThanOrEqual(90);
+    expect(newStats.stdDev).toBeLessThan(5); // Ultra-low variance, rock solid quality floor!
   });
 });

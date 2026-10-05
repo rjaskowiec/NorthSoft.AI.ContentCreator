@@ -625,11 +625,17 @@ export class ContentPlannerService {
         this.db.prepare('DELETE FROM quality_checks WHERE post_id = ?').bind(postId),
         this.db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(postId),
         this.db.prepare('DELETE FROM posts WHERE id = ?').bind(postId),
+        this.db.prepare("UPDATE content_ideas SET status = 'rejected', updated_at = datetime('now') WHERE id = ?").bind(topicId),
       ]);
+    } else {
+      await this.db
+        .prepare("UPDATE content_ideas SET status = 'rejected', updated_at = datetime('now') WHERE id = ?")
+        .bind(topicId)
+        .run();
     }
 
     const blockReason =
-      runErrorMessage || `Failed quality gate evaluation after ${currentVersion} attempts.`;
+      runErrorMessage || `Failed quality gate evaluation after ${currentVersion} attempts. Post blocked from publishing.`;
 
     await this.auditLogger.log({
       eventType: 'WORKFLOW_FAILED',

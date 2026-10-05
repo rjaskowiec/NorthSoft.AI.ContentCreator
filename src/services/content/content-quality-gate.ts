@@ -19,6 +19,7 @@ export interface ContentQualityGateResult {
   listItemSubstance: boolean;
   noEmptyAdvice: boolean;
   ctaQuality: boolean;
+  communicationQuality?: boolean;
   reasons: string[];
 }
 
@@ -53,6 +54,22 @@ export const GENERIC_FILLER_CLICHES = [
   /\bready\s+to\s+take\s+the\s+next\s+step\b/i,
   /\bwe'?re\s+here\s+to\s+help\b/i,
   /\bseen,\s*remembered,?\s*(?:and|&)\s*trusted\b/i,
+];
+
+// Recognizable AI syntactic templates that signal AI voice
+export const CQ_AI_TEMPLATE_PATTERNS = [
+  /\byou'?re\s+not\s+just\s+[^,.?!]+,?\s+you'?re\s+[^.?!]+/i,
+  /\bit'?s\s+not\s+(?:just\s+)?about\s+[^,.?!]+,?\s+it'?s\s+(?:all\s+)?about\s+[^.?!]+/i,
+  /\bdon'?t\s+just\s+[^,.?!]+[-—,]\s+[^.?!]+/i,
+  /\b(?:isn'?t|is\s+not)\s+just\s+[^,.?!]+,?\s+it'?s\s+[^.?!]+/i,
+];
+
+// Consulting / enterprise abstractions alien to small business social copy
+export const CQ_CONSULTING_ABSTRACTIONS = [
+  /\bconvince\s+stakeholders\b/i,
+  /\btesting\s+causality\b/i,
+  /\bcalculating\s+(?:the\s+)?(?:potential\s+)?return\s+on\s+investment\b/i,
+  /\bdefining\s+business\s+value\b/i,
 ];
 
 // Generic slapped-on uncontextualized CTAs and empty bait
@@ -212,7 +229,25 @@ export class ContentQualityGate {
       }
     }
 
-    // 6. Substantive Value Check
+    // 6. Communication Quality & AI Voice Check
+    let communicationQuality = true;
+    for (const pat of CQ_AI_TEMPLATE_PATTERNS) {
+      if (pat.test(body)) {
+        communicationQuality = false;
+        reasons.push(`AI template pattern detected ("${pat.source}"). Avoid predictable AI phrasing.`);
+        break;
+      }
+    }
+
+    for (const term of CQ_CONSULTING_ABSTRACTIONS) {
+      if (term.test(body)) {
+        communicationQuality = false;
+        reasons.push(`Enterprise consulting abstraction detected ("${term.source}"). Copy must speak to small business reality, not stakeholders.`);
+        break;
+      }
+    }
+
+    // 7. Substantive Value Check
     if (!listItemSubstance || !noEmptyAdvice) {
       substantiveValue = false;
     }
@@ -225,6 +260,7 @@ export class ContentQualityGate {
     if (!topicAlignment) score -= 25;
     if (!ctaQuality) score -= 20;
     if (!substantiveValue) score -= 25;
+    if (!communicationQuality) score -= 35;
 
     score = Math.max(0, Math.min(100, score));
 
@@ -235,6 +271,7 @@ export class ContentQualityGate {
       listItemSubstance &&
       noEmptyAdvice &&
       ctaQuality &&
+      communicationQuality &&
       score >= 60;
 
     return {
@@ -246,6 +283,7 @@ export class ContentQualityGate {
       listItemSubstance,
       noEmptyAdvice,
       ctaQuality,
+      communicationQuality,
       reasons,
     };
   }
