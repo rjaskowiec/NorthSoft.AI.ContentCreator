@@ -1278,10 +1278,10 @@ export function renderAdminHtml(): string {
             <label class="form-label">Scheduling Mode</label>
             <div style="display:flex; gap:0.5rem; background:rgba(255,255,255,0.04); padding:0.3rem; border-radius:8px; border:1px solid var(--border-color);">
               <button type="button" id="sched-mode-auto-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:var(--accent-blue); color:white; border:none;" onclick="setScheduleModalMode('auto')">
-                ✨ Automatycznie (Sugerowany AI)
+                Automatic (AI Suggested)
               </button>
               <button type="button" id="sched-mode-manual-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:transparent; border:none;" onclick="setScheduleModalMode('manual')">
-                📅 Ręcznie (Wybierz datę i czas)
+                Manual (Select Date &amp; Time)
               </button>
             </div>
             <input type="hidden" id="schedule-mode-val" value="auto" />
@@ -1290,29 +1290,29 @@ export function renderAdminHtml(): string {
           <!-- Auto Mode Container -->
           <div id="sched-auto-container" style="background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem; margin-bottom:1.25rem;">
             <div style="font-size:0.85rem; font-weight:600; color:var(--accent-blue); margin-bottom:0.35rem;">
-              🤖 Automatycznie wyliczony czas publikacji
+              Automatic Publication Schedule
             </div>
             <div id="sched-auto-suggestion-text" style="font-size:0.825rem; color:var(--text-main); margin-bottom:0.5rem;">
-              Wyliczanie optymalnego terminu...
+              Calculating optimal publication time...
             </div>
             <button type="button" class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="fetchSinglePostIntelligentSlot()">
-              🔄 Odśwież sugerowany czas
+              Refresh Suggested Time
             </button>
           </div>
 
           <!-- Manual Mode Container -->
           <div id="sched-manual-container" style="display:none; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1.25rem;">
             <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label" for="schedule-date">Data</label>
+              <label class="form-label" for="schedule-date">Date</label>
               <input type="date" id="schedule-date" class="form-input" />
             </div>
             <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label" for="schedule-time">Godzina (UTC)</label>
+              <label class="form-label" for="schedule-time">Time (UTC)</label>
               <input type="time" id="schedule-time" class="form-input" value="10:00" />
             </div>
           </div>
 
-          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Zaplanuj publikację</button>
+          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Schedule Publication</button>
         </form>
       </div>
     </div>
@@ -1327,16 +1327,16 @@ export function renderAdminHtml(): string {
       </div>
       <div class="modal-body">
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
-          Wybierz metodę planowania publikacji dla <strong id="bulk-schedule-count" style="color:var(--text-main);">0</strong> wybranych postów:
+          Choose scheduling method for <strong id="bulk-schedule-count" style="color:var(--text-main);">0</strong> selected post drafts:
         </p>
 
         <!-- Mode selector: Auto vs Manual -->
         <div style="display:flex; gap:0.5rem; background:rgba(255,255,255,0.04); padding:0.3rem; border-radius:8px; border:1px solid var(--border-color); margin-bottom:1.25rem;">
           <button type="button" id="bulk-sched-mode-auto-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:var(--accent-blue); color:white; border:none;" onclick="setBulkScheduleModalMode('auto')">
-            ✨ Automatycznie (Sugerowane AI)
+            Automatic (AI Suggested)
           </button>
           <button type="button" id="bulk-sched-mode-manual-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:transparent; border:none;" onclick="setBulkScheduleModalMode('manual')">
-            📅 Ręcznie (Ustal harmonogram)
+            Manual (Fixed Interval)
           </button>
         </div>
         <input type="hidden" id="bulk-schedule-mode-val" value="auto" />
@@ -1344,42 +1344,42 @@ export function renderAdminHtml(): string {
         <!-- Auto Container -->
         <div id="bulk-sched-auto-container" style="background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem; margin-bottom:1.25rem;">
           <div style="font-size:0.85rem; font-weight:600; color:var(--accent-blue); margin-bottom:0.35rem;">
-            ✨ Inteligentne planowanie zbiorcze
+            Intelligent Bulk Scheduling
           </div>
           <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:0.75rem;">
-            System automatycznie dobierze optymalne daty i godziny dla wszystkich zaznaczonych postów, pilnując odpowiednich odstępów i historii zaangażowania.
+            The system will automatically assign optimal publication dates and times for all selected posts, enforcing minimum spacing and engagement optimization.
           </p>
           <button type="button" class="btn-primary" style="width:100%;" onclick="confirmBulkScheduleAuto()">
-            Wylicz i przejrzyj sugerowane terminy &rarr;
+            Calculate &amp; Review Proposed Slots &rarr;
           </button>
         </div>
 
         <!-- Manual Container -->
         <div id="bulk-sched-manual-container" style="display:none; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:1rem; margin-bottom:1.25rem;">
           <div style="font-size:0.85rem; font-weight:600; color:var(--text-main); margin-bottom:0.75rem;">
-            📅 Ręczny harmonogram zbiorczy
+            Manual Bulk Schedule Settings
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
             <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label" for="bulk-sched-start-date">Data pierwszego posta</label>
+              <label class="form-label" for="bulk-sched-start-date">First Post Date</label>
               <input type="date" id="bulk-sched-start-date" class="form-input" />
             </div>
             <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label" for="bulk-sched-start-time">Godzina (UTC)</label>
+              <label class="form-label" for="bulk-sched-start-time">Time (UTC)</label>
               <input type="time" id="bulk-sched-start-time" class="form-input" value="10:00" />
             </div>
           </div>
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label" for="bulk-sched-interval">Odstęp między postami</label>
+            <label class="form-label" for="bulk-sched-interval">Spacing Between Posts</label>
             <select id="bulk-sched-interval" class="form-input">
-              <option value="24">Co 24 godziny (1 dzień)</option>
-              <option value="12">Co 12 godzin</option>
-              <option value="48">Co 48 godzin (2 dni)</option>
-              <option value="6">Co 6 godzin</option>
+              <option value="24">Every 24 hours (1 day)</option>
+              <option value="12">Every 12 hours</option>
+              <option value="48">Every 48 hours (2 days)</option>
+              <option value="6">Every 6 hours</option>
             </select>
           </div>
           <button type="button" class="btn-primary" style="width:100%; margin-top:1rem;" onclick="confirmBulkScheduleManual()">
-            Zapisz ręczny harmonogram dla wybranych
+            Save Manual Schedule
           </button>
         </div>
       </div>
@@ -1816,33 +1816,33 @@ export function renderAdminHtml(): string {
       <!-- VIEW 1: Topic Selection Form -->
       <div id="discover-view-form" class="modal-body">
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
-          Wybierz domyślną kategorię postów, aktywny temat z badań lub opcję <strong>Custom</strong>, aby wyszukać własne słowa kluczowe.
+          Select a default content category, active research topic, or choose <strong>Custom Search</strong> to enter your own keywords.
         </p>
 
         <div class="form-group">
-          <label class="form-label" for="discover-topic-select" style="font-weight:600;">Temat / Kategoria Wyszukiwania</label>
+          <label class="form-label" for="discover-topic-select" style="font-weight:600;">Topic / Search Category</label>
           <select id="discover-topic-select" class="form-input" onchange="handleDiscoverTopicSelectChange()">
-            <option value="">-- Wczytywanie kategorii i tematów --</option>
+            <option value="">-- Loading categories &amp; topics... --</option>
           </select>
         </div>
 
         <div class="form-group" id="discover-custom-topic-group" style="display:none; background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem;">
-          <label class="form-label" for="discover-custom-topic-input" style="color:var(--accent-blue); font-weight:600;">✏️ Wpisz własny temat / słowa kluczowe (Custom Search)</label>
-          <input type="text" id="discover-custom-topic-input" class="form-input" placeholder="np. Bezpieczeństwo danych w chmurze, Strona internetowa firmy, Obsługa klienta" oninput="validateDiscoverForm()" />
-          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">System wyszuka oficjalne ilustracje spełniające podane słowa kluczowe.</div>
+          <label class="form-label" for="discover-custom-topic-input" style="color:var(--accent-blue); font-weight:600;">Enter custom topic / keywords (Custom Search)</label>
+          <input type="text" id="discover-custom-topic-input" class="form-input" placeholder="e.g. Cloud Data Security, Business Website, Customer Service" oninput="validateDiscoverForm()" />
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">The system will search for high-quality royalty-free imagery matching your keywords.</div>
         </div>
 
         <div class="form-group" style="margin-bottom:0.5rem;">
-          <label class="form-label" for="discover-category-select">Przypisana kategoria w Bibliotece</label>
+          <label class="form-label" for="discover-category-select">Assigned Library Category</label>
           <select id="discover-category-select" class="form-input">
-            <option value="AI &amp; Business Automation">🤖 AI &amp; Business Automation</option>
-            <option value="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option>
-            <option value="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option>
-            <option value="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option>
-            <option value="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option>
-            <option value="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option>
-            <option value="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option>
-            <option value="General">General / Inne</option>
+            <option value="AI &amp; Business Automation">AI &amp; Business Automation</option>
+            <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
+            <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
+            <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
+            <option value="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option>
+            <option value="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option>
+            <option value="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option>
+            <option value="General">General</option>
           </select>
         </div>
       </div>

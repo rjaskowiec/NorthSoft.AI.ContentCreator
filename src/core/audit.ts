@@ -221,12 +221,13 @@ export function sanitizeDetails(details: Record<string, unknown>): Record<string
 /**
  * Automatically infers AuditLevel from eventType if not explicitly provided.
  */
-export function inferAuditLevel(eventType: AuditEventType, status?: AuditStatus): AuditLevel {
+export function inferAuditLevel(eventType?: AuditEventType, status?: AuditStatus): AuditLevel {
   if (status === 'FAILED') return 'ERROR';
   if (status === 'DEFERRED') return 'WARNING';
   if (status === 'COMPLETED') return 'SUCCESS';
 
-  const evt = eventType.toUpperCase();
+  if (!eventType) return 'INFO';
+  const evt = String(eventType).toUpperCase();
   if (evt.includes('FAILED') || evt.includes('ERROR') || evt.includes('BLOCKED') || evt.includes('EXCEEDED')) {
     return 'ERROR';
   }
@@ -252,7 +253,7 @@ export class D1AuditLogger implements IAuditLogger {
     try {
       const id = crypto.randomUUID();
       const timestamp = new Date().toISOString();
-      const level = entry.level || inferAuditLevel(entry.eventType, entry.status);
+      const level = entry.level || inferAuditLevel(entry.eventType || (entry as any).action, entry.status);
       const sanitizedDetails = sanitizeDetails(entry.details || {});
 
       const errCode = entry.error?.code || null;

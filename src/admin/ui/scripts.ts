@@ -4558,12 +4558,12 @@ export function getAdminScripts(): string {
       const textEl = document.getElementById('sched-auto-suggestion-text');
 
       if (!targetPostId) {
-        if (textEl) textEl.innerHTML = '<span style="color:var(--text-muted);">Proszę najpierw wybrać post do zaplanowania.</span>';
+        if (textEl) textEl.innerHTML = '<span style="color:var(--text-muted);">Please select a post to schedule.</span>';
         singlePostAutoTimestamp = null;
         return;
       }
 
-      if (textEl) textEl.textContent = 'Kalkulowanie optymalnego terminu...';
+      if (textEl) textEl.textContent = 'Calculating optimal schedule time...';
 
       try {
         const res = await fetch('/api/admin/content/schedules/intelligent-preview', {
@@ -4578,13 +4578,13 @@ export function getAdminScripts(): string {
           const d = new Date(slot.scheduledAt);
           const dateStr = !isNaN(d.getTime()) ? d.toLocaleString() : safeStr(slot.scheduledDate);
           if (textEl) {
-            textEl.innerHTML = '✨ Sugerowany termin: <strong>' + escapeHtml(dateStr) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(slot.reason, 'Optymalny czas według analityki')) + '</span>';
+            textEl.innerHTML = 'Suggested time: <strong>' + escapeHtml(dateStr) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(slot.reason, 'Optimal time based on analytics')) + '</span>';
           }
         } else {
           const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
           singlePostAutoTimestamp = new Date(fallbackMs).toISOString();
           if (textEl) {
-            textEl.innerHTML = '✨ Sugerowany termin: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Domyślny następny slot)';
+            textEl.innerHTML = 'Suggested time: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Default next slot)';
           }
         }
       } catch (err) {
@@ -4592,7 +4592,7 @@ export function getAdminScripts(): string {
         const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
         singlePostAutoTimestamp = new Date(fallbackMs).toISOString();
         if (textEl) {
-          textEl.innerHTML = '✨ Sugerowany termin: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Slot automatyczny)';
+          textEl.innerHTML = 'Suggested time: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Automatic slot)';
         }
       }
     }
@@ -4642,7 +4642,7 @@ export function getAdminScripts(): string {
       const postId = selectEl ? safeStr(selectEl.value) : safeStr(document.getElementById('schedule-edit-id')?.value);
 
       if (!postId) {
-        alert('Proszę wybrać post z listy.');
+        alert('Please select a post from the list.');
         return;
       }
 
@@ -4656,12 +4656,12 @@ export function getAdminScripts(): string {
         const dateVal = safeStr(document.getElementById('schedule-date')?.value);
         const timeVal = safeStr(document.getElementById('schedule-time')?.value, '10:00');
         if (!dateVal) {
-          alert('Proszę podać datę i godzinę publikacji.');
+          alert('Please select a publication date and time.');
           return;
         }
         const scheduledMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
         if (isNaN(scheduledMs) || scheduledMs < Date.now()) {
-          alert('Data publikacji nie może być w przeszłości.');
+          alert('Publication date cannot be in the past.');
           return;
         }
         scheduledAt = new Date(scheduledMs).toISOString();
@@ -4679,19 +4679,19 @@ export function getAdminScripts(): string {
           loadContentData();
           loadSchedulesData();
         } else {
-          const errorMsg = safeStr(data.error || data.message, 'Nie udało się zaplanować publikacji.');
+          const errorMsg = safeStr(data.error || data.message, 'Failed to schedule publication.');
           alert('Scheduling failed: ' + errorMsg);
         }
       } catch (err) {
         console.error('Failed to schedule post:', err);
-        alert('Błąd połączenia z serwerem podczas zapisywania harmonogramu.');
+        alert('Server connection error while saving schedule.');
       }
     }
 
     function openBulkScheduleModal() {
       const selectedIds = Array.from(selectedPostIds);
       if (selectedIds.length === 0) {
-        alert('Proszę zaznaczyć co najmniej jeden post roboczy.');
+        alert('Please select at least one draft post.');
         return;
       }
 
@@ -4751,20 +4751,20 @@ export function getAdminScripts(): string {
       const intervalHours = Number(document.getElementById('bulk-sched-interval')?.value || 24);
 
       if (!dateVal) {
-        alert('Proszę wskazać datę pierwszego posta.');
+        alert('Please select the start date for the first post.');
         return;
       }
 
       const startMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
       if (isNaN(startMs) || startMs < Date.now()) {
-        alert('Data pierwszego posta nie może być w przeszłości.');
+        alert('Start date cannot be in the past.');
         return;
       }
 
       closeModal('bulk-schedule-modal');
 
       const taskId = window.TaskQueue.add('Manual Bulk Scheduling', { type: 'manual', total: selectedIds.length });
-      window.TaskQueue.start(taskId, 'Planowanie ręczne dla ' + selectedIds.length + ' postów...');
+      window.TaskQueue.start(taskId, 'Manual scheduling for ' + selectedIds.length + ' posts...');
 
       let successCount = 0;
       for (let i = 0; i < selectedIds.length; i++) {
@@ -4784,7 +4784,7 @@ export function getAdminScripts(): string {
         }
       }
 
-      window.TaskQueue.complete(taskId, 'Zaplanowano pomyślnie ' + successCount + ' z ' + selectedIds.length + ' postów.');
+      window.TaskQueue.complete(taskId, 'Successfully scheduled ' + successCount + ' of ' + selectedIds.length + ' posts.');
       selectedPostIds.clear();
       loadContentData();
       loadSchedulesData();
@@ -5516,37 +5516,27 @@ export function getAdminScripts(): string {
         const data = await res.json();
 
         if (data.success && selectEl) {
-          let html = '<option value="">-- Wybierz kategorię lub temat wyszukiwania --</option>';
+          let html = '<option value="">-- Select category or search topic --</option>';
 
           if (data.pillars && data.pillars.length > 0) {
-            html += '<optgroup label="Domyślne kategorie postów (Standard Pillars)">';
+            html += '<optgroup label="Default Content Categories (Standard Pillars)">';
             data.pillars.forEach((p) => {
-              const iconMap = {
-                AI: '🤖 ',
-                WEBSITE: '🌐 ',
-                MARKETING: '📢 ',
-                SALES: '💼 ',
-                SMALL_BUSINESS: '⚙️ ',
-                CUSTOMER_EXPERIENCE: '🤝 ',
-                LOCAL_BUSINESS: '📍 '
-              };
-              const icon = iconMap[p.id] || '📁 ';
-              html += '<option value="pillar:' + escapeHtml(p.id) + '" data-query="' + escapeHtml(p.name) + '" data-category="' + escapeHtml(p.name) + '">' + icon + escapeHtml(p.name) + '</option>';
+              html += '<option value="pillar:' + escapeHtml(p.id) + '" data-query="' + escapeHtml(p.name) + '" data-category="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + '</option>';
             });
             html += '</optgroup>';
           }
 
           if (data.systemTopics && data.systemTopics.length > 0) {
-            html += '<optgroup label="Aktywne tematy z badań (Active Research Topics)">';
+            html += '<optgroup label="Active Research Topics">';
             data.systemTopics.forEach((t) => {
               const cat = t.category || t.content_pillar || 'Technology & Business';
-              html += '<option value="topic:' + escapeHtml(t.id) + '" data-query="' + escapeHtml(t.title) + '" data-category="' + escapeHtml(cat) + '">💡 ' + escapeHtml(t.title) + '</option>';
+              html += '<option value="topic:' + escapeHtml(t.id) + '" data-query="' + escapeHtml(t.title) + '" data-category="' + escapeHtml(cat) + '">' + escapeHtml(t.title) + '</option>';
             });
             html += '</optgroup>';
           }
 
-          html += '<optgroup label="Własne wyszukiwanie (Custom Search)">';
-          html += '<option value="__CUSTOM__">✏️ Custom search... (Wpisz słowa kluczowe z ręki)</option>';
+          html += '<optgroup label="Custom Search">';
+          html += '<option value="__CUSTOM__">Custom search... (Enter manual keywords)</option>';
           html += '</optgroup>';
 
           selectEl.innerHTML = html;
@@ -5559,7 +5549,7 @@ export function getAdminScripts(): string {
       } catch (err) {
         console.error('[DiscoverModal] Failed to fetch topics:', err);
         if (selectEl) {
-          selectEl.innerHTML = '<optgroup label="Domyślne kategorie postów"><option value="pillar:AI" data-query="AI &amp; Business Automation" data-category="AI &amp; Business Automation">🤖 AI &amp; Business Automation</option><option value="pillar:WEBSITE" data-query="Websites &amp; Landing Pages" data-category="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option><option value="pillar:MARKETING" data-query="Marketing &amp; Customer Acquisition" data-category="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option><option value="pillar:SALES" data-query="Sales &amp; Conversion Process" data-category="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option><option value="pillar:SMALL_BUSINESS" data-query="Small Business Productivity &amp; Ops" data-category="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option><option value="pillar:CUSTOMER_EXPERIENCE" data-query="Customer Experience &amp; Trust" data-category="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option><option value="pillar:LOCAL_BUSINESS" data-query="Local Business &amp; Regional Context" data-category="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option></optgroup><optgroup label="Własne wyszukiwanie"><option value="__CUSTOM__">✏️ Custom search... (Wpisz słowa kluczowe z ręki)</option></optgroup>';
+          selectEl.innerHTML = '<optgroup label="Default Content Categories"><option value="pillar:AI" data-query="AI &amp; Business Automation" data-category="AI &amp; Business Automation">AI &amp; Business Automation</option><option value="pillar:WEBSITE" data-query="Websites &amp; Landing Pages" data-category="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option><option value="pillar:MARKETING" data-query="Marketing &amp; Customer Acquisition" data-category="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option><option value="pillar:SALES" data-query="Sales &amp; Conversion Process" data-category="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option><option value="pillar:SMALL_BUSINESS" data-query="Small Business Productivity &amp; Ops" data-category="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option><option value="pillar:CUSTOMER_EXPERIENCE" data-query="Customer Experience &amp; Trust" data-category="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option><option value="pillar:LOCAL_BUSINESS" data-query="Local Business &amp; Regional Context" data-category="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option></optgroup><optgroup label="Custom Search"><option value="__CUSTOM__">Custom search... (Enter manual keywords)</option></optgroup>';
           selectEl.value = 'pillar:AI';
           handleDiscoverTopicSelectChange();
         }
