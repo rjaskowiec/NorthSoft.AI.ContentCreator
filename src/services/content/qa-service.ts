@@ -62,8 +62,8 @@ Review Directives:
 2. Check assertions, statistics, dates, and technical claims attributed to the source against the supplied material. Flag unsupported or misstated facts, especially invented statistics or claims presented as research findings.
 3. Practical business implications, conditional advice, and NorthSoft service invitations may extend beyond the article when they are clearly framed as guidance or possibilities rather than source-backed facts. Do not fail a post merely because its useful business bridge is not stated verbatim in the article.
 4. Content Quality Gate & Filler Rejection: Assign "FAIL" if the post is empty filler, tautological, incoherent, or has no useful business implication.
-5. Tone & Style: Verify clear, natural English, useful guidance, honest claims, and a contextual low-pressure CTA.
-6. Verdict: Assign "FAIL" for factual inaccuracies, invented statistics, unsupported claims presented as source facts, or empty content. Otherwise assign "PASS".
+5. Tone & Style & Language: Verify 100% natural, fluent English ("en"). If any portion of the post title, body, or CTA is written in Polish or any other non-English language, assign "FAIL" and include "Post contains non-English text; must be written entirely in English" in requiredChanges.
+6. Verdict: Assign "FAIL" for factual inaccuracies, invented statistics, non-English text, unsupported claims presented as source facts, or empty content. Otherwise assign "PASS".
 
 Return ONLY a valid JSON object matching this schema:
 {
