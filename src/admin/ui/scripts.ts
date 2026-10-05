@@ -2138,7 +2138,23 @@ export function getAdminScripts(): string {
 
         if (postsBody) {
           if (cachedPosts.length > 0) {
-            postsBody.innerHTML = cachedPosts.map(p => {
+            function isPublishedPost(p) {
+              if (!p) return false;
+              const st = safeLower(p.status);
+              return st === 'published' || Boolean(p.published_at || p.publishedAt || p.facebook_post_id);
+            }
+
+            function isScheduledPost(p) {
+              if (!p || isPublishedPost(p)) return false;
+              const st = safeLower(p.status);
+              return st === 'scheduled' || Boolean(p.scheduled_at || p.scheduledAt || p.schedule_id);
+            }
+
+            const readyPosts = cachedPosts.filter(function(p) { return p && !isScheduledPost(p) && !isPublishedPost(p); });
+            const scheduledPosts = cachedPosts.filter(function(p) { return p && isScheduledPost(p); });
+            const publishedPosts = cachedPosts.filter(function(p) { return p && isPublishedPost(p); });
+
+            function renderPostRow(p) {
               if (!p) return '';
               const statusStr = safeUpper(p.status, 'DRAFT');
               const syncStatus = safeUpper(p.sync_status, 'SYNCED');
@@ -2225,7 +2241,25 @@ export function getAdminScripts(): string {
                 </td>
               </tr>
             \`;
-            }).join('');
+            };
+
+            let bodyHtml = '';
+            if (readyPosts.length > 0) {
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">★ Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
+              bodyHtml += readyPosts.map(renderPostRow).join('');
+            }
+
+            if (scheduledPosts.length > 0) {
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">📅 Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
+              bodyHtml += scheduledPosts.map(renderPostRow).join('');
+            }
+
+            if (publishedPosts.length > 0) {
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">✓ Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
+              bodyHtml += publishedPosts.map(renderPostRow).join('');
+            }
+
+            postsBody.innerHTML = bodyHtml;
           } else {
             postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
