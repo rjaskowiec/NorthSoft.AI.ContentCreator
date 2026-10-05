@@ -4295,18 +4295,20 @@ export function getAdminScripts(): string {
       const contentInput = document.getElementById('post-input-content');
       const statusInput = document.getElementById('post-input-status');
       const modalTitle = document.getElementById('post-modal-title');
-      const imageUrl = document.getElementById('post-input-image-url');
-      const imageFile = document.getElementById('post-input-image-file');
-      const removeImage = document.getElementById('post-remove-image');
+      const selectedImgIdInput = document.getElementById('post-selected-image-id');
+      const removeImgFlagInput = document.getElementById('post-remove-image-flag');
+      const badge = document.getElementById('post-image-name-badge');
+      const wrap = document.getElementById('post-image-preview-wrap');
       const imagePreview = document.getElementById('post-image-preview');
       const syncNote = document.getElementById('post-image-sync-note');
 
       if (idInput) idInput.value = safeStr(p.id);
       if (contentInput) contentInput.value = safeStr(p.latest_body || p.body);
       if (statusInput) statusInput.value = safeStr(p.status || 'draft').toLowerCase();
-      if (imageUrl) imageUrl.value = '';
-      if (imageFile) imageFile.value = '';
-      if (removeImage) removeImage.checked = false;
+      if (selectedImgIdInput) selectedImgIdInput.value = p.curated_image_id || p.image_id || '';
+      if (removeImgFlagInput) removeImgFlagInput.value = 'false';
+      if (badge) badge.textContent = p.image_title || (p.image_url ? 'Illustration attached' : 'No image selected');
+      if (wrap) wrap.style.display = p.image_url ? 'block' : 'none';
       if (imagePreview) {
         imagePreview.src = safeStr(p.image_url);
         imagePreview.style.display = p.image_url ? 'block' : 'none';
@@ -4322,9 +4324,8 @@ export function getAdminScripts(): string {
       const id = safeStr(document.getElementById('post-edit-id')?.value).trim();
       const content = safeStr(document.getElementById('post-input-content')?.value).trim();
       const status = safeStr(document.getElementById('post-input-status')?.value, 'draft');
-      const imageUrl = safeStr(document.getElementById('post-input-image-url')?.value).trim();
-      const imageFile = document.getElementById('post-input-image-file')?.files?.[0];
-      const removeImage = Boolean(document.getElementById('post-remove-image')?.checked);
+      const selectedImageId = safeStr(document.getElementById('post-selected-image-id')?.value).trim();
+      const removeImage = document.getElementById('post-remove-image-flag')?.value === 'true';
 
       if (!content) return;
 
@@ -4354,26 +4355,21 @@ export function getAdminScripts(): string {
         const saved = await res.json().catch(() => ({}));
         const postId = id || saved.postId;
         let imageWasEdited = false;
-        if (postId && imageFile) {
-          const imageForm = new FormData();
-          imageForm.append('file', imageFile);
-          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
-            method: 'POST', body: imageForm
+        if (postId && removeImage) {
+          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/assign-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ action: 'remove' })
           });
-          if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image upload failed.'));
+          if (!imageRes.ok) console.warn('Failed to remove image');
           imageWasEdited = true;
-        } else if (postId && imageUrl) {
-          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: imageUrl })
+        } else if (postId && selectedImageId) {
+          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/assign-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ imageId: selectedImageId })
           });
-          if (!imageRes.ok) throw new Error(safeStr((await imageRes.json().catch(() => ({}))).error, 'Image save failed.'));
-          imageWasEdited = true;
-        } else if (postId && removeImage) {
-          const imageRes = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image', {
-            method: 'DELETE'
-          });
-          if (!imageRes.ok) throw new Error('Image removal failed.');
+          if (!imageRes.ok) console.warn('Failed to assign image');
           imageWasEdited = true;
         }
         const p = cachedPosts.find(item => item && item.id === id);
@@ -4518,11 +4514,93 @@ export function getAdminScripts(): string {
       }
     }
 
+    let singlePostAutoTimestamp = null;
+
+    function setScheduleModalMode(mode) {
+      const modeVal = document.getElementById('schedule-mode-val');
+      const autoBtn = document.getElementById('sched-mode-auto-btn');
+      const manualBtn = document.getElementById('sched-mode-manual-btn');
+      const autoContainer = document.getElementById('sched-auto-container');
+      const manualContainer = document.getElementById('sched-manual-container');
+
+      if (modeVal) modeVal.value = mode;
+
+      if (mode === 'auto') {
+        if (autoBtn) { autoBtn.style.background = 'var(--accent-blue)'; autoBtn.style.color = 'white'; }
+        if (manualBtn) { manualBtn.style.background = 'transparent'; manualBtn.style.color = 'var(--text-main)'; }
+        if (autoContainer) autoContainer.style.display = 'block';
+        if (manualContainer) manualContainer.style.display = 'none';
+        fetchSinglePostIntelligentSlot();
+      } else {
+        if (autoBtn) { autoBtn.style.background = 'transparent'; autoBtn.style.color = 'var(--text-main)'; }
+        if (manualBtn) { manualBtn.style.background = 'var(--accent-blue)'; manualBtn.style.color = 'white'; }
+        if (autoContainer) autoContainer.style.display = 'none';
+        if (manualContainer) manualContainer.style.display = 'grid';
+      }
+    }
+
+    function onSchedulePostSelectChange() {
+      const selectEl = document.getElementById('schedule-post-select');
+      const idInput = document.getElementById('schedule-edit-id');
+      if (selectEl && idInput) {
+        idInput.value = selectEl.value;
+      }
+      const mode = document.getElementById('schedule-mode-val')?.value || 'auto';
+      if (mode === 'auto') {
+        fetchSinglePostIntelligentSlot();
+      }
+    }
+
+    async function fetchSinglePostIntelligentSlot() {
+      const selectEl = document.getElementById('schedule-post-select');
+      const idInput = document.getElementById('schedule-edit-id');
+      const targetPostId = (selectEl && selectEl.value) || (idInput && idInput.value);
+      const textEl = document.getElementById('sched-auto-suggestion-text');
+
+      if (!targetPostId) {
+        if (textEl) textEl.innerHTML = '<span style="color:var(--text-muted);">Proszę najpierw wybrać post do zaplanowania.</span>';
+        singlePostAutoTimestamp = null;
+        return;
+      }
+
+      if (textEl) textEl.textContent = 'Kalkulowanie optymalnego terminu...';
+
+      try {
+        const res = await fetch('/api/admin/content/schedules/intelligent-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ postIds: [targetPostId] }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success && Array.isArray(data.proposedSlots) && data.proposedSlots.length > 0) {
+          const slot = data.proposedSlots[0];
+          singlePostAutoTimestamp = slot.scheduledAt;
+          const d = new Date(slot.scheduledAt);
+          const dateStr = !isNaN(d.getTime()) ? d.toLocaleString() : safeStr(slot.scheduledDate);
+          if (textEl) {
+            textEl.innerHTML = '✨ Sugerowany termin: <strong>' + escapeHtml(dateStr) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(slot.reason, 'Optymalny czas według analityki')) + '</span>';
+          }
+        } else {
+          const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
+          singlePostAutoTimestamp = new Date(fallbackMs).toISOString();
+          if (textEl) {
+            textEl.innerHTML = '✨ Sugerowany termin: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Domyślny następny slot)';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch intelligent slot:', err);
+        const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
+        singlePostAutoTimestamp = new Date(fallbackMs).toISOString();
+        if (textEl) {
+          textEl.innerHTML = '✨ Sugerowany termin: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Slot automatyczny)';
+        }
+      }
+    }
+
     function openSchedulePostModal(postId) {
       if (postId) {
         const p = cachedPosts.find(item => item && item.id === postId);
         if (p && (p.status === 'published' || p.status === 'publishing')) {
-          // Redirect to edit modal if already published
           openEditPostModal(postId);
           return;
         }
@@ -4533,7 +4611,6 @@ export function getAdminScripts(): string {
       const timeInput = document.getElementById('schedule-time');
       const selectEl = document.getElementById('schedule-post-select');
 
-      // Default to tomorrow 10:00 AM UTC to strictly enforce future scheduling
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const tomorrowDateStr = tomorrow.toISOString().split('T')[0];
       const todayStr = new Date().toISOString().split('T')[0];
@@ -4543,9 +4620,7 @@ export function getAdminScripts(): string {
         dateInput.value = tomorrowDateStr;
         dateInput.min = todayStr;
       }
-      if (timeInput) {
-        timeInput.value = '10:00';
-      }
+      if (timeInput) timeInput.value = '10:00';
 
       if (selectEl) {
         selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.filter(p => p && p.status !== 'published' && p.status !== 'publishing').map(p => {
@@ -4557,27 +4632,40 @@ export function getAdminScripts(): string {
       }
 
       openModal('schedule-post-modal');
+      setScheduleModalMode('auto');
     }
 
     async function handleSaveSchedule(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
       const selectEl = document.getElementById('schedule-post-select');
-      const dateVal = safeStr(document.getElementById('schedule-date')?.value);
-      const timeVal = safeStr(document.getElementById('schedule-time')?.value, '10:00');
-      const postId = selectEl ? safeStr(selectEl.value) : '';
+      const mode = document.getElementById('schedule-mode-val')?.value || 'auto';
+      const postId = selectEl ? safeStr(selectEl.value) : safeStr(document.getElementById('schedule-edit-id')?.value);
 
-      if (!postId || !dateVal) {
-        alert('Please select a post draft and publication date.');
+      if (!postId) {
+        alert('Proszę wybrać post z listy.');
         return;
       }
 
-      const scheduledMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
-      if (isNaN(scheduledMs) || scheduledMs < Date.now()) {
-        alert('A post cannot be scheduled in the past. Please select a date and time in the future.');
-        return;
+      let scheduledAt = '';
+      if (mode === 'auto') {
+        if (!singlePostAutoTimestamp) {
+          await fetchSinglePostIntelligentSlot();
+        }
+        scheduledAt = singlePostAutoTimestamp || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      } else {
+        const dateVal = safeStr(document.getElementById('schedule-date')?.value);
+        const timeVal = safeStr(document.getElementById('schedule-time')?.value, '10:00');
+        if (!dateVal) {
+          alert('Proszę podać datę i godzinę publikacji.');
+          return;
+        }
+        const scheduledMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
+        if (isNaN(scheduledMs) || scheduledMs < Date.now()) {
+          alert('Data publikacji nie może być w przeszłości.');
+          return;
+        }
+        scheduledAt = new Date(scheduledMs).toISOString();
       }
-
-      const scheduledAt = new Date(scheduledMs).toISOString();
 
       try {
         const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/schedule', {
@@ -4591,13 +4679,115 @@ export function getAdminScripts(): string {
           loadContentData();
           loadSchedulesData();
         } else {
-          const errorMsg = safeStr(data.error || data.message, 'A post cannot be scheduled in the past.');
+          const errorMsg = safeStr(data.error || data.message, 'Nie udało się zaplanować publikacji.');
           alert('Scheduling failed: ' + errorMsg);
         }
       } catch (err) {
         console.error('Failed to schedule post:', err);
-        alert('Failed to connect to server when saving schedule.');
+        alert('Błąd połączenia z serwerem podczas zapisywania harmonogramu.');
       }
+    }
+
+    function openBulkScheduleModal() {
+      const selectedIds = Array.from(selectedPostIds);
+      if (selectedIds.length === 0) {
+        alert('Proszę zaznaczyć co najmniej jeden post roboczy.');
+        return;
+      }
+
+      const countEl = document.getElementById('bulk-schedule-count');
+      if (countEl) countEl.textContent = selectedIds.length;
+
+      const startDateInput = document.getElementById('bulk-sched-start-date');
+      const startTimeInput = document.getElementById('bulk-sched-start-time');
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      if (startDateInput) {
+        startDateInput.value = tomorrow.toISOString().split('T')[0];
+        startDateInput.min = new Date().toISOString().split('T')[0];
+      }
+      if (startTimeInput) startTimeInput.value = '10:00';
+
+      openModal('bulk-schedule-modal');
+      setBulkScheduleModalMode('auto');
+    }
+
+    function setBulkScheduleModalMode(mode) {
+      const modeVal = document.getElementById('bulk-schedule-mode-val');
+      const autoBtn = document.getElementById('bulk-sched-mode-auto-btn');
+      const manualBtn = document.getElementById('bulk-sched-mode-manual-btn');
+      const autoContainer = document.getElementById('bulk-sched-auto-container');
+      const manualContainer = document.getElementById('bulk-sched-manual-container');
+
+      if (modeVal) modeVal.value = mode;
+
+      if (mode === 'auto') {
+        if (autoBtn) { autoBtn.style.background = 'var(--accent-blue)'; autoBtn.style.color = 'white'; }
+        if (manualBtn) { manualBtn.style.background = 'transparent'; manualBtn.style.color = 'var(--text-main)'; }
+        if (autoContainer) autoContainer.style.display = 'block';
+        if (manualContainer) manualContainer.style.display = 'none';
+      } else {
+        if (autoBtn) { autoBtn.style.background = 'transparent'; autoBtn.style.color = 'var(--text-main)'; }
+        if (manualBtn) { manualBtn.style.background = 'var(--accent-blue)'; manualBtn.style.color = 'white'; }
+        if (autoContainer) autoContainer.style.display = 'none';
+        if (manualContainer) manualContainer.style.display = 'block';
+      }
+    }
+
+    async function confirmBulkScheduleAuto() {
+      closeModal('bulk-schedule-modal');
+      const selectedIds = Array.from(selectedPostIds);
+      if (selectedIds.length > 0) {
+        await runIntelligentSchedulePreview(selectedIds);
+      }
+    }
+
+    async function confirmBulkScheduleManual() {
+      const selectedIds = Array.from(selectedPostIds);
+      if (selectedIds.length === 0) return;
+
+      const dateVal = safeStr(document.getElementById('bulk-sched-start-date')?.value);
+      const timeVal = safeStr(document.getElementById('bulk-sched-start-time')?.value, '10:00');
+      const intervalHours = Number(document.getElementById('bulk-sched-interval')?.value || 24);
+
+      if (!dateVal) {
+        alert('Proszę wskazać datę pierwszego posta.');
+        return;
+      }
+
+      const startMs = new Date(dateVal + 'T' + timeVal + ':00Z').getTime();
+      if (isNaN(startMs) || startMs < Date.now()) {
+        alert('Data pierwszego posta nie może być w przeszłości.');
+        return;
+      }
+
+      closeModal('bulk-schedule-modal');
+
+      const taskId = window.TaskQueue.add('Manual Bulk Scheduling', { type: 'manual', total: selectedIds.length });
+      window.TaskQueue.start(taskId, 'Planowanie ręczne dla ' + selectedIds.length + ' postów...');
+
+      let successCount = 0;
+      for (let i = 0; i < selectedIds.length; i++) {
+        const pid = selectedIds[i];
+        const postMs = startMs + (i * intervalHours * 60 * 60 * 1000);
+        const scheduledAt = new Date(postMs).toISOString();
+
+        try {
+          const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(pid) + '/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ scheduledAt })
+          });
+          if (res.ok) successCount++;
+        } catch (err) {
+          console.error('Failed manual bulk schedule for post:', pid, err);
+        }
+      }
+
+      window.TaskQueue.complete(taskId, 'Zaplanowano pomyślnie ' + successCount + ' z ' + selectedIds.length + ' postów.');
+      selectedPostIds.clear();
+      loadContentData();
+      loadSchedulesData();
     }
 
     function openScheduledPostDetailModal(scheduleId, postId) {
@@ -6156,6 +6346,13 @@ export function getAdminScripts(): string {
     window.openDeletePublicationModal = openDeletePublicationModal;
     window.scheduleSelectedIntelligently = scheduleSelectedIntelligently;
     window.scheduleAllEligibleIntelligently = scheduleAllEligibleIntelligently;
+    window.openBulkScheduleModal = openBulkScheduleModal;
+    window.setBulkScheduleModalMode = setBulkScheduleModalMode;
+    window.confirmBulkScheduleAuto = confirmBulkScheduleAuto;
+    window.confirmBulkScheduleManual = confirmBulkScheduleManual;
+    window.setScheduleModalMode = setScheduleModalMode;
+    window.onSchedulePostSelectChange = onSchedulePostSelectChange;
+    window.fetchSinglePostIntelligentSlot = fetchSinglePostIntelligentSlot;
     window.executeCommitIntelligentSchedule = executeCommitIntelligentSchedule;
     window.openScheduledPostDetailModal = openScheduledPostDetailModal;
     window.saveScheduledPostEdits = saveScheduledPostEdits;

@@ -532,7 +532,7 @@ export function renderAdminHtml(): string {
                 <span id="post-selected-count">0</span> drafts selected
               </div>
               <div class="bulk-toolbar-actions">
-                <button class="btn-primary" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="scheduleSelectedIntelligently()">
+                <button class="btn-primary" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="openBulkScheduleModal()">
                   Schedule selected
                 </button>
                 <select id="post-bulk-status-select" class="bulk-select-status" onchange="executePostBulkStatusChange(this.value)">
@@ -1257,7 +1257,7 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- 7. SCHEDULE POST MODAL -->
+  <!-- 7. SCHEDULE POST MODAL (SINGLE POST) -->
   <div id="schedule-post-modal" class="modal-backdrop">
     <div class="modal-box">
       <div class="modal-header">
@@ -1268,23 +1268,121 @@ export function renderAdminHtml(): string {
         <form id="schedule-post-form" onsubmit="handleSaveSchedule(event)">
           <input type="hidden" id="schedule-edit-id" value="" />
           <div class="form-group">
-            <label class="form-label" for="schedule-post-select">Select Approved Draft</label>
-            <select id="schedule-post-select" class="form-input" required>
-              <option value="">-- Select an approved draft --</option>
+            <label class="form-label" for="schedule-post-select">Post Draft</label>
+            <select id="schedule-post-select" class="form-input" required onchange="onSchedulePostSelectChange()">
+              <option value="">-- Select draft --</option>
             </select>
           </div>
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
-            <div class="form-group">
-              <label class="form-label" for="schedule-date">Date</label>
-              <input type="date" id="schedule-date" class="form-input" required />
+
+          <!-- Mode Selector: Auto vs Manual -->
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label class="form-label">Scheduling Mode</label>
+            <div style="display:flex; gap:0.5rem; background:rgba(255,255,255,0.04); padding:0.3rem; border-radius:8px; border:1px solid var(--border-color);">
+              <button type="button" id="sched-mode-auto-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:var(--accent-blue); color:white; border:none;" onclick="setScheduleModalMode('auto')">
+                ✨ Automatycznie (Sugerowany AI)
+              </button>
+              <button type="button" id="sched-mode-manual-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:transparent; border:none;" onclick="setScheduleModalMode('manual')">
+                📅 Ręcznie (Wybierz datę i czas)
+              </button>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="schedule-time">Time (UTC)</label>
-              <input type="time" id="schedule-time" class="form-input" value="08:00" required />
+            <input type="hidden" id="schedule-mode-val" value="auto" />
+          </div>
+
+          <!-- Auto Mode Container -->
+          <div id="sched-auto-container" style="background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem; margin-bottom:1.25rem;">
+            <div style="font-size:0.85rem; font-weight:600; color:var(--accent-blue); margin-bottom:0.35rem;">
+              🤖 Automatycznie wyliczony czas publikacji
+            </div>
+            <div id="sched-auto-suggestion-text" style="font-size:0.825rem; color:var(--text-main); margin-bottom:0.5rem;">
+              Wyliczanie optymalnego terminu...
+            </div>
+            <button type="button" class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="fetchSinglePostIntelligentSlot()">
+              🔄 Odśwież sugerowany czas
+            </button>
+          </div>
+
+          <!-- Manual Mode Container -->
+          <div id="sched-manual-container" style="display:none; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1.25rem;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="schedule-date">Data</label>
+              <input type="date" id="schedule-date" class="form-input" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="schedule-time">Godzina (UTC)</label>
+              <input type="time" id="schedule-time" class="form-input" value="10:00" />
             </div>
           </div>
-          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Schedule</button>
+
+          <button type="submit" id="save-schedule-btn" class="btn-primary" style="width:100%;">Zaplanuj publikację</button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7B. BULK SCHEDULE MODAL (MULTIPLE POSTS) -->
+  <div id="bulk-schedule-modal" class="modal-backdrop">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header">
+        <div class="modal-title" id="bulk-schedule-title">Schedule Selected Posts</div>
+        <button class="modal-close-btn" onclick="closeModal('bulk-schedule-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
+          Wybierz metodę planowania publikacji dla <strong id="bulk-schedule-count" style="color:var(--text-main);">0</strong> wybranych postów:
+        </p>
+
+        <!-- Mode selector: Auto vs Manual -->
+        <div style="display:flex; gap:0.5rem; background:rgba(255,255,255,0.04); padding:0.3rem; border-radius:8px; border:1px solid var(--border-color); margin-bottom:1.25rem;">
+          <button type="button" id="bulk-sched-mode-auto-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:var(--accent-blue); color:white; border:none;" onclick="setBulkScheduleModalMode('auto')">
+            ✨ Automatycznie (Sugerowane AI)
+          </button>
+          <button type="button" id="bulk-sched-mode-manual-btn" class="btn-secondary" style="flex:1; font-size:0.825rem; padding:0.4rem 0.6rem; background:transparent; border:none;" onclick="setBulkScheduleModalMode('manual')">
+            📅 Ręcznie (Ustal harmonogram)
+          </button>
+        </div>
+        <input type="hidden" id="bulk-schedule-mode-val" value="auto" />
+
+        <!-- Auto Container -->
+        <div id="bulk-sched-auto-container" style="background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem; margin-bottom:1.25rem;">
+          <div style="font-size:0.85rem; font-weight:600; color:var(--accent-blue); margin-bottom:0.35rem;">
+            ✨ Inteligentne planowanie zbiorcze
+          </div>
+          <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:0.75rem;">
+            System automatycznie dobierze optymalne daty i godziny dla wszystkich zaznaczonych postów, pilnując odpowiednich odstępów i historii zaangażowania.
+          </p>
+          <button type="button" class="btn-primary" style="width:100%;" onclick="confirmBulkScheduleAuto()">
+            Wylicz i przejrzyj sugerowane terminy &rarr;
+          </button>
+        </div>
+
+        <!-- Manual Container -->
+        <div id="bulk-sched-manual-container" style="display:none; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:1rem; margin-bottom:1.25rem;">
+          <div style="font-size:0.85rem; font-weight:600; color:var(--text-main); margin-bottom:0.75rem;">
+            📅 Ręczny harmonogram zbiorczy
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="bulk-sched-start-date">Data pierwszego posta</label>
+              <input type="date" id="bulk-sched-start-date" class="form-input" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="bulk-sched-start-time">Godzina (UTC)</label>
+              <input type="time" id="bulk-sched-start-time" class="form-input" value="10:00" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="bulk-sched-interval">Odstęp między postami</label>
+            <select id="bulk-sched-interval" class="form-input">
+              <option value="24">Co 24 godziny (1 dzień)</option>
+              <option value="12">Co 12 godzin</option>
+              <option value="48">Co 48 godzin (2 dni)</option>
+              <option value="6">Co 6 godzin</option>
+            </select>
+          </div>
+          <button type="button" class="btn-primary" style="width:100%; margin-top:1rem;" onclick="confirmBulkScheduleManual()">
+            Zapisz ręczny harmonogram dla wybranych
+          </button>
+        </div>
       </div>
     </div>
   </div>
