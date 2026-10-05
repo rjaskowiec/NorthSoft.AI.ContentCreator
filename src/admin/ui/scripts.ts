@@ -1446,15 +1446,18 @@ export function getAdminScripts(): string {
           createdAt: Date.now(),
           completedAt: null,
           showTimer: null,
-          visible: false
+          visible: opts.type === 'manual' || opts.immediate === true || Boolean(opts.visible)
         };
         this.tasks.push(task);
-        
-        // Only show if operation takes longer than 300ms
-        task.showTimer = setTimeout(() => {
-          task.visible = true;
+
+        if (!task.visible) {
+          task.showTimer = setTimeout(() => {
+            task.visible = true;
+            this.render();
+          }, 300);
+        } else {
           this.render();
-        }, 300);
+        }
 
         return task.id;
       },
@@ -1462,6 +1465,7 @@ export function getAdminScripts(): string {
         var task = this.getTask(id);
         if (!task) return;
         task.status = 'PROCESSING';
+        task.visible = true;
         if (stageName) task.currentStage = stageName;
         this.render();
       },
@@ -2242,30 +2246,43 @@ export function getAdminScripts(): string {
     }
 
     async function findImageForPost(postId) {
+      const taskId = window.TaskQueue.add('Finding Post Image', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Searching Unsplash / R2 image library for matching post image...');
+
       try {
         const response = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image/search', {
           method: 'POST', headers: { 'x-csrf-token': csrfToken }
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.success) {
-          alert(safeStr(result.error, 'No matching image was found.'));
+          const errMsg = safeStr(result.error, 'No matching image was found.');
+          window.TaskQueue.fail(taskId, 'Image Search Failed', errMsg);
+          alert(errMsg);
           return;
         }
 
         const post = cachedPosts.find(item => item && item.id === postId);
         if (post && (post.status === 'published' || post.facebook_post_id)) {
+          window.TaskQueue.stage(taskId, 'Syncing new image with Facebook Page...');
           const sync = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update-image', {
             method: 'POST', headers: { 'x-csrf-token': csrfToken }
           });
           if (!sync.ok) {
             const syncResult = await sync.json().catch(() => ({}));
+            window.TaskQueue.fail(taskId, 'Facebook Image Sync Warning', safeStr(syncResult.error));
             alert('Image found and saved, but Facebook did not confirm it: ' + safeStr(syncResult.error, 'Unknown Meta API error.'));
+          } else {
+            window.TaskQueue.complete(taskId, 'Image updated and synced to Facebook Page.');
           }
+        } else {
+          window.TaskQueue.complete(taskId, 'Matching image assigned to post draft.');
         }
         await loadContentData();
       } catch (err) {
         console.error('Failed to find an image for post:', err);
-        alert(err instanceof Error ? err.message : 'Image search failed.');
+        const errMsg = err instanceof Error ? err.message : 'Image search failed.';
+        window.TaskQueue.fail(taskId, 'Image Search Error', errMsg);
+        alert(errMsg);
       }
     }
 
@@ -2283,6 +2300,9 @@ export function getAdminScripts(): string {
 
     // Run Autonomous Pipeline
     async function runPipelineNow() {
+      const taskId = window.TaskQueue.add('Triggering Autonomous Pipeline', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Triggering autonomous pipeline background worker...');
+
       const btn = document.getElementById('run-pipeline-btn');
       const alertEl = document.getElementById('pipeline-run-alert');
       if (alertEl) alertEl.style.display = 'none';
@@ -2302,19 +2322,26 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (alertEl) {
-          if (res.ok && data.success) {
+        if (res.ok && data.success) {
+          window.TaskQueue.complete(taskId, 'Autonomous pipeline worker triggered successfully.');
+          if (alertEl) {
             alertEl.textContent = 'Pipeline run completed successfully.';
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
-            loadDashboardData();
-          } else {
-            alertEl.textContent = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an error.');
+          }
+          loadDashboardData();
+        } else {
+          const errMsg = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an error.');
+          window.TaskQueue.fail(taskId, 'Pipeline Run Failed', errMsg);
+          if (alertEl) {
+            alertEl.textContent = errMsg;
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
         }
       } catch (err) {
+        const errMsg = safeStr(err?.message, 'Network or connection error');
+        window.TaskQueue.fail(taskId, 'Pipeline Connection Error', errMsg);
         if (alertEl) {
           alertEl.textContent = 'An unexpected error occurred while executing the pipeline.';
           alertEl.className = 'alert-error';
@@ -2595,6 +2622,9 @@ export function getAdminScripts(): string {
     }
 
     async function syncFacebookPublications() {
+      const taskId = window.TaskQueue.add('Syncing Facebook Publications', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Syncing latest post status & metrics from Facebook...');
+
       const button = document.getElementById('sync-facebook-publications');
       if (button) { button.disabled = true; button.textContent = 'Syncing...'; }
       try {
@@ -2602,10 +2632,13 @@ export function getAdminScripts(): string {
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook sync failed.'));
         const result = data.result || {};
+        window.TaskQueue.complete(taskId, 'Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated.');
         showPublicationAlert('Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated, ' + safeStr(result.conflicts, '0') + ' conflicts, ' + safeStr(result.errors, '0') + ' errors.', result.errors === 0);
         await loadFacebookPublications(false);
       } catch (error) {
-        showPublicationAlert(error instanceof Error ? error.message : String(error), false);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        window.TaskQueue.fail(taskId, 'Facebook Sync Failed', errMsg);
+        showPublicationAlert(errMsg, false);
       } finally {
         if (button) { button.disabled = false; button.textContent = 'Sync with Facebook'; }
       }
@@ -2816,6 +2849,9 @@ export function getAdminScripts(): string {
     }
 
     async function publishNow(postId) {
+      const taskId = window.TaskQueue.add('Publishing Post to Facebook', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Sending post payload to Facebook Page API...');
+
       const alertEl = document.getElementById('publication-alert');
       if (alertEl) alertEl.style.display = 'none';
 
@@ -2829,18 +2865,25 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (alertEl) {
-          if (res.ok && data.success) {
-            alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + safeStr(data.result?.externalPostId, 'Success');
+        if (res.ok && data.success) {
+          const extId = safeStr(data.result?.externalPostId, 'Success');
+          window.TaskQueue.complete(taskId, 'Published to Facebook! External ID: ' + extId);
+          if (alertEl) {
+            alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + extId;
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
-          } else {
-            alertEl.textContent = 'Publication failed: ' + safeStr(data.error || data.result?.message, 'Error publishing post');
+          }
+        } else {
+          const errMsg = safeStr(data.error || data.result?.message, 'Error publishing post');
+          window.TaskQueue.fail(taskId, 'Publishing Failed', errMsg);
+          if (alertEl) {
+            alertEl.textContent = 'Publication failed: ' + errMsg;
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
         }
       } catch (err) {
+        window.TaskQueue.fail(taskId, 'Publishing Connection Error', safeStr(err?.message));
         if (alertEl) {
           alertEl.textContent = 'An unexpected connection error occurred during publishing.';
           alertEl.className = 'alert-error';
@@ -2852,6 +2895,9 @@ export function getAdminScripts(): string {
     }
 
     async function retryPub(pubId) {
+      const taskId = window.TaskQueue.add('Retrying Facebook Publication', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Retrying publication payload to Facebook...');
+
       const alertEl = document.getElementById('publication-alert');
       if (alertEl) alertEl.style.display = 'none';
 
@@ -2865,18 +2911,25 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (alertEl) {
-          if (res.ok && data.success) {
-            alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + safeStr(data.result?.externalPostId, 'Success');
+        if (res.ok && data.success) {
+          const extId = safeStr(data.result?.externalPostId, 'Success');
+          window.TaskQueue.complete(taskId, 'Publication retry succeeded! Facebook ID: ' + extId);
+          if (alertEl) {
+            alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + extId;
             alertEl.className = 'alert-success';
             alertEl.style.display = 'block';
-          } else {
-            alertEl.textContent = 'Publication retry failed: ' + safeStr(data.error || data.result?.message, 'Error retrying publication');
+          }
+        } else {
+          const errMsg = safeStr(data.error || data.result?.message, 'Error retrying publication');
+          window.TaskQueue.fail(taskId, 'Retry Failed', errMsg);
+          if (alertEl) {
+            alertEl.textContent = 'Publication retry failed: ' + errMsg;
             alertEl.className = 'alert-error';
             alertEl.style.display = 'block';
           }
         }
       } catch (err) {
+        window.TaskQueue.fail(taskId, 'Retry Connection Error', safeStr(err?.message));
         if (alertEl) {
           alertEl.textContent = 'An unexpected connection error occurred during retry.';
           alertEl.className = 'alert-error';
@@ -3928,6 +3981,10 @@ export function getAdminScripts(): string {
 
     async function executeTopicBulkStatusChange(newStatus) {
       if (!newStatus || selectedTopicIds.size === 0) return;
+      const count = selectedTopicIds.size;
+      const taskId = window.TaskQueue.add('Bulk Topic Status Change', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Setting status to "' + newStatus + '" for ' + count + ' topics...');
+
       try {
         const res = await fetch('/api/admin/research/topics/bulk-status', {
           method: 'PATCH',
@@ -3935,12 +3992,16 @@ export function getAdminScripts(): string {
           body: JSON.stringify({ ids: Array.from(selectedTopicIds), status: newStatus })
         });
         if (res.ok) {
+          window.TaskQueue.complete(taskId, 'Updated status to ' + newStatus + ' for ' + count + ' topics.');
           selectedTopicIds.clear();
           const sel = document.getElementById('topic-bulk-status-select');
           if (sel) sel.value = '';
           loadResearchData();
+        } else {
+          window.TaskQueue.fail(taskId, 'Bulk Update Failed', 'Server returned error status.');
         }
       } catch (err) {
+        window.TaskQueue.fail(taskId, 'Bulk Update Error', safeStr(err?.message));
         console.error('Failed bulk topic status update:', err);
       }
     }
@@ -4043,6 +4104,12 @@ export function getAdminScripts(): string {
       if (!topicId) return;
       const topic = cachedTopics.find(item => item && item.id === topicId);
       const isRegeneration = Number(topic?.post_count || 0) > 0;
+      const topicTitle = safeStr(topic?.title, 'Topic');
+      const actionTitle = isRegeneration ? 'Regenerating Post' : 'Generating Post';
+
+      const taskId = window.TaskQueue.add(actionTitle, { type: 'manual', detail: 'Topic: ' + topicTitle });
+      window.TaskQueue.start(taskId, isRegeneration ? 'Regenerating post draft from "' + topicTitle + '"...' : 'Generating new post draft from "' + topicTitle + '"...');
+
       const alertEl = document.getElementById('research-run-alert');
       if (alertEl) {
         alertEl.textContent = isRegeneration ? 'Generating a new version of the existing post...' : 'Generating post draft...';
@@ -4064,8 +4131,13 @@ export function getAdminScripts(): string {
         }
 
         if (res.ok && data.success) {
+          const version = Number(data.result?.currentVersion || 0);
+          const successMsg = isRegeneration
+            ? 'Existing post regenerated as version ' + version + '.'
+            : 'Post draft generated successfully.';
+          window.TaskQueue.complete(taskId, successMsg);
+
           if (alertEl) {
-            const version = Number(data.result?.currentVersion || 0);
             alertEl.textContent = isRegeneration
               ? 'Existing post regenerated as version ' + version + '. The Facebook post was not published or updated automatically.'
               : 'Post draft generated successfully.';
@@ -4074,6 +4146,7 @@ export function getAdminScripts(): string {
           await Promise.all([loadResearchData(), loadContentData()]);
         } else {
           const errMsg = extractApiErrorMessage(data, res.status);
+          window.TaskQueue.fail(taskId, 'Post Generation Failed', errMsg);
           if (alertEl) {
             alertEl.textContent = 'Post generation failed: ' + errMsg;
             alertEl.className = 'alert-error';
@@ -4081,8 +4154,10 @@ export function getAdminScripts(): string {
         }
       } catch (err) {
         console.error('Failed to generate post from topic:', err);
+        const errMsg = safeStr(err?.message, 'Network or server error');
+        window.TaskQueue.fail(taskId, 'Post Generation Error', errMsg);
         if (alertEl) {
-          alertEl.textContent = 'Post generation failed: ' + safeStr(err?.message, 'Network or server error');
+          alertEl.textContent = 'Post generation failed: ' + errMsg;
           alertEl.className = 'alert-error';
         }
       }
@@ -4118,6 +4193,10 @@ export function getAdminScripts(): string {
 
     async function executePostBulkStatusChange(newStatus) {
       if (!newStatus || selectedPostIds.size === 0) return;
+      const count = selectedPostIds.size;
+      const taskId = window.TaskQueue.add('Bulk Post Status Change', { type: 'manual' });
+      window.TaskQueue.start(taskId, 'Setting status to "' + newStatus + '" for ' + count + ' posts...');
+
       try {
         const res = await fetch('/api/admin/content/posts/bulk-status', {
           method: 'PATCH',
@@ -4125,12 +4204,16 @@ export function getAdminScripts(): string {
           body: JSON.stringify({ ids: Array.from(selectedPostIds), status: newStatus })
         });
         if (res.ok) {
+          window.TaskQueue.complete(taskId, 'Updated status to ' + newStatus + ' for ' + count + ' posts.');
           selectedPostIds.clear();
           const sel = document.getElementById('post-bulk-status-select');
           if (sel) sel.value = '';
           loadContentData();
+        } else {
+          window.TaskQueue.fail(taskId, 'Bulk Update Failed', 'Server returned error status.');
         }
       } catch (err) {
+        window.TaskQueue.fail(taskId, 'Bulk Update Error', safeStr(err?.message));
         console.error('Failed bulk post status update:', err);
       }
     }
@@ -4362,6 +4445,9 @@ export function getAdminScripts(): string {
       if (!title) return;
       closeModal('generate-topic-modal');
 
+      const taskId = window.TaskQueue.add('Generating Post from Topic', { type: 'manual', detail: 'Topic: ' + title });
+      window.TaskQueue.start(taskId, 'Generating post draft for topic "' + title + '"...');
+
       const alertEl = document.getElementById('content-alert');
       if (alertEl) {
         alertEl.textContent = 'Generating post draft for topic "' + title + '"...';
@@ -4377,19 +4463,24 @@ export function getAdminScripts(): string {
         });
         const data = await res.json();
         if (res.ok && data.success) {
+          window.TaskQueue.complete(taskId, 'Post generated successfully from topic.');
           if (alertEl) {
             alertEl.textContent = 'Post generated successfully from topic.';
             alertEl.className = 'alert-success';
           }
           loadContentData();
         } else {
+          const errMsg = safeStr(data.error || data.result?.errorMessage, 'Unknown error');
+          window.TaskQueue.fail(taskId, 'Post Generation Failed', errMsg);
           if (alertEl) {
-            alertEl.textContent = 'Failed to generate post: ' + safeStr(data.error || data.result?.errorMessage, 'Unknown error');
+            alertEl.textContent = 'Failed to generate post: ' + errMsg;
             alertEl.className = 'alert-error';
           }
         }
       } catch (err) {
         console.error('Failed manual topic post generation:', err);
+        const errMsg = safeStr(err?.message, 'Network error');
+        window.TaskQueue.fail(taskId, 'Post Generation Error', errMsg);
       }
     }
 
