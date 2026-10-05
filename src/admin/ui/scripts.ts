@@ -4546,6 +4546,7 @@ export function getAdminScripts(): string {
     }
 
     let singlePostAutoTimestamp = null;
+    let singlePostAutoPostId = null;
 
     function setScheduleModalMode(mode) {
       const modeVal = document.getElementById('schedule-mode-val');
@@ -4576,6 +4577,8 @@ export function getAdminScripts(): string {
       if (selectEl && idInput) {
         idInput.value = selectEl.value;
       }
+      singlePostAutoTimestamp = null;
+      singlePostAutoPostId = null;
       const mode = document.getElementById('schedule-mode-val')?.value || 'auto';
       if (mode === 'auto') {
         fetchSinglePostIntelligentSlot();
@@ -4591,9 +4594,12 @@ export function getAdminScripts(): string {
       if (!targetPostId) {
         if (textEl) textEl.innerHTML = '<span style="color:var(--text-muted);">Please select a post to schedule.</span>';
         singlePostAutoTimestamp = null;
+        singlePostAutoPostId = null;
         return;
       }
 
+      singlePostAutoTimestamp = null;
+      singlePostAutoPostId = null;
       if (textEl) textEl.textContent = 'Calculating optimal schedule time...';
 
       try {
@@ -4605,26 +4611,26 @@ export function getAdminScripts(): string {
         const data = await res.json();
         if (res.ok && data.success && Array.isArray(data.proposedSlots) && data.proposedSlots.length > 0) {
           const slot = data.proposedSlots[0];
-          singlePostAutoTimestamp = slot.scheduledAt;
-          const d = new Date(slot.scheduledAt);
-          const dateStr = !isNaN(d.getTime()) ? d.toLocaleString() : safeStr(slot.scheduledDate);
-          if (textEl) {
-            textEl.innerHTML = 'Suggested time: <strong>' + escapeHtml(dateStr) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(slot.reason, 'Optimal time based on analytics')) + '</span>';
+          const proposedAt = safeStr(slot.scheduledAtIso).trim();
+          const proposedMs = new Date(proposedAt).getTime();
+          if (!proposedAt || isNaN(proposedMs) || proposedMs <= Date.now()) {
+            throw new Error('The scheduler returned an invalid publication time.');
           }
+
+          singlePostAutoTimestamp = new Date(proposedMs).toISOString();
+          singlePostAutoPostId = targetPostId;
+          const dateTimeLabel = singlePostAutoTimestamp.slice(0, 16).replace('T', ' ') + ' UTC';
+          if (textEl) textEl.innerHTML = 'Suggested time: <strong>' + escapeHtml(dateTimeLabel) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(slot.reason, 'Optimal time based on analytics')) + '</span>';
         } else {
-          const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
-          singlePostAutoTimestamp = new Date(fallbackMs).toISOString();
-          if (textEl) {
-            textEl.innerHTML = 'Suggested time: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Default next slot)';
-          }
+          singlePostAutoTimestamp = null;
+          singlePostAutoPostId = null;
+          if (textEl) textEl.innerHTML = '<span style="color:var(--accent-rose);">No valid automatic publication time is available. Please refresh the suggestion or choose a manual time.</span>';
         }
       } catch (err) {
         console.error('Failed to fetch intelligent slot:', err);
-        const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
-        singlePostAutoTimestamp = new Date(fallbackMs).toISOString();
-        if (textEl) {
-          textEl.innerHTML = 'Suggested time: <strong>' + new Date(fallbackMs).toLocaleString() + '</strong> (Automatic slot)';
-        }
+        singlePostAutoTimestamp = null;
+        singlePostAutoPostId = null;
+        if (textEl) textEl.innerHTML = '<span style="color:var(--accent-rose);">Unable to calculate an automatic publication time. Please refresh the suggestion or choose a manual time.</span>';
       }
     }
 
@@ -4679,10 +4685,15 @@ export function getAdminScripts(): string {
 
       let scheduledAt = '';
       if (mode === 'auto') {
-        if (!singlePostAutoTimestamp) {
+        if (!singlePostAutoTimestamp || singlePostAutoPostId !== postId) {
           await fetchSinglePostIntelligentSlot();
         }
-        scheduledAt = singlePostAutoTimestamp || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const scheduledMs = new Date(safeStr(singlePostAutoTimestamp)).getTime();
+        if (!singlePostAutoTimestamp || singlePostAutoPostId !== postId || isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+          alert('No valid automatic publication time is available. Refresh the suggested time or choose a manual time.');
+          return;
+        }
+        scheduledAt = new Date(scheduledMs).toISOString();
       } else {
         const dateVal = safeStr(document.getElementById('schedule-date')?.value);
         const timeVal = safeStr(document.getElementById('schedule-time')?.value, '10:00');
