@@ -22,15 +22,19 @@ export function getAdminScripts(): string {
     function renderWorkflowStages(item) {
       const isTopic = item && item.post_count !== undefined;
       const topicDone = isTopic || Boolean(item?.idea_id || item?.topicId || item?.topicTitle || item?.topic_title);
-      const postDone = isTopic
+      const hasPost = isTopic
         ? Number(item.post_count || 0) > 0
         : Boolean(item?.internalPostId || item?.postId || item?.id);
-      const publishedDone = Boolean(item?.published_at || item?.publishedAt || item?.facebook_post_id || item?.isPublished);
+      const postDone = hasPost;
+      const publishedDone = hasPost && Boolean(item?.published_at || item?.publishedAt || item?.facebook_post_id || item?.isPublished);
+      const scheduledDone = hasPost && Boolean(item?.scheduled_at || item?.scheduledAt || item?.latest_scheduled_at || publishedDone);
+      const imageDone = hasPost && Boolean(item?.image_url || item?.imageUrl || (item?.latest_image_status && item.latest_image_status !== 'rejected') || (publishedDone && item?.hasImage === true));
+
       const stages = [
         ['Topic', topicDone],
         ['Post', postDone],
-        ['Image', Boolean(item?.image_url || item?.imageUrl || (item?.latest_image_status && item.latest_image_status !== 'rejected') || (publishedDone && item?.hasImage === true))],
-        ['Scheduled', Boolean(item?.scheduled_at || item?.scheduledAt || item?.latest_scheduled_at || publishedDone)],
+        ['Image', imageDone],
+        ['Scheduled', scheduledDone],
         ['Published', publishedDone],
       ];
       const firstPending = stages.findIndex(stage => !stage[1]);
@@ -1910,8 +1914,10 @@ export function getAdminScripts(): string {
           if (cachedTopics.length > 0) {
             function isUsedStatus(t) {
               if (!t) return false;
+              const hasPost = Number(t.post_count || 0) > 0;
+              if (!hasPost) return false;
               const st = safeLower(t.status);
-              return ['published', 'used', 'rejected', 'post_generated', 'scheduled'].includes(st) || Number(t.post_count || 0) > 0;
+              return ['published', 'used', 'rejected', 'post_generated', 'scheduled'].includes(st);
             }
             const activeTopics = cachedTopics.filter(function(t) { return t && !isUsedStatus(t); });
             const usedTopics = cachedTopics.filter(function(t) { return t && isUsedStatus(t); });
@@ -1921,8 +1927,12 @@ export function getAdminScripts(): string {
               const title = escapeHtml(safeStr(t.title, 'Untitled Topic'));
               const desc = escapeHtml(safeStr(t.description));
               const category = escapeHtml(safeStr(t.content_pillar || t.category, 'WEBSITE'));
-              const status = safeStr(t.status || 'queued').toLowerCase();
-              const statusUpper = safeUpper(t.status, 'QUEUED');
+              const hasPost = Number(t.post_count || 0) > 0;
+              const rawStatus = safeStr(t.status || 'queued').toLowerCase();
+              const status = (!hasPost && ['post_generated', 'scheduled', 'published', 'used'].includes(rawStatus))
+                ? 'queued'
+                : rawStatus;
+              const statusUpper = status.toUpperCase();
               const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered' || status === 'ready') 
                 ? 'status-active' 
                 : (status === 'post_generated' || status === 'scheduled')
@@ -1932,7 +1942,6 @@ export function getAdminScripts(): string {
                 : 'status-disabled';
 
               const isChecked = selectedTopicIds.has(id) ? 'checked' : '';
-              const hasPost = Number(t.post_count || 0) > 0;
               const sourceTitle = safeStr(t.source_title);
               const sourceUrl = safeStr(t.source_url);
               const sourceLink = sourceUrl && (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://'))

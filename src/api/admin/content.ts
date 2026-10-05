@@ -489,6 +489,13 @@ contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => 
     }
 
     const placeholders = ids.map(() => '?').join(',');
+
+    const affectedIdeas = await db
+      .prepare(`SELECT DISTINCT idea_id FROM posts WHERE id IN (${placeholders}) AND idea_id IS NOT NULL`)
+      .bind(...ids)
+      .all<{ idea_id: string }>()
+      .catch(() => ({ results: [] }));
+
     await db.batch([
       db.prepare(`DELETE FROM publications WHERE post_id IN (${placeholders})`).bind(...ids),
       db.prepare(`DELETE FROM schedules WHERE post_id IN (${placeholders})`).bind(...ids),
@@ -499,6 +506,22 @@ contentRouter.delete('/content/posts/bulk-delete', csrfProtection, async (c) => 
       db.prepare(`DELETE FROM post_versions WHERE post_id IN (${placeholders})`).bind(...ids),
       db.prepare(`DELETE FROM posts WHERE id IN (${placeholders})`).bind(...ids),
     ]);
+
+    if (affectedIdeas.results && affectedIdeas.results.length > 0) {
+      for (const row of affectedIdeas.results) {
+        if (row.idea_id) {
+          const bound = db.prepare('SELECT COUNT(*) as cnt FROM posts WHERE idea_id = ?').bind(row.idea_id);
+          const remaining = (bound && typeof bound.first === 'function') ? await bound.first<{ cnt: number }>().catch(() => null) : null;
+          if (!remaining || Number(remaining.cnt || 0) === 0) {
+            await db
+              .prepare("UPDATE content_ideas SET status = 'queued', updated_at = ? WHERE id = ?")
+              .bind(new Date().toISOString(), row.idea_id)
+              .run()
+              .catch(() => {});
+          }
+        }
+      }
+    }
     return c.json({ success: true, count: ids.length });
   } catch (err: unknown) {
     const errorLogger = new D1AuditLogger(db);
@@ -586,6 +609,13 @@ contentRouter.delete('/content/posts/:id', csrfProtection, async (c) => {
     const imgLib = new ImageLibraryService(db);
     await imgLib.releaseDraftReservation(id).catch(() => {});
 
+    const postRow = await db
+      .prepare('SELECT id, idea_id, current_version FROM posts WHERE id = ?')
+      .bind(id)
+      .first<{ id: string; idea_id: string; current_version: number }>()
+      .catch(() => null);
+    const affectedIdeaId = postRow?.idea_id;
+
     await db.batch([
       db.prepare('DELETE FROM publications WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM schedules WHERE post_id = ?').bind(id),
@@ -596,6 +626,18 @@ contentRouter.delete('/content/posts/:id', csrfProtection, async (c) => {
       db.prepare('DELETE FROM post_versions WHERE post_id = ?').bind(id),
       db.prepare('DELETE FROM posts WHERE id = ?').bind(id),
     ]);
+
+    if (affectedIdeaId) {
+      const bound = db.prepare('SELECT COUNT(*) as cnt FROM posts WHERE idea_id = ?').bind(affectedIdeaId);
+      const remaining = (bound && typeof bound.first === 'function') ? await bound.first<{ cnt: number }>().catch(() => null) : null;
+      if (!remaining || Number(remaining.cnt || 0) === 0) {
+        await db
+          .prepare("UPDATE content_ideas SET status = 'queued', updated_at = ? WHERE id = ?")
+          .bind(new Date().toISOString(), affectedIdeaId)
+          .run()
+          .catch(() => {});
+      }
+    }
     return c.json({ success: true, id });
   } catch (err: unknown) {
     const errorLogger = new D1AuditLogger(db);

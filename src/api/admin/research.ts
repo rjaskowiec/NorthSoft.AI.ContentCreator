@@ -71,6 +71,24 @@ researchRouter.get('/research', async (c) => {
     if (requestedTopic) topics.push(requestedTopic);
   }
 
+  // Dynamic status computation: if a topic has 0 linked posts, its effective status is 'queued'
+  topics = topics.map((topic) => {
+    const postCount = Number(topic.post_count || 0);
+    const rawStatus = String(topic.status || 'queued').toLowerCase();
+    if (postCount === 0 && ['post_generated', 'used', 'scheduled', 'published'].includes(rawStatus)) {
+      return {
+        ...topic,
+        status: 'queued',
+        latest_post_id: null,
+        latest_post_status: null,
+        latest_image_status: null,
+        latest_scheduled_at: null,
+        latest_published_at: null,
+      };
+    }
+    return topic;
+  });
+
   // 3. Fetch Recent Research Runs
   const runsRes = await db
     .prepare('SELECT * FROM research_runs ORDER BY started_at DESC LIMIT 10')

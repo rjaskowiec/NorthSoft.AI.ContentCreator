@@ -165,7 +165,7 @@ function createMockDb() {
       };
     }
 
-    if (normSql.includes('SELECT id, current_version FROM posts WHERE id =')) {
+    if (normSql.includes('FROM posts WHERE id =')) {
       return {
         bind: vi.fn((...args: unknown[]) => ({
           first: vi.fn().mockImplementation(async () => {
