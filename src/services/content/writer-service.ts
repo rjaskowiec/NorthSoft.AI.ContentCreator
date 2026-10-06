@@ -163,6 +163,7 @@ export class WriterService {
     correctionHint?: string,
     attemptNumber = 1,
     previousPatternId?: string,
+    previousDraft?: PostDraft,
   ): Promise<{ draft?: PostDraft; deferred?: boolean; error?: string; chosenPattern?: StructurePattern }> {
     // 1. Pre-invocation Neuron Budget Check (estimated 1500 tokens/neurons for Writer)
     const capacity = await this.quotaManager.checkCapacity(
@@ -310,14 +311,23 @@ export class WriterService {
       }
     }
 
-    if (correctionHint) {
+    if (correctionHint || previousDraft) {
+      let previousContentSection = '';
+      if (previousDraft) {
+        previousContentSection =
+          `PREVIOUS REJECTED DRAFT TEXT (DO NOT REPEAT THESE PHRASINGS/MISTAKES):\n` +
+          `Title: ${previousDraft.title}\n` +
+          `Body:\n${previousDraft.body}\n\n`;
+      }
+
       fullExtraContext +=
         `\n\n<<< STRATEGIC_REGENERATION_DIRECTIVE — ATTEMPT #${attemptNumber} >>>\n` +
+        previousContentSection +
         `The previous draft failed quality evaluation for the following specific reasons:\n` +
-        `${correctionHint}\n\n` +
+        `${correctionHint || 'Failed quality threshold. Refactor structure and value delivery.'}\n\n` +
         `MANDATORY REGENERATION RULES:\n` +
         `- PIVOT TO A COMPLETELY DIFFERENT ANGLE AND STRUCTURE.\n` +
-        `- DO NOT repeat previous phrasing, hook, or sentence flow.\n` +
+        `- DO NOT repeat previous phrasing, hook, or sentence flow from the rejected draft.\n` +
         `- DO NOT write a single block of text — use short paragraphs and whitespace.\n` +
         `- Ground the post in an immediate real-world business situation (what a customer experiences, what the owner faces).\n` +
         `- Add genuine information gain rather than paraphrasing the source.\n` +

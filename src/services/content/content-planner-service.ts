@@ -214,6 +214,7 @@ export class ContentPlannerService {
         correctionHint,
         attempt,
         lastPatternId,
+        lastDraft,
       );
       if (genRes.chosenPattern) {
         lastPatternId = genRes.chosenPattern.id;
