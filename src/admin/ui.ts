@@ -1148,25 +1148,7 @@ export function renderAdminHtml(): string {
     </div>
   </div>
 
-  <!-- 4. BATCH GENERATION PROGRESS MODAL -->
-  <div id="batch-progress-modal" class="modal-backdrop">
-    <div class="modal-box" style="max-width:520px;">
-      <div class="modal-header">
-        <div class="modal-title" id="batch-progress-title">Generating Posts...</div>
-      </div>
-      <div class="modal-body">
-        <div id="batch-progress-summary" style="font-size:0.875rem; color:var(--text-muted); margin-bottom:1rem;">
-          Processing batch post generation sequentially.
-        </div>
-        <div id="batch-progress-list" class="batch-progress-list">
-          <!-- Live item stepper rendered by JS -->
-        </div>
-      </div>
-      <div class="modal-footer" style="display:flex; justify-content:flex-end;">
-        <button id="batch-close-btn" class="btn-primary" style="display:none;" onclick="closeModal('batch-progress-modal')">Done</button>
-      </div>
-    </div>
-  </div>
+
 
   <!-- 5. REUSABLE DELETE CONFIRMATION MODAL -->
   <div id="delete-confirm-modal" class="modal-backdrop">

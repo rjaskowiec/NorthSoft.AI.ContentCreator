@@ -5099,37 +5099,28 @@ export function getAdminScripts(): string {
     async function runBatchPostGeneration(topicsList) {
       if (!topicsList || topicsList.length === 0) return;
 
-      const titleEl = document.getElementById('batch-progress-title');
-      const summaryEl = document.getElementById('batch-progress-summary');
-      const listEl = document.getElementById('batch-progress-list');
-      const closeBtn = document.getElementById('batch-close-btn');
+      const total = topicsList.length;
+      const taskId = window.TaskQueue.add('Batch Post Generation', {
+        type: 'manual',
+        total: total,
+        detail: 'Starting generation for ' + total + ' selected topics...'
+      });
+      window.TaskQueue.start(taskId, 'Starting generation for ' + total + ' topics...');
 
-      if (titleEl) titleEl.textContent = 'Generating Posts (' + topicsList.length + ' topics)...';
-      if (summaryEl) summaryEl.textContent = 'Processing post generation in controlled sequence...';
-      if (closeBtn) closeBtn.style.display = 'none';
+      let completedCount = 0;
+      let failedCount = 0;
 
-      if (listEl) {
-        listEl.innerHTML = topicsList.map(t => \`
-          <div id="batch-item-\${safeStr(t.id)}" class="batch-progress-item">
-            <div>
-              <strong>\${escapeHtml(safeStr(t.title, 'Topic'))}</strong>
-              <div class="batch-item-status-msg" style="font-size:0.75rem; color:var(--text-muted);">Waiting in queue...</div>
-            </div>
-            <span class="batch-status-icon batch-status-pending">○</span>
-          </div>
-        \`).join('');
-      }
+      for (let i = 0; i < total; i++) {
+        const t = topicsList[i];
+        const topicTitle = safeStr(t && t.title, 'Topic');
+        const stepNum = i + 1;
 
-      openModal('batch-progress-modal');
-
-      for (const t of topicsList) {
-        const itemEl = document.getElementById('batch-item-' + safeStr(t.id));
-        if (itemEl) {
-          const icon = itemEl.querySelector('.batch-status-icon');
-          const msg = itemEl.querySelector('.batch-item-status-msg');
-          if (icon) { icon.className = 'batch-status-icon batch-status-running'; icon.textContent = '⏳'; }
-          if (msg) { msg.textContent = 'Generating post...'; msg.style.color = 'var(--accent-cyan)'; }
-        }
+        window.TaskQueue.updateProgress(
+          taskId,
+          i,
+          total,
+          '[' + stepNum + '/' + total + '] Generating post for "' + topicTitle + '"...'
+        );
 
         try {
           const res = await fetch('/api/admin/content/generate', {
@@ -5144,36 +5135,40 @@ export function getAdminScripts(): string {
             data = {};
           }
 
-          if (itemEl) {
-            const icon = itemEl.querySelector('.batch-status-icon');
-            const msg = itemEl.querySelector('.batch-item-status-msg');
-            if (res.ok && data.success) {
-              if (icon) { icon.className = 'batch-status-icon batch-status-completed'; icon.textContent = '✓'; }
-              if (msg) { msg.textContent = 'Completed successfully'; msg.style.color = 'var(--accent-emerald)'; }
-            } else {
-              const errMsg = extractApiErrorMessage(data, res.status);
-              if (icon) { icon.className = 'batch-status-icon batch-status-failed'; icon.textContent = '✗'; }
-              if (msg) { msg.textContent = errMsg; msg.style.color = 'var(--accent-rose)'; }
-            }
+          if (res.ok && data.success) {
+            completedCount++;
+          } else {
+            failedCount++;
           }
         } catch (err) {
-          if (itemEl) {
-            const icon = itemEl.querySelector('.batch-status-icon');
-            const msg = itemEl.querySelector('.batch-item-status-msg');
-            if (icon) { icon.className = 'batch-status-icon batch-status-failed'; icon.textContent = '✗'; }
-            if (msg) { msg.textContent = 'Network error'; msg.style.color = 'var(--accent-rose)'; }
-          }
+          failedCount++;
         }
       }
 
-      if (titleEl) titleEl.textContent = 'Batch Generation Finished';
-      if (summaryEl) summaryEl.textContent = 'All selected topics have been processed.';
-      if (closeBtn) closeBtn.style.display = 'block';
+      window.TaskQueue.updateProgress(taskId, total, total, 'Finishing batch processing...');
+
+      if (failedCount === 0) {
+        window.TaskQueue.complete(
+          taskId,
+          'Successfully generated post drafts for all ' + completedCount + ' topics.'
+        );
+      } else if (completedCount > 0) {
+        window.TaskQueue.fail(
+          taskId,
+          'Batch Generation Completed with Issues',
+          'Generated ' + completedCount + ' posts successfully, but ' + failedCount + ' failed quality evaluation or encountered errors.'
+        );
+      } else {
+        window.TaskQueue.fail(
+          taskId,
+          'Batch Generation Failed',
+          'All ' + failedCount + ' selected topics failed during post generation.'
+        );
+      }
 
       selectedTopicIds.clear();
       updateTopicSelectionState();
-      loadContentData();
-      loadResearchData();
+      await Promise.all([loadResearchData(), loadContentData()]);
     }
 
     // ======================================================================
