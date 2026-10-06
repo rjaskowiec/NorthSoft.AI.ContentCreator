@@ -352,13 +352,16 @@ contentRouter.post('/content/manual-topic-post', csrfProtection, async (c) => {
     category?: string;
   };
 
-  const title = (body.title || '').trim();
+  const description = (body.description || '').trim();
+  let title = (body.title || '').trim();
   if (!title) {
-    return c.json({ error: 'Topic title is required.' }, 400);
+    if (!description) {
+      return c.json({ error: 'Post idea or description is required.' }, 400);
+    }
+    title = description.length > 80 ? description.slice(0, 77) + '...' : description;
   }
 
   const topicId = crypto.randomUUID();
-  const description = (body.description || '').trim();
   const category = (body.category || 'WEBSITE').trim();
   const nowIso = new Date().toISOString();
 

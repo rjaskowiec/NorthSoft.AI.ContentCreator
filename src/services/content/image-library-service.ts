@@ -289,7 +289,9 @@ export class ImageLibraryService {
     for (const img of candidates) {
       if (img.r2_key && r2Bucket) {
         try {
-          await r2Bucket.delete(img.r2_key);
+          const rawKey = img.r2_key.replace(/^images\//, '');
+          await r2Bucket.delete(`images/${rawKey}`);
+          await r2Bucket.delete(rawKey);
         } catch (r2Err) {
           console.warn(`[ImageLibraryService] R2 delete failed for key ${img.r2_key}:`, r2Err);
         }

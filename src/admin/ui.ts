@@ -485,7 +485,6 @@ export function renderAdminHtml(): string {
                       <th style="width:36px; text-align:center;">
                         <input type="checkbox" id="topic-select-all" onclick="toggleSelectAllTopics(this)" title="Select all topics" />
                       </th>
-                      <th>Topic</th>
                       <th>Idea / source</th>
                       <th>Category</th>
                       <th>Progress</th>
@@ -494,7 +493,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="topics-table-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -510,7 +509,7 @@ export function renderAdminHtml(): string {
               </div>
               <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
                 <button class="btn-secondary" onclick="openGenerateSingleTopicModal()">
-                  Generate from topic
+                  Generate post from idea
                 </button>
                 <button class="btn-secondary" onclick="generatePostsForAllEligible()">
                   Generate all
@@ -560,7 +559,6 @@ export function renderAdminHtml(): string {
                       <th style="width:36px; text-align:center;">
                         <input type="checkbox" id="post-select-all" onclick="toggleSelectAllPosts(this)" title="Select all drafts" />
                       </th>
-                      <th>Topic</th>
                       <th>Post</th>
                       <th>Progress</th>
                       <th>Status</th>
@@ -569,7 +567,7 @@ export function renderAdminHtml(): string {
                     </tr>
                   </thead>
                   <tbody id="posts-table-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1025,13 +1023,10 @@ export function renderAdminHtml(): string {
       <div class="modal-body">
         <form id="topic-form" onsubmit="handleSaveTopic(event)">
           <input type="hidden" id="topic-edit-id" value="" />
+          <input type="hidden" id="topic-input-title" value="" />
           <div class="form-group">
-            <label class="form-label" for="topic-input-title">Topic</label>
-            <input type="text" id="topic-input-title" class="form-input" required placeholder="e.g. 5 Reasons Your Small Business Needs Automated Booking" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="topic-input-desc">Description</label>
-            <textarea id="topic-input-desc" class="form-input" style="min-height:90px; font-family:inherit;" placeholder="Key insights, angle, or source summary..."></textarea>
+            <label class="form-label" for="topic-input-desc">Idea / Inspiration / Source</label>
+            <textarea id="topic-input-desc" class="form-input" style="min-height:120px; font-family:inherit;" required placeholder="Describe the idea, key insights, source snippet, or paste notes..."></textarea>
           </div>
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
             <div class="form-group">
@@ -1119,18 +1114,15 @@ export function renderAdminHtml(): string {
   <div id="generate-topic-modal" class="modal-backdrop">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-title">Generate Post from Topic</div>
+        <div class="modal-title">Generate Post from Idea</div>
         <button class="modal-close-btn" onclick="closeModal('generate-topic-modal')">&times;</button>
       </div>
       <div class="modal-body">
         <form id="generate-topic-form" onsubmit="handleGeneratePostFromTopicSubmit(event)">
+          <input type="hidden" id="gen-topic-title" value="" />
           <div class="form-group">
-            <label class="form-label" for="gen-topic-title">Topic</label>
-            <input type="text" id="gen-topic-title" class="form-input" required placeholder="e.g. 5 Reasons Your Email Marketing Campaign Isn't Working" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="gen-topic-desc">Description (Optional)</label>
-            <textarea id="gen-topic-desc" class="form-input" style="min-height:80px; font-family:inherit;" placeholder="Add specific context or focus angle..."></textarea>
+            <label class="form-label" for="gen-topic-desc">Idea / Context</label>
+            <textarea id="gen-topic-desc" class="form-input" style="min-height:100px; font-family:inherit;" required placeholder="Enter key topic insights, angle, or source summary..."></textarea>
           </div>
           <div class="form-group">
             <label class="form-label" for="gen-topic-pillar">Category</label>
@@ -1143,7 +1135,7 @@ export function renderAdminHtml(): string {
             </select>
           </div>
           <button type="submit" id="gen-topic-submit-btn" class="btn-primary" style="width:100%;">
-            Generate
+            Generate Post
           </button>
         </form>
       </div>
@@ -1657,13 +1649,13 @@ export function renderAdminHtml(): string {
 
           <div id="add-img-url-group" style="margin-bottom:1rem; display:none;">
             <label class="form-label">Image HTTPS URL</label>
-            <input type="url" id="add-img-url-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="https://example.com/image.jpg" onblur="handleImageUrlChanged()" />
+            <input type="url" id="add-img-url-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="https://example.com/image.jpg" oninput="handleImageUrlInput(event)" onpaste="setTimeout(handleImageUrlChanged, 50)" onblur="handleImageUrlChanged()" onchange="handleImageUrlChanged()" />
           </div>
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
             <div>
               <label class="form-label">Title / Name *</label>
-              <input type="text" id="add-img-title-input" required class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="e.g. Cybersecurity Network" />
+              <input type="text" id="add-img-title-input" required class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="e.g. Cybersecurity Network" oninput="this.dataset.autoFilled='false'" />
             </div>
             <div>
               <label class="form-label">Category *</label>
@@ -1682,12 +1674,12 @@ export function renderAdminHtml(): string {
 
           <div style="margin-bottom:1rem;">
             <label class="form-label">Keywords / Tags (comma-separated)</label>
-            <input type="text" id="add-img-keywords-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="security, cloud, data protection, network" />
+            <input type="text" id="add-img-keywords-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="security, cloud, data protection, network" oninput="this.dataset.autoFilled='false'" />
           </div>
 
           <div style="margin-bottom:1rem;">
             <label class="form-label">Semantic Description ("what this image represents")</label>
-            <textarea id="add-img-description-input" rows="2" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Abstract visualization of computer security and data locks"></textarea>
+            <textarea id="add-img-description-input" rows="2" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Abstract visualization of computer security and data locks" oninput="this.dataset.autoFilled='false'"></textarea>
           </div>
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">

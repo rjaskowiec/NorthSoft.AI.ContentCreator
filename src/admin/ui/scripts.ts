@@ -1876,7 +1876,7 @@ export function getAdminScripts(): string {
           console.error('Failed to fetch research data:', res.status, res.statusText);
           const topicsBody = document.getElementById('topics-table-body');
           if (topicsBody) {
-            topicsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
+            topicsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--accent-rose);">Failed to load candidate topics (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -1946,8 +1946,9 @@ export function getAdminScripts(): string {
 
             function renderRow(t) {
               const id = safeStr(t.id);
-              const title = escapeHtml(safeStr(t.title, 'Untitled Topic'));
-              const desc = escapeHtml(safeStr(t.description));
+              const title = safeStr(t.title, '');
+              const desc = safeStr(t.description, '');
+              const primaryText = escapeHtml(desc || title || 'Post idea');
               const category = escapeHtml(safeStr(t.content_pillar || t.category, 'WEBSITE'));
               const hasPost = Number(t.post_count || 0) > 0;
               const rawStatus = safeStr(t.status || 'queued').toLowerCase();
@@ -1975,10 +1976,7 @@ export function getAdminScripts(): string {
                   '<input type="checkbox" class="topic-select-checkbox" data-id="' + id + '" ' + isChecked + ' onchange="updateTopicSelectionState()" />' +
                 '</td>' +
                 '<td>' +
-                  '<strong>' + title + '</strong>' +
-                '</td>' +
-                '<td>' +
-                  (desc ? '<div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">' + desc + '</div>' : '') +
+                  '<div style="font-size:0.875rem; color:var(--text-main); line-height:1.45;">' + primaryText + '</div>' +
                   (sourceTitle ? '<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + sourceLink + '</div>' : '') +
                 '</td>' +
                 '<td><span class="code-tag">' + category + '</span></td>' +
@@ -1997,20 +1995,20 @@ export function getAdminScripts(): string {
             let bodyHtml = '';
             if (activeTopics.length > 0) {
               if (usedTopics.length > 0) {
-                bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.1); font-weight:600; color:var(--accent-blue); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">★ Work Queue (Active Topics)</td></tr>';
+                bodyHtml += '<tr><td colspan="6" style="background:rgba(96,165,250,0.1); font-weight:600; color:var(--accent-blue); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">★ Work Queue (Active Topics)</td></tr>';
               }
               bodyHtml += activeTopics.map(renderRow).join('');
             }
             if (usedTopics.length > 0) {
               if (activeTopics.length > 0) {
-                bodyHtml += '<tr><td colspan="7" style="background:rgba(255,255,255,0.03); font-weight:600; color:var(--text-muted); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">✓ Completed / Used Topics</td></tr>';
+                bodyHtml += '<tr><td colspan="6" style="background:rgba(255,255,255,0.03); font-weight:600; color:var(--text-muted); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">✓ Completed / Used Topics</td></tr>';
               }
               bodyHtml += usedTopics.map(renderRow).join('');
             }
 
             topicsBody.innerHTML = bodyHtml;
           } else {
-            topicsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Topic</button></td></tr>';
+            topicsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Idea</button></td></tr>';
           }
           updateTopicSelectionState();
         }
@@ -2158,7 +2156,7 @@ export function getAdminScripts(): string {
           console.error('Failed to fetch content data:', res.status, res.statusText);
           const postsBody = document.getElementById('posts-table-body');
           if (postsBody) {
-            postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -2200,7 +2198,8 @@ export function getAdminScripts(): string {
               const pIdeaId = safeStr(p.idea_id);
               const pBody = safeStr(p.latest_body || p.body);
               const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
-              const topicLabel = escapeHtml(safeStr(p.topic_title || p.title, pIdeaId ? 'Linked topic' : 'No linked topic'));
+              const ideaPreview = safeStr(p.topic_description || p.topic_title || p.title, '');
+              const topicLabel = escapeHtml(ideaPreview ? (ideaPreview.length > 70 ? ideaPreview.slice(0, 67) + '...' : ideaPreview) : (pIdeaId ? 'Linked idea' : 'No linked idea'));
               const sourceTitle = safeStr(p.source_title);
               const sourceUrl = safeStr(p.article_source_url);
               const topicCat = safeStr(p.topic_category || p.content_pillar);
@@ -2215,7 +2214,7 @@ export function getAdminScripts(): string {
                 } else if (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
                   inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceUrl) + '</a></div>';
                 } else if (topicSourceType === 'manual') {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual topic</span></div>';
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual idea</span></div>';
                 } else if (topicCat) {
                   inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(topicCat) + ' research</div>';
                 }
@@ -2242,13 +2241,14 @@ export function getAdminScripts(): string {
                   <input type="checkbox" class="post-select-checkbox" data-id="\${pId}" \${isChecked} onchange="updatePostSelectionState()" />
                 </td>
                 <td>
-                  \${pIdeaId ? \`<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>\` : '<span>' + topicLabel + '</span>'}
-                  \${topicCat ? \`<span style="font-size:0.675rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px; margin-left:0.35rem;">\${escapeHtml(topicCat)}</span>\` : ''}
-                  \${inspirationHtml}
-                </td>
-                <td>
-                  <div style="font-size:0.85rem; color:var(--text-main); max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">\${escapeHtml(pBody)}</div>
+                  <div style="font-size:0.875rem; color:var(--text-main); max-width:440px; line-height:1.45; word-break:break-word;">\${escapeHtml(pBody)}</div>
                   \${imageColHtml}
+                  \${pIdeaId ? \`<div style="font-size:0.75rem; margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+                    <span style="color:var(--text-muted);">Idea:</span>
+                    <button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>
+                    \${topicCat ? \`<span style="font-size:0.675rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px;">\${escapeHtml(topicCat)}</span>\` : ''}
+                  </div>\` : ''}
+                  \${inspirationHtml}
                 </td>
                 <td>\${renderWorkflowStages(p)}</td>
                 <td>
@@ -2258,7 +2258,7 @@ export function getAdminScripts(): string {
                 <td>
                   <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
                     <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditPostModal('\${pId}')">Edit</button>
-                    \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate post</button><button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openTopicFromPost('\${pIdeaId}')">View topic</button>\` : ''}
+                    \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate post</button><button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openTopicFromPost('\${pIdeaId}')">View idea</button>\` : ''}
                     \${statusStr !== 'PUBLISHED' ? \`
                       <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}')">Publish Now</button>
                       <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openSchedulePostModal('\${pId}')">Schedule</button>
@@ -2276,23 +2276,23 @@ export function getAdminScripts(): string {
 
             let bodyHtml = '';
             if (readyPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">★ Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="6" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">★ Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
               bodyHtml += readyPosts.map(renderPostRow).join('');
             }
 
             if (scheduledPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">📅 Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="6" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">📅 Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
               bodyHtml += scheduledPosts.map(renderPostRow).join('');
             }
 
             if (publishedPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">✓ Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="6" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">✓ Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
               bodyHtml += publishedPosts.map(renderPostRow).join('');
             }
 
             postsBody.innerHTML = bodyHtml;
           } else {
-            postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
           updatePostSelectionState();
         }
@@ -2461,7 +2461,9 @@ export function getAdminScripts(): string {
                 const statusHtml = '<span class="' + statusClass + '"' + errorTooltip + '>' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span>' +
                   (isFailed && sched.error_code ? '<div style="font-size:0.7rem; color:var(--accent-rose); margin-top:0.25rem; max-width:180px; word-break:break-word;"' + errorTooltip + '>' + escapeHtml(sched.error_code) + '</div>' : '');
                 return '<tr>' +
-                  '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
+                  '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
+                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
+                  '</td>' +
                   '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
                   '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                   '<td>' + statusHtml + '</td>' +
@@ -2487,7 +2489,9 @@ export function getAdminScripts(): string {
                 const topicId = safeStr(sched.idea_id);
                 const displayDate = sched.published_at ? 'Published · ' + formatDateUtcSafe(sched.published_at) : (sched.scheduled_at ? 'Published · ' + formatDateUtcSafe(sched.scheduled_at) : 'Published');
                 return '<tr class="schedule-published-dimmed" style="opacity:0.75; background:rgba(255,255,255,0.015);">' +
-                  '<td>' + (topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View topic') + '</button><div style="font-size:0.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted);">' + escapeHtml(postPreview) + '</div>' : escapeHtml(postPreview)) + '</td>' +
+                  '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
+                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);font-size:0.75rem;text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
+                  '</td>' +
                   '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: fbPostId, isPublished: true }) + '</td>' +
                   '<td data-sort-value="' + escapeHtml(safeStr(sched.published_at || sched.scheduled_at)) + '" style="color:var(--accent-emerald); font-weight:500;">' + escapeHtml(displayDate) + '</td>' +
                   '<td><span class="status-badge status-healthy" style="opacity:0.85;">PUBLISHED</span></td>' +
@@ -2650,7 +2654,7 @@ export function getAdminScripts(): string {
           const snippet = content.length > 120 ? content.slice(0, 117) + '...' : content;
           const metric = value => value == null ? '<span title="Metric unavailable from Meta">—</span>' : Number(value).toLocaleString();
           const date = post.createdTime ? new Date(post.createdTime).toLocaleString() : '—';
-          const topicLink = post.topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);" onclick="openTopicFromPost(&quot;' + escapeHtml(safeStr(post.topicId)) + '&quot;)">' + escapeHtml(safeStr(post.topicTitle, 'View topic')) + '</button>' : '<span style="color:var(--text-muted);">No linked topic</span>';
+          const topicLink = post.topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);" onclick="openTopicFromPost(&quot;' + escapeHtml(safeStr(post.topicId)) + '&quot;)">' + escapeHtml(safeStr(post.topicTitle, 'View idea')) + '</button>' : '<span style="color:var(--text-muted);">No linked idea</span>';
           const sourceLink = post.sourceTitle && (safeStr(post.sourceUrl).startsWith('https://') || safeStr(post.sourceUrl).startsWith('http://')) ? '<a href="' + escapeHtml(post.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(post.sourceTitle) + '</a>' : escapeHtml(safeStr(post.sourceTitle));
           const workflow = renderWorkflowStages({ internalPostId: post.internalPostId, topicId: post.topicId, topicTitle: post.topicTitle, imageUrl: post.imageUrl || post.fullPicture, scheduledAt: post.scheduledAt, publishedAt: post.publishedAt, isPublished: post.isPublished });
           return '<tr><td data-sort-value="' + escapeHtml(safeStr(post.createdTime)) + '">' + escapeHtml(date) + '</td>' +
@@ -2773,7 +2777,7 @@ export function getAdminScripts(): string {
 
       const metaEl = document.getElementById('fb-post-detail-meta');
       if (metaEl) {
-        metaEl.textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable') + (post.topicTitle ? ' · Topic: ' + safeStr(post.topicTitle) : '');
+        metaEl.textContent = 'Published ' + (post.createdTime ? new Date(post.createdTime).toLocaleString() : 'date unavailable') + (post.topicTitle ? ' · Idea: ' + safeStr(post.topicTitle) : '');
       }
 
       const statsEl = document.getElementById('fb-post-detail-stats');
@@ -4097,7 +4101,7 @@ export function getAdminScripts(): string {
       if (pillarInput) pillarInput.value = 'WEBSITE';
       if (statusInput) statusInput.value = 'queued';
       if (prioInput) prioInput.value = '50';
-      if (modalTitle) modalTitle.textContent = 'Add New Topic';
+      if (modalTitle) modalTitle.textContent = 'Add Content Idea';
 
       openModal('topic-modal');
     }
@@ -4116,11 +4120,11 @@ export function getAdminScripts(): string {
 
       if (idInput) idInput.value = safeStr(t.id);
       if (titleInput) titleInput.value = safeStr(t.title);
-      if (descInput) descInput.value = safeStr(t.description);
+      if (descInput) descInput.value = safeStr(t.description || t.title);
       if (pillarInput) pillarInput.value = safeStr(t.content_pillar || t.category, 'WEBSITE');
       if (statusInput) statusInput.value = safeStr(t.status || 'queued').toLowerCase();
       if (prioInput) prioInput.value = safeStr(t.priority, '50');
-      if (modalTitle) modalTitle.textContent = 'Edit Topic';
+      if (modalTitle) modalTitle.textContent = 'Edit Content Idea';
 
       openModal('topic-modal');
     }
@@ -4128,13 +4132,15 @@ export function getAdminScripts(): string {
     async function handleSaveTopic(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
       const id = safeStr(document.getElementById('topic-edit-id')?.value).trim();
-      const title = safeStr(document.getElementById('topic-input-title')?.value).trim();
       const desc = safeStr(document.getElementById('topic-input-desc')?.value).trim();
+      let title = safeStr(document.getElementById('topic-input-title')?.value).trim();
+      if (!desc && !title) return;
+      if (!title) {
+        title = desc.length > 80 ? desc.slice(0, 77) + '...' : desc;
+      }
       const category = safeStr(document.getElementById('topic-input-pillar')?.value, 'WEBSITE');
       const status = safeStr(document.getElementById('topic-input-status')?.value, 'queued');
       const priority = parseInt(safeStr(document.getElementById('topic-input-priority')?.value, '50'), 10);
-
-      if (!title) return;
 
       const url = id ? '/api/admin/research/topics/' + encodeURIComponent(id) : '/api/admin/research/topics';
       const method = id ? 'PATCH' : 'POST';
@@ -4150,7 +4156,7 @@ export function getAdminScripts(): string {
           loadResearchData();
         }
       } catch (err) {
-        console.error('Failed to save topic:', err);
+        console.error('Failed to save content idea:', err);
       }
     }
 
@@ -4160,8 +4166,10 @@ export function getAdminScripts(): string {
       const t = cachedTopics.find(item => item && item.id === id);
       const title = document.getElementById('delete-confirm-title');
       const msg = document.getElementById('delete-confirm-message');
-      if (title) title.textContent = 'Delete Topic';
-      if (msg) msg.textContent = 'Are you sure you want to delete topic "' + safeStr(t?.title, id) + '"? This action cannot be undone.';
+      const itemLabel = safeStr(t?.description || t?.title, id);
+      const shortLabel = itemLabel.length > 60 ? itemLabel.slice(0, 57) + '...' : itemLabel;
+      if (title) title.textContent = 'Delete Idea';
+      if (msg) msg.textContent = 'Are you sure you want to delete idea "' + shortLabel + '"? This action cannot be undone.';
       openModal('delete-confirm-modal');
     }
 
@@ -4499,19 +4507,22 @@ export function getAdminScripts(): string {
 
     async function handleGeneratePostFromTopicSubmit(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-      const title = safeStr(document.getElementById('gen-topic-title')?.value).trim();
       const desc = safeStr(document.getElementById('gen-topic-desc')?.value).trim();
+      let title = safeStr(document.getElementById('gen-topic-title')?.value).trim();
       const pillar = safeStr(document.getElementById('gen-topic-pillar')?.value, 'MARKETING');
 
-      if (!title) return;
+      if (!desc && !title) return;
+      if (!title) {
+        title = desc.length > 80 ? desc.slice(0, 77) + '...' : desc;
+      }
       closeModal('generate-topic-modal');
 
-      const taskId = window.TaskQueue.add('Generating Post from Topic', { type: 'manual', detail: 'Topic: ' + title });
-      window.TaskQueue.start(taskId, 'Generating post draft for topic "' + title + '"...');
+      const taskId = window.TaskQueue.add('Generating Post from Idea', { type: 'manual', detail: 'Idea: ' + title });
+      window.TaskQueue.start(taskId, 'Generating post draft from "' + title + '"...');
 
       const alertEl = document.getElementById('content-alert');
       if (alertEl) {
-        alertEl.textContent = 'Generating post draft for topic "' + title + '"...';
+        alertEl.textContent = 'Generating post draft from idea...';
         alertEl.className = 'alert-info';
         alertEl.style.display = 'block';
       }
@@ -4524,9 +4535,9 @@ export function getAdminScripts(): string {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          window.TaskQueue.complete(taskId, 'Post generated successfully from topic.');
+          window.TaskQueue.complete(taskId, 'Post generated successfully.');
           if (alertEl) {
-            alertEl.textContent = 'Post generated successfully from topic.';
+            alertEl.textContent = 'Post generated successfully.';
             alertEl.className = 'alert-success';
           }
           loadContentData();
@@ -5534,6 +5545,13 @@ export function getAdminScripts(): string {
                 (status !== 'APPROVED' ? '<button class="btn-primary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="quickApproveImage(&quot;' + imgId + '&quot;)">Approve</button>' : '') +
                 (status !== 'REJECTED' ? '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--accent-amber);" onclick="quickRejectImage(&quot;' + imgId + '&quot;)">Reject</button>' : '') +
                 '<button class="btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="openEditImageModal(&quot;' + imgId + '&quot;)">Edit</button>' +
+                (status === 'REJECTED' ? (function() {
+                  const updatedTs = img.updated_at ? new Date(img.updated_at).getTime() : (img.created_at ? new Date(img.created_at).getTime() : Date.now());
+                  const daysPassed = Math.floor((Date.now() - updatedTs) / (24 * 60 * 60 * 1000));
+                  const daysRemaining = Math.max(0, 7 - daysPassed);
+                  const label = daysRemaining === 0 ? 'Purging soon' : 'Purge in ' + daysRemaining + 'd';
+                  return '<span style="font-size:0.7rem; color:var(--accent-rose); background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); border-radius:4px; padding:0.15rem 0.4rem; white-space:nowrap; align-self:center;" title="This rejected image will be permanently purged in ' + daysRemaining + ' day(s)">' + label + '</span>';
+                })() : '') +
                 '<button class="btn-logout" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="deleteImage(&quot;' + imgId + '&quot;)">Delete</button>' +
               '</div>' +
             '</div>' +
@@ -5832,6 +5850,9 @@ export function getAdminScripts(): string {
       refreshImageLibrary();
     }
 
+    let imageUrlDebounceTimer = null;
+    let autoExtractAbortController = null;
+
     function openAddImageModal() {
       setAddImageSourceType('file');
       const titleInput = document.getElementById('add-img-title-input');
@@ -5841,9 +5862,18 @@ export function getAdminScripts(): string {
       const urlInput = document.getElementById('add-img-url-input');
       const statusEl = document.getElementById('add-img-extracting-status');
 
-      if (titleInput) titleInput.value = '';
-      if (keywordsInput) keywordsInput.value = '';
-      if (descInput) descInput.value = '';
+      if (titleInput) {
+        titleInput.value = '';
+        delete titleInput.dataset.autoFilled;
+      }
+      if (keywordsInput) {
+        keywordsInput.value = '';
+        delete keywordsInput.dataset.autoFilled;
+      }
+      if (descInput) {
+        descInput.value = '';
+        delete descInput.dataset.autoFilled;
+      }
       if (fileInput) fileInput.value = '';
       if (urlInput) urlInput.value = '';
       if (statusEl) statusEl.style.display = 'none';
@@ -5882,37 +5912,49 @@ export function getAdminScripts(): string {
 
       if (statusEl) {
         statusEl.style.display = 'block';
-        statusEl.textContent = 'Intelligently analyzing name and suggesting metadata...';
+        statusEl.textContent = 'Intelligently analyzing ' + (isUrl ? 'URL' : 'file') + ' and suggesting metadata...';
       }
 
       try {
+        if (autoExtractAbortController) {
+          autoExtractAbortController.abort();
+        }
+        autoExtractAbortController = new AbortController();
+
         const payload = isUrl 
           ? { url: sourceNameOrUrl.trim(), category: currentCategory }
           : { filename: sourceNameOrUrl.trim(), category: currentCategory };
 
-        const res = await fetch('/api/admin/images/auto-extract-metadata', {
+        const res = await guardedFetch('/api/admin/images/auto-extract-metadata', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
           body: JSON.stringify(payload),
+          signal: autoExtractAbortController.signal,
         });
 
         const data = await res.json();
         if (res.ok && data.success && data.result) {
           const resMeta = data.result;
-          if (titleInput && (!titleInput.value || titleInput.value === 'Uploaded Image' || titleInput.value === 'URL Image' || titleInput.dataset.autoFilled === 'true')) {
+          if (titleInput && (!titleInput.value || titleInput.value === 'Uploaded Image' || titleInput.value === 'URL Image' || titleInput.dataset.autoFilled === 'true' || !titleInput.dataset.autoFilled)) {
             titleInput.value = resMeta.title || '';
             titleInput.dataset.autoFilled = 'true';
           }
-          if (keywordsInput && (!keywordsInput.value || keywordsInput.dataset.autoFilled === 'true')) {
+          if (keywordsInput && (!keywordsInput.value || keywordsInput.dataset.autoFilled === 'true' || !keywordsInput.dataset.autoFilled)) {
             keywordsInput.value = resMeta.keywords || '';
             keywordsInput.dataset.autoFilled = 'true';
           }
-          if (descInput && (!descInput.value || descInput.dataset.autoFilled === 'true')) {
+          if (descInput && (!descInput.value || descInput.dataset.autoFilled === 'true' || !descInput.dataset.autoFilled)) {
             descInput.value = resMeta.description || '';
             descInput.dataset.autoFilled = 'true';
           }
+          if (categorySelect && resMeta.category && (!currentCategory || currentCategory === 'General')) {
+            categorySelect.value = resMeta.category;
+          }
         }
       } catch (err) {
+        if (err && err.name === 'AbortError') {
+          return;
+        }
         console.warn('Auto metadata extraction failed:', err);
       } finally {
         if (statusEl) statusEl.style.display = 'none';
@@ -5923,6 +5965,13 @@ export function getAdminScripts(): string {
       const file = e?.target?.files?.[0];
       if (!file) return;
       autoPopulateImageMetadata(file.name, false);
+    }
+
+    function handleImageUrlInput(e) {
+      if (imageUrlDebounceTimer) clearTimeout(imageUrlDebounceTimer);
+      imageUrlDebounceTimer = setTimeout(function() {
+        handleImageUrlChanged();
+      }, 400);
     }
 
     function handleImageUrlChanged() {
@@ -6505,6 +6554,7 @@ export function getAdminScripts(): string {
     window.openAddImageModal = openAddImageModal;
     window.setAddImageSourceType = setAddImageSourceType;
     window.handleImageFileSelected = handleImageFileSelected;
+    window.handleImageUrlInput = handleImageUrlInput;
     window.handleImageUrlChanged = handleImageUrlChanged;
     window.handleImageCategoryChanged = handleImageCategoryChanged;
     window.submitAddImageForm = submitAddImageForm;
