@@ -1435,8 +1435,44 @@ export function getAdminScripts(): string {
     // GLOBAL TASK QUEUE / ACTIVITY CENTER SERVICE
     // ======================================================================
     window.AsyncOperationManager = {
+      STORAGE_KEY: 'admin_activity_tasks',
+      SUCCESS_AUTO_DISMISS_MS: 4500, // Reasonable, user-friendly duration (4.5s) to read success summary before auto-dismiss
       tasks: [],
       timers: {},
+      _save: function() {
+        try {
+          // Persist active (PENDING/PROCESSING) and FAILED tasks across page refreshes and tabs
+          var serializable = this.tasks
+            .filter(function(t) { return t.status === 'PROCESSING' || t.status === 'PENDING' || t.status === 'FAILED'; })
+            .map(function(t) {
+              return {
+                id: t.id,
+                title: t.title,
+                type: t.type,
+                status: t.status,
+                currentStage: t.currentStage,
+                progress: t.progress,
+                errorMessage: t.errorMessage,
+                createdAt: t.createdAt,
+                completedAt: t.completedAt,
+                visible: true
+              };
+            });
+          sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(serializable));
+        } catch(e) {}
+      },
+      init: function() {
+        try {
+          var raw = sessionStorage.getItem(this.STORAGE_KEY);
+          if (raw) {
+            var loaded = JSON.parse(raw);
+            if (Array.isArray(loaded)) {
+              this.tasks = loaded;
+            }
+          }
+        } catch(e) {}
+        this.render();
+      },
       add: function(title, options) {
         var opts = options || {};
         var task = {
@@ -1444,7 +1480,7 @@ export function getAdminScripts(): string {
           title: title,
           type: opts.type || 'manual',
           status: 'PENDING',
-          currentStage: opts.detail || 'Preparing...',
+          currentStage: opts.detail || 'Working on your request...',
           progress: opts.total ? { completed: 0, total: opts.total } : null,
           errorMessage: null,
           createdAt: Date.now(),
@@ -1453,6 +1489,7 @@ export function getAdminScripts(): string {
           visible: opts.type === 'manual' || opts.immediate === true || Boolean(opts.visible)
         };
         this.tasks.push(task);
+        this._save();
 
         if (!task.visible) {
           task.showTimer = setTimeout(() => {
@@ -1471,6 +1508,7 @@ export function getAdminScripts(): string {
         task.status = 'PROCESSING';
         task.visible = true;
         if (stageName) task.currentStage = stageName;
+        this._save();
         this.render();
       },
       start: function(id, detail) {
@@ -1482,6 +1520,7 @@ export function getAdminScripts(): string {
         task.status = 'PROCESSING';
         task.progress = { completed: completed, total: total };
         if (detail) task.currentStage = detail;
+        this._save();
         this.render();
       },
       complete: function(id, summary) {
@@ -1496,18 +1535,23 @@ export function getAdminScripts(): string {
         task.status = 'COMPLETED';
         if (summary) task.currentStage = summary;
         task.completedAt = Date.now();
+        this._save();
         this.render();
         
+        // Success auto-dismiss after logical duration (~4.5s)
         setTimeout(() => {
           var t = this.getTask(id);
-          if (t) t.fadingOut = true;
-          this.render();
-          
-          setTimeout(() => {
-            this.tasks = this.tasks.filter(x => x.id !== id);
+          if (t && t.status === 'COMPLETED') {
+            t.fadingOut = true;
             this.render();
-          }, 500);
-        }, 3000);
+            
+            setTimeout(() => {
+              this.tasks = this.tasks.filter(x => x.id !== id);
+              this._save();
+              this.render();
+            }, 450);
+          }
+        }, this.SUCCESS_AUTO_DISMISS_MS);
       },
       fail: function(id, errorMessage, userAdvice) {
         var task = this.getTask(id);
@@ -1516,25 +1560,27 @@ export function getAdminScripts(): string {
         if (task.showTimer) {
           clearTimeout(task.showTimer);
           task.showTimer = null;
-          task.visible = true; // force show on error
+          task.visible = true;
         }
 
+        // FAILED tasks NEVER auto-dismiss; stay until explicitly closed via 'X' by user
         task.status = 'FAILED';
-        task.currentStage = errorMessage || 'Operation failed.';
-        task.errorMessage = userAdvice || errorMessage || 'An unexpected error occurred.';
+        task.currentStage = errorMessage || 'Operation could not be completed.';
+        task.errorMessage = userAdvice || errorMessage || 'An unexpected issue occurred. Please try again.';
         task.completedAt = Date.now();
+        this._save();
         this.render();
-        
+      },
+      dismiss: function(id) {
+        var task = this.getTask(id);
+        if (!task) return;
+        task.fadingOut = true;
+        this.render();
         setTimeout(() => {
-          var t = this.getTask(id);
-          if (t) t.fadingOut = true;
+          this.tasks = this.tasks.filter(x => x.id !== id);
+          this._save();
           this.render();
-          
-          setTimeout(() => {
-            this.tasks = this.tasks.filter(x => x.id !== id);
-            this.render();
-          }, 500);
-        }, 5000);
+        }, 300);
       },
       getTask: function(id) {
         return this.tasks.find(function(t) { return t.id === id; });
@@ -1546,6 +1592,7 @@ export function getAdminScripts(): string {
 
         var visibleTasks = this.tasks.filter(function(t) { return t.visible || t.status === 'COMPLETED' || t.status === 'FAILED'; });
 
+        // Invisible when no tasks are running, pending, or awaiting review
         if (visibleTasks.length === 0) {
           widget.style.display = 'none';
           return;
@@ -1553,21 +1600,62 @@ export function getAdminScripts(): string {
 
         widget.style.display = 'flex';
 
-        container.innerHTML = visibleTasks.map(function(t) {
-          var statusClass = 'ac-status-' + t.status.toLowerCase();
+        container.innerHTML = visibleTasks.map((t) => {
+          var st = t.status.toLowerCase();
+          var cardClass = ' ac-status-' + st + '-card';
           var fadeClass = t.fadingOut ? ' ac-fade-out' : '';
           
-          return '<div class="ac-item' + fadeClass + '">' +
+          var iconHtml = '';
+          var badgeText = 'Processing';
+          var badgeClass = 'ac-badge-processing';
+
+          if (t.status === 'COMPLETED') {
+            iconHtml = '<span style="color:#34d399; font-size:1.05rem; line-height:1;">✓</span>';
+            badgeText = 'Done';
+            badgeClass = 'ac-badge-completed';
+          } else if (t.status === 'FAILED') {
+            iconHtml = '<span style="color:#f87171; font-size:1.05rem; line-height:1;">✕</span>';
+            badgeText = 'Failed';
+            badgeClass = 'ac-badge-failed';
+          } else {
+            iconHtml = '<div class="ac-spinner"></div>';
+            badgeText = 'In progress';
+            badgeClass = 'ac-badge-processing';
+          }
+
+          var progressText = '';
+          if (t.progress && t.progress.total > 0) {
+            progressText = ' (' + t.progress.completed + '/' + t.progress.total + ')';
+          }
+
+          var escTitle = escapeHtml(safeStr(t.title));
+          var escStage = escapeHtml(safeStr(t.currentStage)) + progressText;
+          var escErr = t.errorMessage ? escapeHtml(safeStr(t.errorMessage)) : '';
+
+          return '<div class="ac-item' + cardClass + fadeClass + '">' +
             '<div class="ac-item-top">' +
-              '<div class="ac-item-title" title="' + escapeHtml(safeStr(t.title)) + '">' + escapeHtml(safeStr(t.title)) + '</div>' +
-              '<span class="ac-status-text ' + statusClass + '">' + escapeHtml(t.status) + '</span>' +
+              '<div class="ac-item-header-left">' +
+                '<div class="ac-item-icon">' + iconHtml + '</div>' +
+                '<div class="ac-item-title" title="' + escTitle + '">' + escTitle + '</div>' +
+              '</div>' +
+              '<div style="display:flex; align-items:center; gap:0.35rem;">' +
+                '<span class="ac-item-badge ' + badgeClass + '">' + badgeText + '</span>' +
+                '<button type="button" class="ac-close-btn" onclick="window.AsyncOperationManager.dismiss(\\x27' + t.id + '\\x27)" title="Dismiss">&times;</button>' +
+              '</div>' +
             '</div>' +
-            '<div class="ac-item-stage">' + escapeHtml(safeStr(t.currentStage)) + '</div>' +
-            (t.errorMessage ? '<div class="ac-item-error">' + escapeHtml(safeStr(t.errorMessage)) + '</div>' : '') +
+            '<div class="ac-item-stage">' + escStage + '</div>' +
+            (escErr ? '<div class="ac-item-error">' + escErr + '</div>' : '') +
           '</div>';
         }).join('');
       }
     };
+
+    // Initialize Activity Center from saved state
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() { window.AsyncOperationManager.init(); });
+    } else {
+      window.AsyncOperationManager.init();
+    }
 
     // Alias for backward compatibility
     window.TaskQueue = window.AsyncOperationManager;
@@ -2061,8 +2149,8 @@ export function getAdminScripts(): string {
     // Trigger Manual Research Run
     async function runResearchNow() {
       const btn = document.getElementById('run-research-btn');
-      const alertEl = document.getElementById('research-run-alert');
-      if (alertEl) alertEl.style.display = 'none';
+      const taskId = window.TaskQueue.add('Topic Discovery', { type: 'manual', detail: 'Scanning sources for fresh industry ideas...' });
+      window.TaskQueue.start(taskId, 'Scanning sources for fresh industry ideas...');
 
       if (btn) {
         btn.disabled = true;
@@ -2079,52 +2167,21 @@ export function getAdminScripts(): string {
         });
 
         const data = await res.json();
-        if (alertEl) {
-          if (res.ok && data.success) {
-            const s = data.summary || {};
-            const created = s.topicsCreated || s.ideasQueued || 0;
-            let breakdownText = 'None';
-            if (s.pillarBreakdown) {
-              breakdownText = Object.entries(s.pillarBreakdown).map(([k, v]) => safeStr(k) + ': ' + v).join(', ');
-            }
-
-            if (created > 0) {
-              alertEl.innerHTML = \`
-                <strong>Content discovery completed! Added \${created} new ideas to content queue.</strong>
-                <div style="margin-top:0.35rem; font-size:0.85rem; line-height:1.4;">
-                  Discovered: \${s.itemsDiscovered || 0} raw | Unique: \${s.itemsNormalized || 0} | Irrelevant: \${s.rejectedIrrelevant || 0} | Duplicates: \${s.duplicatesFound || 0}<br/>
-                  <em>Pillars: \${escapeHtml(breakdownText)}</em>
-                </div>
-              \`;
-            } else {
-              const primaryReason = (s.duplicatesFound || 0) > 0 && (s.itemsDiscovered || 0) > 0
-                ? 'All discovered items were previously processed or exist in candidate queue.'
-                : 'No sufficiently useful business-oriented ideas found in this run.';
-              alertEl.innerHTML = \`
-                <strong>Content discovery completed. 0 new ideas added.</strong>
-                <div style="margin-top:0.35rem; font-size:0.85rem; line-height:1.4;">
-                  Sources checked: \${s.sourcesChecked || 0} | Discovered: \${s.itemsDiscovered || 0} raw | Duplicates: \${s.duplicatesFound || 0}<br/>
-                  <em>Primary reason: \${primaryReason}</em><br/>
-                  Existing content queue remains active for generation.
-                </div>
-              \`;
-            }
-
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-            loadResearchData();
+        if (res.ok && data.success) {
+          const s = data.summary || {};
+          const created = s.topicsCreated || s.ideasQueued || 0;
+          if (created > 0) {
+            window.TaskQueue.complete(taskId, 'Added ' + created + ' new topic ideas to your queue.');
           } else {
-            alertEl.textContent = 'Research run failed: ' + safeStr(data.summary?.errorMessage || data.error, 'Unknown error');
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
+            window.TaskQueue.complete(taskId, 'Discovery finished. Topic queue is already up to date.');
           }
+          await loadResearchData();
+        } else {
+          const errMsg = safeStr(data.summary?.errorMessage || data.error, 'Topic research failed.');
+          window.TaskQueue.fail(taskId, 'Topic Discovery Failed', errMsg);
         }
       } catch (err) {
-        if (alertEl) {
-          alertEl.textContent = 'An unexpected connection error occurred.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Could not reach topic discovery service.');
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -2156,7 +2213,7 @@ export function getAdminScripts(): string {
           console.error('Failed to fetch content data:', res.status, res.statusText);
           const postsBody = document.getElementById('posts-table-body');
           if (postsBody) {
-            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load post drafts (HTTP ' + res.status + ').</td></tr>';
           }
           return;
         }
@@ -2199,75 +2256,108 @@ export function getAdminScripts(): string {
               const pBody = safeStr(p.latest_body || p.body);
               const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
               const ideaPreview = safeStr(p.topic_description || p.topic_title || p.title, '');
-              const topicLabel = escapeHtml(ideaPreview ? (ideaPreview.length > 70 ? ideaPreview.slice(0, 67) + '...' : ideaPreview) : (pIdeaId ? 'Linked idea' : 'No linked idea'));
+              const topicLabel = escapeHtml(ideaPreview ? (ideaPreview.length > 55 ? ideaPreview.slice(0, 52) + '...' : ideaPreview) : (pIdeaId ? 'Linked idea' : 'No linked idea'));
               const sourceTitle = safeStr(p.source_title);
               const sourceUrl = safeStr(p.article_source_url);
               const topicCat = safeStr(p.topic_category || p.content_pillar);
               const topicSourceType = safeStr(p.topic_source_type);
 
+              // Uniform snippet truncation (~130 chars)
+              const snippetLength = 130;
+              const snippetBody = pBody.length > snippetLength ? pBody.slice(0, snippetLength).trimEnd() + '...' : pBody;
+
               let inspirationHtml = '';
               if (pIdeaId) {
                 if (sourceTitle && sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle) + '</a></div>';
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);" onclick="event.stopPropagation()">' + escapeHtml(sourceTitle) + '</a></div>';
                 } else if (sourceTitle) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(sourceTitle) + '</div>';
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(sourceTitle) + '</div>';
                 } else if (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceUrl) + '</a></div>';
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);" onclick="event.stopPropagation()">' + escapeHtml(sourceUrl) + '</a></div>';
                 } else if (topicSourceType === 'manual') {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual idea</span></div>';
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual idea</span></div>';
                 } else if (topicCat) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.3rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(topicCat) + ' research</div>';
+                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(topicCat) + ' research</div>';
                 }
               }
 
               const selSource = safeStr(p.selection_source, 'AUTO');
               const imgBadge = selSource === 'MANUAL' 
-                ? '<span class="status-badge status-healthy" style="font-size:0.65rem; padding:0.1rem 0.35rem;" title="Manually selected illustration">MANUAL</span>' 
-                : '<span class="status-badge status-active" style="font-size:0.65rem; padding:0.1rem 0.35rem;" title="Automatically selected from approved library">AUTO</span>';
+                ? '<span class="status-badge status-healthy" style="font-size:0.6rem; padding:0.05rem 0.3rem;" title="Manually selected illustration">MANUAL</span>' 
+                : '<span class="status-badge status-active" style="font-size:0.6rem; padding:0.05rem 0.3rem;" title="Automatically selected from approved library">AUTO</span>';
 
-              let imageColHtml = '';
+              // Image Thumbnail Column (Col 2)
+              let thumbnailHtml = '';
               if (p.image_url) {
-                imageColHtml = '<div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">' +
-                  '<button type="button" class="img-preview-btn" onclick="openImageLightboxModal(\\x27' + escapeHtml(p.image_url) + '\\x27, \\x27' + escapeHtml(safeStr(p.topic_title || 'Post image')) + '\\x27)" title="Preview image"><img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:56px;height:40px;object-fit:cover;border-radius:4px;"/></button>' +
-                  '<div>' + imgBadge + '<br/><button class="btn-secondary" style="padding:0.1rem 0.4rem;font-size:0.7rem;margin-top:0.2rem;" onclick="openDraftImageSelectorModal(\\x27' + pId + '\\x27)">Change</button></div>' +
-                  '</div>';
+                thumbnailHtml = '<div style="display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem;">' +
+                  '<button type="button" class="img-preview-btn" onclick="event.stopPropagation(); openImageLightboxModal(\\x27' + escapeHtml(p.image_url) + '\\x27, \\x27' + escapeHtml(safeStr(p.topic_title || 'Post image')) + '\\x27)" title="Preview full image" style="border:none; background:transparent; padding:0; cursor:pointer;">' +
+                    '<img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:68px; height:46px; object-fit:cover; border-radius:6px; display:block; border:1px solid rgba(255,255,255,0.1);"/>' +
+                  '</button>' +
+                  '<div style="display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap;">' +
+                    imgBadge +
+                    '<button type="button" class="btn-secondary" style="padding:0.1rem 0.35rem; font-size:0.65rem;" onclick="event.stopPropagation(); openDraftImageSelectorModal(\\x27' + pId + '\\x27)" title="Change image">Change</button>' +
+                  '</div>' +
+                '</div>';
               } else {
-                imageColHtml = '<div style="margin-top:0.35rem;"><span class="status-badge status-alert" style="font-size:0.7rem;">⚠️ Image Required</span> <button class="btn-secondary" style="padding:0.15rem 0.4rem;font-size:0.7rem;margin-left:0.3rem;" onclick="openDraftImageSelectorModal(\\x27' + pId + '\\x27)">Select Image</button></div>';
+                thumbnailHtml = '<div style="display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem;">' +
+                  '<div style="width:68px; height:46px; border-radius:6px; border:1px dashed rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); color:var(--text-muted); font-size:0.7rem;" title="No image assigned">' +
+                    '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="1.5" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
+                  '</div>' +
+                  '<button type="button" class="btn-secondary" style="padding:0.1rem 0.35rem; font-size:0.65rem;" onclick="event.stopPropagation(); openDraftImageSelectorModal(\\x27' + pId + '\\x27)" title="Choose an image">Select</button>' +
+                '</div>';
               }
 
               return \`
-              <tr data-id="\${pId}" id="post-row-\${pId}">
-                <td style="text-align:center;">
+              <tr data-id="\${pId}" id="post-row-\${pId}" class="clickable-post-row" onclick="handlePostRowClick(event, '\${pId}')" title="Click row to edit draft">
+                <td style="text-align:center;" onclick="event.stopPropagation()">
                   <input type="checkbox" class="post-select-checkbox" data-id="\${pId}" \${isChecked} onchange="updatePostSelectionState()" />
                 </td>
+                <td style="width:110px;">
+                  \${thumbnailHtml}
+                </td>
                 <td>
-                  <div style="font-size:0.875rem; color:var(--text-main); max-width:440px; line-height:1.45; word-break:break-word;">\${escapeHtml(pBody)}</div>
-                  \${imageColHtml}
+                  <div class="post-snippet-text" title="\${escapeHtml(pBody)}">\${escapeHtml(snippetBody)}</div>
                   \${pIdeaId ? \`<div style="font-size:0.75rem; margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
                     <span style="color:var(--text-muted);">Idea:</span>
-                    <button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>
-                    \${topicCat ? \`<span style="font-size:0.675rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px;">\${escapeHtml(topicCat)}</span>\` : ''}
+                    <button type="button" class="btn-secondary" style="padding:0; border:0; background:transparent; color:var(--accent-blue); font-size:0.75rem; text-align:left; text-decoration:underline;" onclick="event.stopPropagation(); openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>
+                    \${topicCat ? \`<span style="font-size:0.65rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px;">\${escapeHtml(topicCat)}</span>\` : ''}
                   </div>\` : ''}
                   \${inspirationHtml}
                 </td>
-                <td>\${renderWorkflowStages(p)}</td>
-                <td>
+                <td style="width:180px;">\${renderWorkflowStages(p)}</td>
+                <td style="width:120px;">
                   <span class="status-badge \${statusClass}">\${syncStatus === 'CONFLICT' ? 'SYNC CONFLICT' : escapeHtml(statusStr)}</span>
                 </td>
-                <td data-sort-value="\${escapeHtml(safeStr(p.created_at))}">\${formatDateOnlySafe(p.created_at)}</td>
-                <td>
-                  <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
-                    <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditPostModal('\${pId}')">Edit</button>
-                    \${pIdeaId ? \`<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic('\${pIdeaId}')">Regenerate post</button><button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openTopicFromPost('\${pIdeaId}')">View idea</button>\` : ''}
+                <td style="width:150px; font-size:0.8rem; color:var(--text-muted);" data-sort-value="\${escapeHtml(safeStr(p.created_at))}">
+                  \${formatDateSafe(p.created_at)}
+                </td>
+                <td style="width:160px; text-align:right;" onclick="event.stopPropagation()">
+                  <div style="display:flex; gap:0.35rem; justify-content:flex-end; align-items:center;">
+                    \${pIdeaId ? \`
+                      <button type="button" class="action-btn-icon" title="Regenerate post from idea" aria-label="Regenerate post" onclick="generatePostFromTopic('\${pIdeaId}')">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                      </button>
+                      <button type="button" class="action-btn-icon" title="View linked research idea" aria-label="View idea" onclick="openTopicFromPost('\${pIdeaId}')">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                      </button>
+                    \` : ''}
                     \${statusStr !== 'PUBLISHED' ? \`
-                      <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openInstantPublishModal('\${pId}')">Publish Now</button>
-                      <button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openSchedulePostModal('\${pId}')">Schedule</button>
+                      <button type="button" class="action-btn-icon action-btn-primary" title="Publish now to Facebook" aria-label="Publish Now" onclick="openInstantPublishModal('\${pId}')">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                      </button>
+                      <button type="button" class="action-btn-icon" title="Schedule publication" aria-label="Schedule" onclick="openSchedulePostModal('\${pId}')">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      </button>
                     \` : syncStatus === 'CONFLICT' ? \`
-                      <button class="btn-primary" style="padding:0.25rem 0.55rem; font-size:0.75rem; background:var(--accent-rose);" onclick="resolveConflict('\${pId}')">Resolve Conflict</button>
+                      <button type="button" class="action-btn-icon action-btn-danger" title="Resolve Facebook Sync Conflict" aria-label="Resolve Conflict" onclick="resolveConflict('\${pId}')">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      </button>
                     \` : \`
-                      <span style="color:var(--accent-emerald); font-weight:600; font-size:0.8rem;">Live on Facebook</span>
+                      <span style="color:var(--accent-emerald); font-weight:600; font-size:0.75rem; margin-right:0.25rem;" title="Published live on Facebook">Live</span>
                     \`}
-                    <button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeletePost('\${pId}')">Delete</button>
+                    <button type="button" class="action-btn-icon action-btn-danger" title="Delete draft" aria-label="Delete" onclick="confirmDeletePost('\${pId}')">
+                      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -2276,23 +2366,23 @@ export function getAdminScripts(): string {
 
             let bodyHtml = '';
             if (readyPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="6" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">★ Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">★ Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
               bodyHtml += readyPosts.map(renderPostRow).join('');
             }
 
             if (scheduledPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="6" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">📅 Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">📅 Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
               bodyHtml += scheduledPosts.map(renderPostRow).join('');
             }
 
             if (publishedPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="6" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">✓ Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">✓ Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
               bodyHtml += publishedPosts.map(renderPostRow).join('');
             }
 
             postsBody.innerHTML = bodyHtml;
           } else {
-            postsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
+            postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
           updatePostSelectionState();
         }
@@ -2365,13 +2455,10 @@ export function getAdminScripts(): string {
 
     // Run Autonomous Pipeline
     async function runPipelineNow() {
-      const taskId = window.TaskQueue.add('Triggering Autonomous Pipeline', { type: 'manual' });
-      window.TaskQueue.start(taskId, 'Triggering autonomous pipeline background worker...');
+      const taskId = window.TaskQueue.add('Autonomous Pipeline', { type: 'manual', detail: 'Executing discovery, post generation and quality evaluation...' });
+      window.TaskQueue.start(taskId, 'Executing discovery, post generation and quality evaluation...');
 
       const btn = document.getElementById('run-pipeline-btn');
-      const alertEl = document.getElementById('pipeline-run-alert');
-      if (alertEl) alertEl.style.display = 'none';
-
       if (btn) {
         btn.disabled = true;
         btn.textContent = 'Running full pipeline...';
@@ -2388,30 +2475,15 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         if (res.ok && data.success) {
-          window.TaskQueue.complete(taskId, 'Autonomous pipeline worker triggered successfully.');
-          if (alertEl) {
-            alertEl.textContent = 'Pipeline run completed successfully.';
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
-          loadDashboardData();
+          window.TaskQueue.complete(taskId, 'Pipeline execution completed successfully.');
+          await loadDashboardData();
         } else {
-          const errMsg = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an error.');
-          window.TaskQueue.fail(taskId, 'Pipeline Run Failed', errMsg);
-          if (alertEl) {
-            alertEl.textContent = errMsg;
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          const errMsg = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an issue.');
+          window.TaskQueue.fail(taskId, 'Pipeline Issue', errMsg);
         }
       } catch (err) {
         const errMsg = safeStr(err?.message, 'Network or connection error');
-        window.TaskQueue.fail(taskId, 'Pipeline Connection Error', errMsg);
-        if (alertEl) {
-          alertEl.textContent = 'An unexpected error occurred while executing the pipeline.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', errMsg);
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -2683,16 +2755,17 @@ export function getAdminScripts(): string {
     }
 
     function showPublicationAlert(message, success) {
-      const alert = document.getElementById('publication-alert');
-      if (!alert) return;
-      alert.textContent = message;
-      alert.className = success ? 'alert-success' : 'alert-error';
-      alert.style.display = 'block';
+      const taskId = window.TaskQueue.add('Publication Action', { type: 'manual', immediate: true });
+      if (success) {
+        window.TaskQueue.complete(taskId, message);
+      } else {
+        window.TaskQueue.fail(taskId, 'Publication Issue', message);
+      }
     }
 
     async function syncFacebookPublications() {
-      const taskId = window.TaskQueue.add('Syncing Facebook Publications', { type: 'manual' });
-      window.TaskQueue.start(taskId, 'Syncing latest post status & metrics from Facebook...');
+      const taskId = window.TaskQueue.add('Syncing Facebook', { type: 'manual', detail: 'Fetching latest publications and engagement metrics...' });
+      window.TaskQueue.start(taskId, 'Fetching latest publications and engagement metrics...');
 
       const button = document.getElementById('sync-facebook-publications');
       if (button) { button.disabled = true; button.textContent = 'Syncing...'; }
@@ -2702,12 +2775,10 @@ export function getAdminScripts(): string {
         if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook sync failed.'));
         const result = data.result || {};
         window.TaskQueue.complete(taskId, 'Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated.');
-        showPublicationAlert('Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated, ' + safeStr(result.conflicts, '0') + ' conflicts, ' + safeStr(result.errors, '0') + ' errors.', result.errors === 0);
         await loadFacebookPublications(false);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         window.TaskQueue.fail(taskId, 'Facebook Sync Failed', errMsg);
-        showPublicationAlert(errMsg, false);
       } finally {
         if (button) { button.disabled = false; button.textContent = 'Sync with Facebook'; }
       }
@@ -2918,11 +2989,8 @@ export function getAdminScripts(): string {
     }
 
     async function publishNow(postId) {
-      const taskId = window.TaskQueue.add('Publishing Post to Facebook', { type: 'manual' });
+      const taskId = window.TaskQueue.add('Publishing to Facebook', { type: 'manual', detail: 'Sending post payload to Facebook Page API...' });
       window.TaskQueue.start(taskId, 'Sending post payload to Facebook Page API...');
-
-      const alertEl = document.getElementById('publication-alert');
-      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch('/api/admin/publications/' + safeStr(postId) + '/publish', {
@@ -2935,40 +3003,22 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         if (res.ok && data.success) {
-          const extId = safeStr(data.result?.externalPostId, 'Success');
-          window.TaskQueue.complete(taskId, 'Published to Facebook! External ID: ' + extId);
-          if (alertEl) {
-            alertEl.textContent = 'Publication request completed successfully. External Facebook Post ID: ' + extId;
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          const extId = safeStr(data.result?.externalPostId, 'Done');
+          window.TaskQueue.complete(taskId, 'Published to Facebook! (ID: ' + extId + ')');
         } else {
           const errMsg = safeStr(data.error || data.result?.message, 'Error publishing post');
           window.TaskQueue.fail(taskId, 'Publishing Failed', errMsg);
-          if (alertEl) {
-            alertEl.textContent = 'Publication failed: ' + errMsg;
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Publishing Connection Error', safeStr(err?.message));
-        if (alertEl) {
-          alertEl.textContent = 'An unexpected connection error occurred during publishing.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Could not reach Facebook API.');
       } finally {
         loadFacebookPublications(false);
       }
     }
 
     async function retryPub(pubId) {
-      const taskId = window.TaskQueue.add('Retrying Facebook Publication', { type: 'manual' });
+      const taskId = window.TaskQueue.add('Retrying Publication', { type: 'manual', detail: 'Retrying publication payload to Facebook...' });
       window.TaskQueue.start(taskId, 'Retrying publication payload to Facebook...');
-
-      const alertEl = document.getElementById('publication-alert');
-      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch('/api/admin/publications/' + safeStr(pubId) + '/retry', {
@@ -2981,29 +3031,14 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         if (res.ok && data.success) {
-          const extId = safeStr(data.result?.externalPostId, 'Success');
-          window.TaskQueue.complete(taskId, 'Publication retry succeeded! Facebook ID: ' + extId);
-          if (alertEl) {
-            alertEl.textContent = 'Publication retry succeeded. External Facebook Post ID: ' + extId;
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          const extId = safeStr(data.result?.externalPostId, 'Done');
+          window.TaskQueue.complete(taskId, 'Publication retry succeeded! (ID: ' + extId + ')');
         } else {
           const errMsg = safeStr(data.error || data.result?.message, 'Error retrying publication');
           window.TaskQueue.fail(taskId, 'Retry Failed', errMsg);
-          if (alertEl) {
-            alertEl.textContent = 'Publication retry failed: ' + errMsg;
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Retry Connection Error', safeStr(err?.message));
-        if (alertEl) {
-          alertEl.textContent = 'An unexpected connection error occurred during retry.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Could not reach Facebook API.');
       } finally {
         loadFacebookPublications(false);
       }
@@ -3635,7 +3670,6 @@ export function getAdminScripts(): string {
     }
 
     async function loadPipelineData() {
-      const alertEl = document.getElementById('pipeline-control-alert');
       try {
         const res = await guardedFetch('/api/admin/pipeline/scheduler');
         if (res.ok) {
@@ -3721,9 +3755,9 @@ export function getAdminScripts(): string {
 
     async function runDiscoveryNow() {
       const btn = document.getElementById('stage-discovery-btn');
-      const alertEl = document.getElementById('pipeline-control-alert');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Running Content Scout Discovery...'; }
-      if (alertEl) alertEl.style.display = 'none';
+      const taskId = window.TaskQueue.add('Topic Discovery', { type: 'manual', detail: 'Searching for relevant business topics...' });
+      window.TaskQueue.start(taskId, 'Searching for relevant business topics...');
+      if (btn) { btn.disabled = true; btn.textContent = 'Finding topics...'; }
 
       try {
         const res = await fetch('/api/admin/pipeline/discovery', {
@@ -3734,35 +3768,13 @@ export function getAdminScripts(): string {
 
         if (res.ok && data.success) {
           const r = data.result || {};
-          let html = '<strong>Topic discovery completed.</strong><br>' +
-            'Discovered ' + (r.newProposalsCount || 0) + ' new topics.';
-
-          if (Array.isArray(r.proposals) && r.proposals.length > 0) {
-            html += '<br><br><strong>Topic Proposals:</strong><ul style="margin-top:0.4rem; padding-left:1.2rem;">';
-            r.proposals.forEach(p => {
-              if (p) html += '<li><strong>' + escapeHtml(safeStr(p.title)) + '</strong> (' + escapeHtml(safeStr(p.contentPillar)) + ')</li>';
-            });
-            html += '</ul>';
-          }
-
-          if (alertEl) {
-            alertEl.innerHTML = html;
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          const count = r.newProposalsCount || (Array.isArray(r.proposals) ? r.proposals.length : 0);
+          window.TaskQueue.complete(taskId, 'Topic discovery completed! Found ' + count + ' proposals.');
         } else {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Topic discovery failed.</strong> Please try again.';
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.fail(taskId, 'Discovery Failed', 'Could not retrieve new topics.');
         }
       } catch (err) {
-        if (alertEl) {
-          alertEl.textContent = 'Network error while running Topic Discovery.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while running Topic Discovery.');
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Find topics'; }
         loadPipelineData();
@@ -3771,9 +3783,9 @@ export function getAdminScripts(): string {
 
     async function runPostGenerationNow() {
       const btn = document.getElementById('stage-generation-btn');
-      const alertEl = document.getElementById('pipeline-control-alert');
+      const taskId = window.TaskQueue.add('Draft Generation', { type: 'manual', detail: 'Generating next post draft and evaluating quality...' });
+      window.TaskQueue.start(taskId, 'Generating next post draft and evaluating quality...');
       if (btn) { btn.disabled = true; btn.textContent = 'Generating post...'; }
-      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch('/api/admin/pipeline/generate', {
@@ -3784,28 +3796,14 @@ export function getAdminScripts(): string {
         const r = data.result || {};
 
         if (res.ok && data.success && r.finalDecision === 'PASS') {
-          let html = '<strong>Post generated successfully.</strong><br>' +
-            'Draft: <strong>"' + escapeHtml(safeStr(r.title, 'Untitled Draft')) + '"</strong>';
-
-          if (alertEl) {
-            alertEl.innerHTML = html;
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          const draftTitle = safeStr(r.title, 'Untitled Draft');
+          window.TaskQueue.complete(taskId, 'Post draft created: "' + draftTitle + '"');
         } else {
-          let html = '<strong>Post generation failed.</strong> Please try again.';
-          if (alertEl) {
-            alertEl.innerHTML = html;
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          const reason = r.errorMessage || (r.finalDecision === 'REJECT' ? 'Draft did not pass quality threshold.' : 'Post generation failed.');
+          window.TaskQueue.fail(taskId, 'Generation Issue', reason);
         }
       } catch (err) {
-        if (alertEl) {
-          alertEl.textContent = 'Network error while generating post.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while generating post.');
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Generate post'; }
         loadPipelineData();
@@ -3814,9 +3812,9 @@ export function getAdminScripts(): string {
 
     async function runPublishNow() {
       const btn = document.getElementById('stage-publishing-btn');
-      const alertEl = document.getElementById('pipeline-control-alert');
+      const taskId = window.TaskQueue.add('Post Publication', { type: 'manual', detail: 'Publishing approved draft to Facebook...' });
+      window.TaskQueue.start(taskId, 'Publishing approved draft to Facebook...');
       if (btn) { btn.disabled = true; btn.textContent = 'Publishing...'; }
-      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const postsRes = await fetch('/api/admin/content');
@@ -3824,11 +3822,7 @@ export function getAdminScripts(): string {
         const readyPost = (Array.isArray(postsData.posts) ? postsData.posts : []).find(p => p && (p.quality_decision === 'PASS' || p.status === 'approved' || p.status === 'draft'));
 
         if (!readyPost) {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Publishing failed:</strong> No approved posts available to publish.';
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.fail(taskId, 'No Draft Available', 'No approved posts available to publish.');
           return;
         }
 
@@ -3841,24 +3835,12 @@ export function getAdminScripts(): string {
         const r = data.result || {};
 
         if (res.ok && data.success && r.success) {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Post published successfully.</strong>';
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.complete(taskId, 'Post published to Facebook successfully.');
         } else {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Publication failed.</strong> Please verify Facebook connection and try again.';
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.fail(taskId, 'Publication Failed', 'Please verify Facebook connection.');
         }
       } catch (err) {
-        if (alertEl) {
-          alertEl.textContent = 'Network error while publishing post.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while publishing post.');
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Publish now'; }
         loadPipelineData();
@@ -3867,9 +3849,9 @@ export function getAdminScripts(): string {
 
     async function runFullPipelineNow() {
       const btn = document.getElementById('run-full-pipeline-btn');
-      const alertEl = document.getElementById('pipeline-control-alert');
-      if (btn) { btn.disabled = true; btn.textContent = 'Executing full pipeline...'; }
-      if (alertEl) alertEl.style.display = 'none';
+      const taskId = window.TaskQueue.add('Full Pipeline Run', { type: 'manual', detail: 'Executing all automation stages end-to-end...' });
+      window.TaskQueue.start(taskId, 'Executing all automation stages end-to-end...');
+      if (btn) { btn.disabled = true; btn.textContent = 'Executing pipeline...'; }
 
       try {
         const res = await fetch('/api/admin/pipeline/run-full', {
@@ -3880,41 +3862,25 @@ export function getAdminScripts(): string {
         const r = data.result || {};
 
         if (res.status === 409 || data.code === 'PIPELINE_ALREADY_RUNNING') {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Pipeline currently running.</strong> Please wait for it to complete.';
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.fail(taskId, 'Already Running', 'Pipeline is currently executing.');
           return;
         }
 
         if (res.ok && data.success && r.status === 'SUCCESS') {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Pipeline execution completed successfully.</strong>';
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.complete(taskId, 'Full pipeline finished successfully.');
         } else {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Pipeline execution failed.</strong> Please try again.';
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.fail(taskId, 'Pipeline Incomplete', 'Pipeline run finished with issues.');
         }
       } catch (err) {
-        if (alertEl) {
-          alertEl.textContent = 'Network error while executing pipeline.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while executing pipeline.');
       } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Run full pipeline'; }
       }
     }
 
     async function saveSchedulerConfig(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
       const btn = document.getElementById('save-scheduler-btn');
-      const alertEl = document.getElementById('pipeline-control-alert');
       if (btn) { btn.disabled = true; btn.textContent = 'Saving Settings...'; }
 
       const masterSwitch = document.getElementById('sched-master-switch');
@@ -3937,6 +3903,9 @@ export function getAdminScripts(): string {
         publishingEnabled: stgPub ? stgPub.checked : true,
       };
 
+      const taskId = window.TaskQueue.add('Pipeline Scheduler', { type: 'manual', detail: 'Saving automation schedule settings...' });
+      window.TaskQueue.start(taskId, 'Saving automation schedule settings...');
+
       try {
         const res = await fetch('/api/admin/pipeline/scheduler', {
           method: 'POST',
@@ -3946,24 +3915,13 @@ export function getAdminScripts(): string {
         const data = await res.json();
 
         if (res.ok && data.success) {
-          if (alertEl) {
-            alertEl.innerHTML = '<strong>Automatic Scheduler configuration saved successfully!</strong> Status: <strong>' + (data.config?.enabled ? 'ACTIVE (ON)' : 'DISABLED (OFF)') + '</strong>';
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          const st = data.config?.enabled ? 'Active (ON)' : 'Disabled (OFF)';
+          window.TaskQueue.complete(taskId, 'Scheduler settings saved. Status: ' + st);
         } else {
-          if (alertEl) {
-            alertEl.textContent = 'Failed to save scheduler configuration: ' + safeStr(data.error, 'Unknown error');
-            alertEl.className = 'alert-error';
-            alertEl.style.display = 'block';
-          }
+          window.TaskQueue.fail(taskId, 'Save Failed', safeStr(data.error, 'Could not save scheduler settings.'));
         }
       } catch (err) {
-        if (alertEl) {
-          alertEl.textContent = 'Network error saving scheduler configuration.';
-          alertEl.className = 'alert-error';
-          alertEl.style.display = 'block';
-        }
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error saving scheduler settings.');
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Save Settings'; }
         loadPipelineData();
@@ -4183,13 +4141,6 @@ export function getAdminScripts(): string {
       const taskId = window.TaskQueue.add(actionTitle, { type: 'manual', detail: 'Topic: ' + topicTitle });
       window.TaskQueue.start(taskId, isRegeneration ? 'Regenerating post draft from "' + topicTitle + '"...' : 'Generating new post draft from "' + topicTitle + '"...');
 
-      const alertEl = document.getElementById('research-run-alert');
-      if (alertEl) {
-        alertEl.textContent = isRegeneration ? 'Generating a new version of the existing post...' : 'Generating post draft...';
-        alertEl.className = 'alert-info';
-        alertEl.style.display = 'block';
-      }
-
       try {
         const res = await fetch('/api/admin/content/generate', {
           method: 'POST',
@@ -4206,33 +4157,18 @@ export function getAdminScripts(): string {
         if (res.ok && data.success) {
           const version = Number(data.result?.currentVersion || 0);
           const successMsg = isRegeneration
-            ? 'Existing post regenerated as version ' + version + '.'
+            ? 'Regenerated post as version ' + version + ' (draft updated).'
             : 'Post draft generated successfully.';
           window.TaskQueue.complete(taskId, successMsg);
-
-          if (alertEl) {
-            alertEl.textContent = isRegeneration
-              ? 'Existing post regenerated as version ' + version + '. The Facebook post was not published or updated automatically.'
-              : 'Post draft generated successfully.';
-            alertEl.className = 'alert-success';
-          }
           await Promise.all([loadResearchData(), loadContentData()]);
         } else {
           const errMsg = extractApiErrorMessage(data, res.status);
           window.TaskQueue.fail(taskId, 'Post Generation Failed', errMsg);
-          if (alertEl) {
-            alertEl.textContent = 'Post generation failed: ' + errMsg;
-            alertEl.className = 'alert-error';
-          }
         }
       } catch (err) {
         console.error('Failed to generate post from topic:', err);
         const errMsg = safeStr(err?.message, 'Network or server error');
         window.TaskQueue.fail(taskId, 'Post Generation Error', errMsg);
-        if (alertEl) {
-          alertEl.textContent = 'Post generation failed: ' + errMsg;
-          alertEl.className = 'alert-error';
-        }
       }
     }
 
@@ -4323,6 +4259,9 @@ export function getAdminScripts(): string {
       if (syncNote) syncNote.style.display = 'none';
       if (modalTitle) modalTitle.textContent = 'Add Post';
 
+      const actionsBar = document.getElementById('post-modal-actions-bar');
+      if (actionsBar) actionsBar.style.display = 'none';
+
       openModal('post-modal');
     }
 
@@ -4353,9 +4292,70 @@ export function getAdminScripts(): string {
         imagePreview.style.display = p.image_url ? 'block' : 'none';
       }
       if (syncNote) syncNote.style.display = (p.status === 'published' || p.facebook_post_id) ? 'block' : 'none';
-      if (modalTitle) modalTitle.textContent = 'Edit Post';
+      if (modalTitle) modalTitle.textContent = 'Edit Post Draft';
+
+      // Configure Draft Actions Bar in modal
+      const actionsBar = document.getElementById('post-modal-actions-bar');
+      if (actionsBar) {
+        actionsBar.style.display = 'block';
+        const pubBtn = document.getElementById('post-modal-publish-btn');
+        const schedBtn = document.getElementById('post-modal-schedule-btn');
+        const regenBtn = document.getElementById('post-modal-regen-btn');
+        const ideaBtn = document.getElementById('post-modal-idea-btn');
+        
+        const isPublished = p.status === 'published' || Boolean(p.facebook_post_id);
+        if (pubBtn) pubBtn.style.display = isPublished ? 'none' : 'inline-flex';
+        if (schedBtn) schedBtn.style.display = isPublished ? 'none' : 'inline-flex';
+        if (regenBtn) regenBtn.style.display = p.idea_id ? 'inline-flex' : 'none';
+        if (ideaBtn) ideaBtn.style.display = p.idea_id ? 'inline-flex' : 'none';
+      }
 
       openModal('post-modal');
+    }
+
+    function handleModalPublishNow() {
+      const postId = safeStr(document.getElementById('post-edit-id')?.value).trim();
+      if (!postId) return;
+      closeModal('post-modal');
+      openInstantPublishModal(postId);
+    }
+
+    function handleModalSchedule() {
+      const postId = safeStr(document.getElementById('post-edit-id')?.value).trim();
+      if (!postId) return;
+      closeModal('post-modal');
+      openSchedulePostModal(postId);
+    }
+
+    function handleModalRegenerate() {
+      const postId = safeStr(document.getElementById('post-edit-id')?.value).trim();
+      const p = cachedPosts.find(item => item && item.id === postId);
+      if (!p || !p.idea_id) return;
+      closeModal('post-modal');
+      generatePostFromTopic(p.idea_id);
+    }
+
+    function handleModalViewIdea() {
+      const postId = safeStr(document.getElementById('post-edit-id')?.value).trim();
+      const p = cachedPosts.find(item => item && item.id === postId);
+      if (!p || !p.idea_id) return;
+      closeModal('post-modal');
+      openTopicFromPost(p.idea_id);
+    }
+
+    function handleModalDelete() {
+      const postId = safeStr(document.getElementById('post-edit-id')?.value).trim();
+      if (!postId) return;
+      closeModal('post-modal');
+      confirmDeletePost(postId);
+    }
+
+    function handlePostRowClick(evt, postId) {
+      if (!postId) return;
+      if (evt && evt.target && evt.target.closest && evt.target.closest('button, a, input, select, .img-preview-btn, .post-select-checkbox')) {
+        return;
+      }
+      openEditPostModal(postId);
     }
 
     async function handleSavePost(evt) {
@@ -4520,13 +4520,6 @@ export function getAdminScripts(): string {
       const taskId = window.TaskQueue.add('Generating Post from Idea', { type: 'manual', detail: 'Idea: ' + title });
       window.TaskQueue.start(taskId, 'Generating post draft from "' + title + '"...');
 
-      const alertEl = document.getElementById('content-alert');
-      if (alertEl) {
-        alertEl.textContent = 'Generating post draft from idea...';
-        alertEl.className = 'alert-info';
-        alertEl.style.display = 'block';
-      }
-
       try {
         const res = await fetch('/api/admin/content/manual-topic-post', {
           method: 'POST',
@@ -4535,19 +4528,11 @@ export function getAdminScripts(): string {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          window.TaskQueue.complete(taskId, 'Post generated successfully.');
-          if (alertEl) {
-            alertEl.textContent = 'Post generated successfully.';
-            alertEl.className = 'alert-success';
-          }
+          window.TaskQueue.complete(taskId, 'Post generated successfully from idea.');
           loadContentData();
         } else {
           const errMsg = safeStr(data.error || data.result?.errorMessage, 'Unknown error');
           window.TaskQueue.fail(taskId, 'Post Generation Failed', errMsg);
-          if (alertEl) {
-            alertEl.textContent = 'Failed to generate post: ' + errMsg;
-            alertEl.className = 'alert-error';
-          }
         }
       } catch (err) {
         console.error('Failed manual topic post generation:', err);
@@ -5212,12 +5197,8 @@ export function getAdminScripts(): string {
           headers: { 'x-csrf-token': csrfToken }
         });
         if (res.ok) {
-          const alertEl = document.getElementById('publication-alert');
-          if (alertEl) {
-            alertEl.textContent = 'Publication record removed from Content Creator history.';
-            alertEl.className = 'alert-success';
-            alertEl.style.display = 'block';
-          }
+          const taskId = window.TaskQueue.add('Delete Publication', { type: 'manual', immediate: true });
+          window.TaskQueue.complete(taskId, 'Publication record removed from history.');
           loadFacebookPublications(false);
         }
       } catch (err) {
@@ -5289,15 +5270,11 @@ export function getAdminScripts(): string {
 
     function handlePlannedRunSubmit(evt) {
       if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-      const alertEl = document.getElementById('pipeline-control-alert');
       const date = safeStr(document.getElementById('plan-run-date')?.value);
       const time = safeStr(document.getElementById('plan-run-time')?.value, '09:00');
 
-      if (alertEl) {
-        alertEl.innerHTML = '<strong>Planned Run Scheduled:</strong> Full pipeline execution scheduled for <strong>' + date + ' at ' + time + ' UTC</strong>.';
-        alertEl.className = 'alert-success';
-        alertEl.style.display = 'block';
-      }
+      const taskId = window.TaskQueue.add('Planned Run', { type: 'manual', immediate: true, detail: 'Pipeline run scheduled for ' + date + ' at ' + time + ' UTC.' });
+      window.TaskQueue.complete(taskId, 'Pipeline execution planned for ' + date + ' at ' + time + ' UTC.');
     }
 
     let currentCalendarDate = new Date();
@@ -6577,6 +6554,12 @@ export function getAdminScripts(): string {
     window.filterDraftImageSelector = filterDraftImageSelector;
     window.selectDraftIllustration = selectDraftIllustration;
     window.confirmAssignDraftIllustration = confirmAssignDraftIllustration;
+    window.handlePostRowClick = handlePostRowClick;
+    window.handleModalPublishNow = handleModalPublishNow;
+    window.handleModalSchedule = handleModalSchedule;
+    window.handleModalRegenerate = handleModalRegenerate;
+    window.handleModalViewIdea = handleModalViewIdea;
+    window.handleModalDelete = handleModalDelete;
     window.removeDraftIllustration = removeDraftIllustration;
   `;
 }

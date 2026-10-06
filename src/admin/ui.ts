@@ -322,8 +322,6 @@ export function renderAdminHtml(): string {
               </button>
             </div>
 
-            <div id="pipeline-control-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
-
             <!-- Live Progress Stepper Container -->
             <div id="pipeline-stepper-box" style="display:none;" class="panel">
               <div class="panel-header">
@@ -436,8 +434,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <div id="research-run-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
-
             <!-- Content Performance Engine Card -->
             <div class="panel" style="border-left: 4px solid var(--accent-emerald); margin-bottom:1.5rem;">
               <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
@@ -523,8 +519,6 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <div id="content-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
-
             <!-- Post Bulk Action Toolbar -->
             <div id="post-bulk-toolbar" class="bulk-toolbar" style="display:none;">
               <div class="bulk-toolbar-info">
@@ -559,15 +553,16 @@ export function renderAdminHtml(): string {
                       <th style="width:36px; text-align:center;">
                         <input type="checkbox" id="post-select-all" onclick="toggleSelectAllPosts(this)" title="Select all drafts" />
                       </th>
-                      <th>Post</th>
-                      <th>Progress</th>
-                      <th>Status</th>
-                      <th>Created Date</th>
-                      <th>Actions</th>
+                      <th style="width:110px;">Thumbnail</th>
+                      <th>Snippet</th>
+                      <th style="width:180px;">Progress</th>
+                      <th style="width:120px;">Status</th>
+                      <th style="width:150px;">Creation Date</th>
+                      <th style="width:160px; text-align:right;">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="posts-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -590,8 +585,6 @@ export function renderAdminHtml(): string {
                 </button>
               </div>
             </div>
-
-            <div id="images-alert" class="alert-success" style="display:none; margin-bottom:1.5rem;"></div>
 
             <!-- Status Tabs Bar -->
             <div style="display:flex; gap:0.5rem; margin-bottom:1.25rem; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem; flex-wrap:wrap;">
@@ -712,8 +705,6 @@ export function renderAdminHtml(): string {
               </div>
               <button id="sync-facebook-publications" class="btn-secondary" onclick="syncFacebookPublications()">Sync with Facebook</button>
             </div>
-
-            <div id="publication-alert" class="alert-success" style="display:none; margin-bottom:1rem;"></div>
 
             <div class="panel">
               <div class="panel-header">
@@ -1101,9 +1092,20 @@ export function renderAdminHtml(): string {
               <option value="rejected">Rejected</option>
             </select>
           </div>
-          <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+          <div id="post-modal-actions-bar" style="display:none; margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border-color);">
+            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.6rem; font-weight:600;">Draft Actions</div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+              <button type="button" id="post-modal-publish-btn" class="btn-primary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="handleModalPublishNow()">Publish Now</button>
+              <button type="button" id="post-modal-schedule-btn" class="btn-secondary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="handleModalSchedule()">Schedule</button>
+              <button type="button" id="post-modal-regen-btn" class="btn-secondary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="handleModalRegenerate()">Regenerate Post</button>
+              <button type="button" id="post-modal-idea-btn" class="btn-secondary" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="handleModalViewIdea()">View Idea</button>
+              <div style="flex:1;"></div>
+              <button type="button" id="post-modal-delete-btn" class="btn-logout" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="handleModalDelete()">Delete Draft</button>
+            </div>
+          </div>
+          <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1.25rem;">
             <button type="button" class="btn-secondary" onclick="closeModal('post-modal')">Cancel</button>
-            <button type="submit" id="save-post-btn" class="btn-primary">Save</button>
+            <button type="submit" id="save-post-btn" class="btn-primary">Save Changes</button>
           </div>
         </form>
       </div>

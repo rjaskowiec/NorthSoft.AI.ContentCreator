@@ -619,6 +619,75 @@ export function getAdminCss(): string {
       background: rgba(255, 255, 255, 0.02);
     }
 
+    .clickable-post-row {
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+
+    .clickable-post-row:hover td {
+      background: rgba(96, 165, 250, 0.05);
+    }
+
+    .post-snippet-text {
+      font-size: 0.875rem;
+      color: var(--text-main);
+      line-height: 1.45;
+      word-break: break-word;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: help;
+    }
+
+    .action-btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      flex-shrink: 0;
+    }
+
+    .action-btn-icon:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .action-btn-icon.action-btn-primary {
+      color: var(--accent-blue);
+      border-color: rgba(59, 130, 246, 0.35);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .action-btn-icon.action-btn-primary:hover {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      border-color: rgba(59, 130, 246, 0.6);
+    }
+
+    .action-btn-icon.action-btn-danger {
+      color: var(--accent-rose);
+      border-color: rgba(244, 63, 94, 0.3);
+      background: rgba(244, 63, 94, 0.06);
+    }
+
+    .action-btn-icon.action-btn-danger:hover {
+      background: rgba(244, 63, 94, 0.2);
+      color: #fda4af;
+      border-color: rgba(244, 63, 94, 0.6);
+    }
+
     tr:last-child td {
       border-bottom: none;
     }
@@ -1479,58 +1548,76 @@ export function getAdminCss(): string {
     .batch-status-completed { color: var(--accent-emerald); }
     .batch-status-failed { color: var(--accent-rose); }
 
-    /* ACTIVITY CENTER WIDGET */
+    /* ACTIVITY CENTER WIDGET - MODERN TOAST DOCK */
     #activity-center-widget {
       position: fixed;
       bottom: 24px;
       right: 24px;
-      width: 380px;
-      max-width: calc(100vw - 48px);
+      width: 400px;
+      max-width: calc(100vw - 36px);
       z-index: 9999;
       background: transparent;
       font-family: inherit;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      gap: 0.75rem;
+      gap: 0.65rem;
+      pointer-events: none;
     }
 
     .ac-body {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.65rem;
       width: 100%;
+      pointer-events: auto;
     }
 
     .ac-item {
-      background: rgba(17, 24, 39, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(22, 27, 34, 0.94);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 12px;
-      padding: 0.85rem 1rem;
+      padding: 0.85rem 1.05rem;
       font-size: 0.85rem;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-      animation: acSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      gap: 0.45rem;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+      animation: acSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       opacity: 0;
-      transform: translateY(20px) scale(0.95);
-      pointer-events: auto;
+      transform: translateY(16px) scale(0.97);
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s ease, transform 0.2s ease;
     }
-    
+
+    .ac-item:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(0) scale(1);
+    }
+
+    .ac-item.ac-status-processing-card {
+      border-left: 3px solid #38bdf8;
+    }
+    .ac-item.ac-status-completed-card {
+      border-left: 3px solid #34d399;
+    }
+    .ac-item.ac-status-failed-card {
+      border-left: 3px solid #f87171;
+    }
+
     .ac-item.ac-fade-out {
-      animation: acFadeOut 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation: acFadeOut 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
     @keyframes acSlideIn {
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
-    
+
     @keyframes acFadeOut {
-      to { opacity: 0; transform: translateY(10px) scale(0.95); }
+      to { opacity: 0; transform: translateY(12px) scale(0.96); }
     }
 
     .ac-item-top {
@@ -1540,37 +1627,115 @@ export function getAdminCss(): string {
       gap: 0.75rem;
     }
 
+    .ac-item-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .ac-item-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ac-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(56, 189, 248, 0.25);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: acSpin 0.8s linear infinite;
+    }
+
+    @keyframes acSpin {
+      to { transform: rotate(360deg); }
+    }
+
     .ac-item-title {
       font-weight: 600;
-      color: rgba(255, 255, 255, 0.95);
+      font-size: 0.86rem;
+      color: #f3f4f6;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      letter-spacing: -0.01em;
     }
 
-    .ac-status-text {
-      font-size: 0.7rem;
-      font-weight: 700;
+    .ac-item-badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
-    .ac-status-pending { color: var(--text-muted); }
-    .ac-status-processing { color: var(--accent-cyan); animation: pulse 2s infinite; }
-    .ac-status-completed { color: var(--accent-emerald); }
-    .ac-status-failed { color: var(--accent-rose); }
+    .ac-badge-processing {
+      background: rgba(56, 189, 248, 0.15);
+      color: #7dd3fc;
+    }
+
+    .ac-badge-completed {
+      background: rgba(52, 211, 153, 0.15);
+      color: #6ee7b7;
+    }
+
+    .ac-badge-failed {
+      background: rgba(248, 113, 113, 0.15);
+      color: #fca5a5;
+    }
+
+    .ac-badge-pending {
+      background: rgba(148, 163, 184, 0.15);
+      color: #cbd5e1;
+    }
 
     .ac-item-stage {
-      font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.78rem;
+      color: #9ca3af;
       word-break: break-word;
-      line-height: 1.3;
+      line-height: 1.35;
+      padding-left: 1.7rem;
     }
 
     .ac-item-error {
-      font-size: 0.75rem;
-      color: #fda4af;
+      font-size: 0.76rem;
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.1);
+      border-radius: 6px;
+      padding: 0.35rem 0.6rem;
       margin-top: 0.25rem;
+      margin-left: 1.7rem;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+
+    .ac-close-btn {
+      background: none;
+      border: none;
+      color: #6b7280;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 0.2rem;
+      margin-left: 0.25rem;
+      transition: color 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ac-close-btn:hover {
+      color: #f3f4f6;
     }
 
     /* IMAGE LIBRARY STYLES */
