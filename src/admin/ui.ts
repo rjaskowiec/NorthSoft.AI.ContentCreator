@@ -1649,12 +1649,15 @@ export function renderAdminHtml(): string {
         <form id="add-image-form" onsubmit="submitAddImageForm(event)">
           <div id="add-img-file-group" style="margin-bottom:1rem;">
             <label class="form-label">Image File (JPEG, PNG, WebP &lt; 10MB)</label>
-            <input type="file" id="add-img-file-input" accept="image/jpeg,image/png,image/webp" class="bulk-select-status" style="width:100%; padding:0.5rem;" />
+            <input type="file" id="add-img-file-input" accept="image/jpeg,image/png,image/webp" class="bulk-select-status" style="width:100%; padding:0.5rem;" onchange="handleImageFileSelected(event)" />
+            <div id="add-img-extracting-status" style="display:none; font-size:0.75rem; color:var(--accent-blue); margin-top:0.35rem;">
+              Analyzing image file and intelligently generating metadata...
+            </div>
           </div>
 
           <div id="add-img-url-group" style="margin-bottom:1rem; display:none;">
             <label class="form-label">Image HTTPS URL</label>
-            <input type="url" id="add-img-url-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="https://example.com/image.jpg" />
+            <input type="url" id="add-img-url-input" class="bulk-select-status" style="width:100%; padding:0.5rem; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="https://example.com/image.jpg" onblur="handleImageUrlChanged()" />
           </div>
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
@@ -1664,15 +1667,15 @@ export function renderAdminHtml(): string {
             </div>
             <div>
               <label class="form-label">Category *</label>
-              <select id="add-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
-                <option value="AI &amp; Business Automation" selected>🤖 AI &amp; Business Automation</option>
-                <option value="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option>
-                <option value="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option>
-                <option value="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option>
-                <option value="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option>
-                <option value="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option>
-                <option value="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option>
-                <option value="General">General / Inne</option>
+              <select id="add-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;" onchange="handleImageCategoryChanged()">
+                <option value="AI &amp; Business Automation" selected>AI &amp; Business Automation</option>
+                <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
+                <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
+                <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
+                <option value="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option>
+                <option value="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option>
+                <option value="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option>
+                <option value="General">General</option>
               </select>
             </div>
           </div>

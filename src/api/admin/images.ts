@@ -139,6 +139,42 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 });
 
 /**
+ * POST /api/admin/images/auto-extract-metadata
+ * Analyzes an uploaded file name or URL to automatically deduce title, keywords, and description.
+ * Uses AI with intelligent token analysis, filtering out random hashes and falling back to category keywords.
+ */
+imagesRouter.post('/images/auto-extract-metadata', csrfProtection, async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    filename?: string;
+    url?: string;
+    category?: string;
+  };
+
+  const { extractImageMetadataWithAI } = await import('../../services/content/image-metadata-extractor');
+  const { getAIProvider } = await import('../../ai/factory');
+  let aiProvider;
+  try {
+    aiProvider = getAIProvider(c.env, 'researcher');
+  } catch {
+    // Falls back to heuristic extraction if AI is unavailable
+  }
+
+  const result = await extractImageMetadataWithAI(
+    {
+      filename: body.filename,
+      url: body.url,
+      category: body.category,
+    },
+    aiProvider,
+  );
+
+  return c.json({
+    success: true,
+    result,
+  });
+});
+
+/**
  * POST /api/admin/images
  * Manually adds an image to the library via file upload or HTTPS URL.
  */
@@ -159,10 +195,19 @@ imagesRouter.post('/images', csrfProtection, async (c) => {
   let sourceType: 'UPLOADED' | 'URL';
 
   try {
+    const { extractImageMetadataWithAI } = await import('../../services/content/image-metadata-extractor');
+    const { getAIProvider } = await import('../../ai/factory');
+    let aiProvider;
+    try {
+      aiProvider = getAIProvider(c.env, 'researcher');
+    } catch {
+      // Ignore
+    }
+
     if ((c.req.header('content-type') || '').includes('multipart/form-data')) {
       const form = await c.req.formData();
       const file = form.get('file');
-      title = String(form.get('title') || 'Uploaded Image').trim();
+      title = String(form.get('title') || '').trim();
       category = String(form.get('category') || 'General').trim();
       keywords = String(form.get('keywords') || '').trim();
       description = String(form.get('description') || '').trim();
@@ -176,6 +221,14 @@ imagesRouter.post('/images', csrfProtection, async (c) => {
       }
       if (file.size < 1 || file.size > 10 * 1024 * 1024) {
         return c.json({ success: false, error: 'Image file size must be less than 10MB.' }, 413);
+      }
+
+      // If user left title, keywords or description blank, automatically deduce them
+      if (!title || !keywords || !description) {
+        const auto = await extractImageMetadataWithAI({ filename: file.name, category }, aiProvider);
+        if (!title) title = auto.title;
+        if (!keywords) keywords = auto.keywords;
+        if (!description) description = auto.description;
       }
 
       const bytes = await file.arrayBuffer();
@@ -230,7 +283,7 @@ imagesRouter.post('/images', csrfProtection, async (c) => {
         return c.json({ success: false, error: 'Use a valid public HTTPS image URL.' }, 400);
       }
 
-      title = (body.title || 'URL Image').trim();
+      title = (body.title || '').trim();
       category = (body.category || 'General').trim();
       keywords = (body.keywords || '').trim();
       description = (body.description || '').trim();
@@ -240,6 +293,14 @@ imagesRouter.post('/images', csrfProtection, async (c) => {
       status = body.status === 'PENDING' ? 'PENDING' : 'APPROVED';
       sourceUrl = inputUrl;
       sourceType = 'URL';
+
+      // If user left title, keywords or description blank, automatically deduce them
+      if (!title || !keywords || !description) {
+        const auto = await extractImageMetadataWithAI({ url: inputUrl, category }, aiProvider);
+        if (!title) title = auto.title;
+        if (!keywords) keywords = auto.keywords;
+        if (!description) description = auto.description;
+      }
 
       // Download and save to R2 if storage is configured
       if (c.env.IMAGE_BUCKET) {

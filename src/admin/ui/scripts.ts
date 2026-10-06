@@ -5834,6 +5834,20 @@ export function getAdminScripts(): string {
 
     function openAddImageModal() {
       setAddImageSourceType('file');
+      const titleInput = document.getElementById('add-img-title-input');
+      const keywordsInput = document.getElementById('add-img-keywords-input');
+      const descInput = document.getElementById('add-img-description-input');
+      const fileInput = document.getElementById('add-img-file-input');
+      const urlInput = document.getElementById('add-img-url-input');
+      const statusEl = document.getElementById('add-img-extracting-status');
+
+      if (titleInput) titleInput.value = '';
+      if (keywordsInput) keywordsInput.value = '';
+      if (descInput) descInput.value = '';
+      if (fileInput) fileInput.value = '';
+      if (urlInput) urlInput.value = '';
+      if (statusEl) statusEl.style.display = 'none';
+
       openModal('add-image-modal');
     }
 
@@ -5854,6 +5868,83 @@ export function getAdminScripts(): string {
         if (fileBtn) fileBtn.classList.remove('active');
         if (urlGrp) urlGrp.style.display = 'block';
         if (fileGrp) fileGrp.style.display = 'none';
+      }
+    }
+
+    async function autoPopulateImageMetadata(sourceNameOrUrl, isUrl) {
+      if (!sourceNameOrUrl || !sourceNameOrUrl.trim()) return;
+      const statusEl = document.getElementById('add-img-extracting-status');
+      const titleInput = document.getElementById('add-img-title-input');
+      const keywordsInput = document.getElementById('add-img-keywords-input');
+      const descInput = document.getElementById('add-img-description-input');
+      const categorySelect = document.getElementById('add-img-category-select');
+      const currentCategory = categorySelect ? categorySelect.value : 'General';
+
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.textContent = 'Intelligently analyzing name and suggesting metadata...';
+      }
+
+      try {
+        const payload = isUrl 
+          ? { url: sourceNameOrUrl.trim(), category: currentCategory }
+          : { filename: sourceNameOrUrl.trim(), category: currentCategory };
+
+        const res = await fetch('/api/admin/images/auto-extract-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success && data.result) {
+          const resMeta = data.result;
+          if (titleInput && (!titleInput.value || titleInput.value === 'Uploaded Image' || titleInput.value === 'URL Image' || titleInput.dataset.autoFilled === 'true')) {
+            titleInput.value = resMeta.title || '';
+            titleInput.dataset.autoFilled = 'true';
+          }
+          if (keywordsInput && (!keywordsInput.value || keywordsInput.dataset.autoFilled === 'true')) {
+            keywordsInput.value = resMeta.keywords || '';
+            keywordsInput.dataset.autoFilled = 'true';
+          }
+          if (descInput && (!descInput.value || descInput.dataset.autoFilled === 'true')) {
+            descInput.value = resMeta.description || '';
+            descInput.dataset.autoFilled = 'true';
+          }
+        }
+      } catch (err) {
+        console.warn('Auto metadata extraction failed:', err);
+      } finally {
+        if (statusEl) statusEl.style.display = 'none';
+      }
+    }
+
+    function handleImageFileSelected(e) {
+      const file = e?.target?.files?.[0];
+      if (!file) return;
+      autoPopulateImageMetadata(file.name, false);
+    }
+
+    function handleImageUrlChanged() {
+      const urlInput = document.getElementById('add-img-url-input');
+      const urlVal = urlInput ? urlInput.value.trim() : '';
+      if (urlVal && (urlVal.startsWith('https://') || urlVal.startsWith('http://'))) {
+        autoPopulateImageMetadata(urlVal, true);
+      }
+    }
+
+    function handleImageCategoryChanged() {
+      const titleInput = document.getElementById('add-img-title-input');
+      const fileInput = document.getElementById('add-img-file-input');
+      const urlInput = document.getElementById('add-img-url-input');
+
+      // If title is empty or was auto-filled, refresh suggestion with new category context
+      if (titleInput && (!titleInput.value || titleInput.dataset.autoFilled === 'true')) {
+        if (addImageSourceType === 'file' && fileInput?.files?.[0]) {
+          autoPopulateImageMetadata(fileInput.files[0].name, false);
+        } else if (addImageSourceType === 'url' && urlInput?.value) {
+          autoPopulateImageMetadata(urlInput.value, true);
+        }
       }
     }
 
@@ -6413,6 +6504,9 @@ export function getAdminScripts(): string {
     window.closeDiscoverModalAndViewPending = closeDiscoverModalAndViewPending;
     window.openAddImageModal = openAddImageModal;
     window.setAddImageSourceType = setAddImageSourceType;
+    window.handleImageFileSelected = handleImageFileSelected;
+    window.handleImageUrlChanged = handleImageUrlChanged;
+    window.handleImageCategoryChanged = handleImageCategoryChanged;
     window.submitAddImageForm = submitAddImageForm;
     window.openEditImageModal = openEditImageModal;
     window.submitEditImageForm = submitEditImageForm;
