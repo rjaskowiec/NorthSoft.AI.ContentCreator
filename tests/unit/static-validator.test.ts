@@ -49,8 +49,8 @@ describe('StaticValidator — Deterministic Content Rules', () => {
     expect(res.errors[0]).toContain('exceeds maximum allowed length');
   });
 
-  it('fails draft with more than 3 hashtags', () => {
-    const hashtagDraft = { ...validDraft, hashtags: ['#One', '#Two', '#Three', '#Four'] };
+  it('fails draft with more than 4 hashtags', () => {
+    const hashtagDraft = { ...validDraft, hashtags: ['#One', '#Two', '#Three', '#Four', '#Five'] };
     const res = validator.validate(hashtagDraft);
     expect(res.valid).toBe(false);
     expect(res.errors[0]).toContain('Too many hashtags');

@@ -184,7 +184,9 @@ export function renderAdminHtml(): string {
           <div class="header-user">
             <span id="env-badge" class="env-tag env-production">PRODUCTION</span>
             <div class="user-pill">
-              <span class="user-avatar">👤</span>
+              <span class="user-avatar" style="display:inline-flex; align-items:center;">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
               <span id="user-display">Administrator</span>
             </div>
             <button id="logout-btn" class="btn-logout">Sign Out</button>
@@ -609,15 +611,15 @@ export function renderAdminHtml(): string {
             <div style="display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; align-items:center; justify-space-between;">
               <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
                 <select id="image-category-filter" class="bulk-select-status" style="width:230px;" onchange="loadImagesData()">
-                  <option value="">Wszystkie kategorie (All)</option>
-                  <option value="AI & Business Automation">🤖 AI & Business Automation</option>
-                  <option value="Websites & Landing Pages">🌐 Websites & Landing Pages</option>
-                  <option value="Marketing & Customer Acquisition">📢 Marketing & Customer Acquisition</option>
-                  <option value="Sales & Conversion Process">💼 Sales & Conversion Process</option>
-                  <option value="Small Business Productivity & Ops">⚙️ Small Business Productivity & Ops</option>
-                  <option value="Customer Experience & Trust">🤝 Customer Experience & Trust</option>
-                  <option value="Local Business & Regional Context">📍 Local Business & Regional Context</option>
-                  <option value="General">General / Inne</option>
+                  <option value="">All Categories</option>
+                  <option value="AI & Business Automation">AI & Business Automation</option>
+                  <option value="Websites & Landing Pages">Websites & Landing Pages</option>
+                  <option value="Marketing & Customer Acquisition">Marketing & Customer Acquisition</option>
+                  <option value="Sales & Conversion Process">Sales & Conversion Process</option>
+                  <option value="Small Business Productivity & Ops">Small Business Productivity & Ops</option>
+                  <option value="Customer Experience & Trust">Customer Experience & Trust</option>
+                  <option value="Local Business & Regional Context">Local Business & Regional Context</option>
+                  <option value="General">General</option>
                 </select>
                 <input type="text" id="image-search-input" class="bulk-select-status" style="width:260px; background:rgba(255,255,255,0.05); color:var(--text-main);" placeholder="Search keywords, title, description..." onkeyup="debounceImageSearch()" />
               </div>
@@ -750,8 +752,8 @@ export function renderAdminHtml(): string {
             </div>
 
             <!-- Early Stage Learning Notice Banner -->
-            <div id="intel-early-notice" style="display:none; margin-bottom:1.5rem; background:rgba(59, 130, 246, 0.1); border:1px solid var(--accent-blue); color:var(--accent-blue); padding:0.85rem 1.1rem; border-radius:8px; font-size:0.875rem;">
-              ⚡ <strong>Early Learning Stage</strong> — Reference pools currently utilize relative performance snapshots while historical post data accumulates.
+            <div id="intel-early-notice" style="display:none; margin-bottom:1.5rem; background:rgba(59, 130, 246, 0.1); border:1px solid var(--accent-blue); color:var(--accent-blue); padding:0.85rem 1.1rem; border-radius:8px; font-size:0.875rem; align-items:center; gap:0.5rem;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:-2px; margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><strong>Early Learning Stage</strong> — Reference pools currently utilize relative performance snapshots while historical post data accumulates.
             </div>
 
             <!-- Intelligence Overview KPI Cards -->
@@ -805,7 +807,7 @@ export function renderAdminHtml(): string {
             <!-- Active Strong Posts Pool -->
             <div class="panel" style="margin-bottom:1.5rem;">
               <div class="panel-header">
-                <div class="panel-title" style="color:var(--accent-emerald);">★ Strong Examples (Active Pool)</div>
+                <div class="panel-title" style="color:var(--accent-emerald); display:inline-flex; align-items:center; gap:0.4rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Strong Examples (Active Pool)</div>
               </div>
               <div class="table-container">
                 <table>
@@ -830,7 +832,7 @@ export function renderAdminHtml(): string {
             <!-- Active Weak Posts Pool -->
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title" style="color:var(--accent-rose);">⚠ Weak Examples (Avoid Patterns)</div>
+                <div class="panel-title" style="color:var(--accent-rose); display:inline-flex; align-items:center; gap:0.4rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Weak Examples (Avoid Patterns)</div>
               </div>
               <div class="table-container">
                 <table>
@@ -915,8 +917,9 @@ export function renderAdminHtml(): string {
                 <h1 class="page-title">Audit Log</h1>
                 <p class="page-subtitle" style="margin-bottom:0;">System activity and audit logs.</p>
               </div>
-              <button class="btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.85rem;" onclick="loadAuditData()">
-                🔄 Refresh
+              <button class="btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.85rem; display:inline-flex; align-items:center; gap:0.4rem;" onclick="loadAuditData()">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Refresh
               </button>
             </div>
 
@@ -1076,8 +1079,9 @@ export function renderAdminHtml(): string {
             <input type="hidden" id="post-selected-image-id" value="" />
             <input type="hidden" id="post-remove-image-flag" value="false" />
             <div style="display:flex; gap:0.5rem; align-items:center;">
-              <button type="button" class="btn-secondary" style="font-size:0.85rem;" onclick="openDraftImageSelectorModalForDraft()">
-                🖼️ Choose from Image Library
+              <button type="button" class="btn-secondary" style="font-size:0.85rem; display:inline-flex; align-items:center; gap:0.4rem;" onclick="openDraftImageSelectorModalForDraft()">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Choose from Image Library
               </button>
               <span id="post-image-name-badge" style="font-size:0.8rem; color:var(--text-muted);">No image selected</span>
             </div>
@@ -1230,8 +1234,9 @@ export function renderAdminHtml(): string {
           <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
             Images must be selected from the approved Image Library to maintain full referential consistency across Facebook and local history.
           </p>
-          <button type="button" class="btn-primary" onclick="openDraftImageSelectorModalForPublication()">
-            🖼️ Choose Image from Library
+          <button type="button" class="btn-primary" style="display:inline-flex; align-items:center; gap:0.4rem;" onclick="openDraftImageSelectorModalForPublication()">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Choose Image from Library
           </button>
         </div>
         <a id="fb-post-detail-link" href="#" target="_blank" rel="noopener noreferrer" class="fb-rail-post-link">View on Facebook →</a>
@@ -1399,7 +1404,8 @@ export function renderAdminHtml(): string {
         <!-- Conflict Alert Banner -->
         <div id="sched-detail-conflict-banner" style="display:none; background:rgba(244, 63, 94, 0.1); border:1px solid rgba(244, 63, 94, 0.3); border-radius:8px; padding:1rem; margin-bottom:1rem;">
           <div style="color:#fda4af; font-weight:700; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.4rem;">
-            <span>⚠️ Sync Conflict Detected</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>Sync Conflict Detected</span>
           </div>
           <p style="font-size:0.825rem; color:var(--text-main); margin-bottom:0.75rem;">
             This post was edited on Facebook directly and also edited in the app. Choose which version to keep:
@@ -1413,7 +1419,8 @@ export function renderAdminHtml(): string {
         <!-- Failure Alert Banner -->
         <div id="sched-detail-error-banner" style="display:none; background:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.4); border-radius:8px; padding:0.85rem 1rem; margin-bottom:1rem;">
           <div style="color:var(--accent-rose); font-weight:700; margin-bottom:0.25rem; display:flex; align-items:center; gap:0.4rem; font-size:0.85rem;">
-            <span>❌ Publication Failed</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <span>Publication Failed</span>
           </div>
           <div id="sched-detail-error-text" style="font-size:0.8rem; color:var(--text-main); font-family:monospace; word-break:break-word;"></div>
         </div>
@@ -1443,8 +1450,9 @@ export function renderAdminHtml(): string {
           <input type="hidden" id="sched-detail-image-id" value="" />
           <input type="hidden" id="sched-detail-remove-image-flag" value="false" />
           <div style="display:flex; gap:0.5rem; align-items:center;">
-            <button type="button" class="btn-secondary" style="font-size:0.85rem;" onclick="openDraftImageSelectorModalForScheduled()">
-              🖼️ Choose from Image Library
+            <button type="button" class="btn-secondary" style="font-size:0.85rem; display:inline-flex; align-items:center; gap:0.4rem;" onclick="openDraftImageSelectorModalForScheduled()">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              Choose from Image Library
             </button>
             <span id="sched-detail-image-name" style="font-size:0.8rem; color:var(--text-muted);">No image attached</span>
           </div>
@@ -1745,14 +1753,14 @@ export function renderAdminHtml(): string {
             <div>
               <label class="form-label">Category *</label>
               <select id="edit-img-category-select" required class="bulk-select-status" style="width:100%; padding:0.5rem;">
-                <option value="AI &amp; Business Automation">🤖 AI &amp; Business Automation</option>
-                <option value="Websites &amp; Landing Pages">🌐 Websites &amp; Landing Pages</option>
-                <option value="Marketing &amp; Customer Acquisition">📢 Marketing &amp; Customer Acquisition</option>
-                <option value="Sales &amp; Conversion Process">💼 Sales &amp; Conversion Process</option>
-                <option value="Small Business Productivity &amp; Ops">⚙️ Small Business Productivity &amp; Ops</option>
-                <option value="Customer Experience &amp; Trust">🤝 Customer Experience &amp; Trust</option>
-                <option value="Local Business &amp; Regional Context">📍 Local Business &amp; Regional Context</option>
-                <option value="General">General / Inne</option>
+                <option value="AI &amp; Business Automation">AI &amp; Business Automation</option>
+                <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
+                <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
+                <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
+                <option value="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option>
+                <option value="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option>
+                <option value="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option>
+                <option value="General">General</option>
               </select>
             </div>
           </div>
@@ -1906,7 +1914,9 @@ export function renderAdminHtml(): string {
       <!-- VIEW 3: Completion & Results Summary -->
       <div id="discover-view-result" class="modal-body" style="display:none;">
         <div style="text-align:center; margin-bottom:1.5rem;">
-          <div style="font-size:2.5rem; margin-bottom:0.5rem;" id="discover-result-icon">🎉</div>
+          <div style="font-size:2.5rem; margin-bottom:0.5rem; display:flex; justify-content:center;" id="discover-result-icon">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent-emerald)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          </div>
           <h3 style="font-size:1.2rem; font-weight:700; color:var(--text-main); margin-bottom:0.25rem;" id="discover-result-title">Discovery Complete</h3>
           <p style="font-size:0.85rem; color:var(--text-muted);" id="discover-result-sub">New candidate illustrations found and added to Image Library.</p>
         </div>
@@ -1943,7 +1953,9 @@ export function renderAdminHtml(): string {
       <!-- VIEW 4: Error State -->
       <div id="discover-view-error" class="modal-body" style="display:none;">
         <div style="text-align:center; margin-bottom:1.25rem;">
-          <div style="font-size:2.5rem; margin-bottom:0.5rem;">⚠️</div>
+          <div style="font-size:2.5rem; margin-bottom:0.5rem; display:flex; justify-content:center;">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent-rose)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          </div>
           <h3 style="font-size:1.1rem; font-weight:700; color:#fda4af; margin-bottom:0.25rem;">Image Discovery Failed</h3>
           <p style="font-size:0.85rem; color:var(--text-muted);" id="discover-error-sub">We couldn't complete the search.</p>
         </div>
@@ -1960,7 +1972,9 @@ export function renderAdminHtml(): string {
       <!-- VIEW 5: 0 Candidates Found State -->
       <div id="discover-view-empty" class="modal-body" style="display:none;">
         <div style="text-align:center; margin-bottom:1.25rem;">
-          <div style="font-size:2.5rem; margin-bottom:0.5rem;">🔍</div>
+          <div style="font-size:2.5rem; margin-bottom:0.5rem; display:flex; justify-content:center;">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </div>
           <h3 style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:0.25rem;">No Suitable Candidates Found</h3>
           <p style="font-size:0.85rem; color:var(--text-muted);">No new open-license image candidates were found for:</p>
           <div style="font-size:0.95rem; font-weight:600; color:var(--accent-cyan); margin-top:0.5rem;" id="discover-empty-topic-name">--</div>

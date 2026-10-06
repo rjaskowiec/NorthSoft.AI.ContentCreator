@@ -842,7 +842,7 @@ export function getAdminScripts(): string {
             const dateFormatted = formatScheduleDateHuman(nextPub.scheduledAt);
             if (nextPub.isOverdue) {
               nextPubEl.style.color = 'var(--accent-rose)';
-              nextPubEl.innerHTML = '⚠️ Overdue (' + escapeHtml(dateFormatted) + ')';
+              nextPubEl.innerHTML = '<span style="color:var(--accent-rose); font-weight:600;">Overdue</span> (' + escapeHtml(dateFormatted) + ')';
             } else {
               nextPubEl.style.color = 'var(--text-main)';
               nextPubEl.innerHTML = escapeHtml(dateFormatted);
@@ -1777,7 +1777,7 @@ export function getAdminScripts(): string {
                   const id = safeStr(g.id);
                   const text = safeStr(g.guidelineText || g);
                   return '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">' +
-                    '<span>☑ ' + escapeHtml(text) + '</span>' +
+                    '<span style="display:inline-flex; align-items:center; gap:0.4rem;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent-emerald)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' + escapeHtml(text) + '</span>' +
                     (id ? '<div style="display:flex; gap:0.25rem;">' +
                       '<button class="btn-secondary edit-gl-btn" style="font-size:0.7rem; padding:0.15rem 0.4rem;" data-id="' + escapeHtml(id) + '" data-text="' + escapeHtml(text) + '" onclick="openEditGuidelineModal(this.dataset.id, this.dataset.text)">Edit</button>' +
                       '<button class="btn-logout" style="font-size:0.7rem; padding:0.15rem 0.4rem;" data-id="' + escapeHtml(id) + '" onclick="deleteManualGuideline(this.dataset.id)">Delete</button>' +
@@ -2083,13 +2083,13 @@ export function getAdminScripts(): string {
             let bodyHtml = '';
             if (activeTopics.length > 0) {
               if (usedTopics.length > 0) {
-                bodyHtml += '<tr><td colspan="6" style="background:rgba(96,165,250,0.1); font-weight:600; color:var(--accent-blue); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">★ Work Queue (Active Topics)</td></tr>';
+                bodyHtml += '<tr><td colspan="6" style="background:rgba(96,165,250,0.1); font-weight:600; color:var(--accent-blue); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Work Queue (Active Topics)</td></tr>';
               }
               bodyHtml += activeTopics.map(renderRow).join('');
             }
             if (usedTopics.length > 0) {
               if (activeTopics.length > 0) {
-                bodyHtml += '<tr><td colspan="6" style="background:rgba(255,255,255,0.03); font-weight:600; color:var(--text-muted); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">✓ Completed / Used Topics</td></tr>';
+                bodyHtml += '<tr><td colspan="6" style="background:rgba(255,255,255,0.03); font-weight:600; color:var(--text-muted); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Completed / Used Topics</td></tr>';
               }
               bodyHtml += usedTopics.map(renderRow).join('');
             }
@@ -2366,17 +2366,17 @@ export function getAdminScripts(): string {
 
             let bodyHtml = '';
             if (readyPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">★ Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
               bodyHtml += readyPosts.map(renderPostRow).join('');
             }
 
             if (scheduledPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">📅 Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
               bodyHtml += scheduledPosts.map(renderPostRow).join('');
             }
 
             if (publishedPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">✓ Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
+              bodyHtml += '<tr><td colspan="7" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
               bodyHtml += publishedPosts.map(renderPostRow).join('');
             }
 
@@ -2520,7 +2520,7 @@ export function getAdminScripts(): string {
             let rows = '';
 
             if (upcoming.length > 0) {
-              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">⏳ UPCOMING SCHEDULED POSTS (' + upcoming.length + ')</th></tr>';
+              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">UPCOMING SCHEDULED POSTS (' + upcoming.length + ')</th></tr>';
               rows += upcoming.map(sched => {
                 const schedIdStr = safeStr(sched.id);
                 const postIdStr = safeStr(sched.post_id);
@@ -2546,12 +2546,12 @@ export function getAdminScripts(): string {
                 '</tr>';
               }).join('');
             } else {
-              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">⏳ UPCOMING SCHEDULED POSTS (0)</th></tr>';
+              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">UPCOMING SCHEDULED POSTS (0)</th></tr>';
               rows += '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No upcoming scheduled posts.<br><button class="btn-primary" style="margin-top:0.5rem; font-size:0.8rem;" onclick="openSchedulePostModal()">+ Schedule Draft</button></td></tr>';
             }
 
             if (published.length > 0) {
-              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(16,185,129,0.1); color:var(--accent-emerald); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">✅ PUBLISHED POSTS (' + published.length + ')</th></tr>';
+              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(16,185,129,0.1); color:var(--accent-emerald); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">PUBLISHED POSTS (' + published.length + ')</th></tr>';
               rows += published.map(sched => {
                 const schedIdStr = safeStr(sched.id);
                 const postIdStr = safeStr(sched.post_id);
@@ -3264,20 +3264,20 @@ export function getAdminScripts(): string {
         const level = safeUpper(act.level, statusStr === 'FAILED' ? 'ERROR' : statusStr === 'DEFERRED' ? 'WARNING' : 'INFO');
 
         let statusBadgeClass = 'status-disabled';
-        let statusIcon = '🔵';
+        let statusDotClass = 'status-dot';
         let statusText = 'Info';
 
         if (level === 'ERROR' || statusStr === 'FAILED') {
           statusBadgeClass = 'status-alert';
-          statusIcon = '🔴';
+          statusDotClass = 'status-dot status-dot-alert';
           statusText = 'Failed';
         } else if (level === 'WARNING' || statusStr === 'DEFERRED') {
           statusBadgeClass = 'status-disabled';
-          statusIcon = '🟡';
+          statusDotClass = 'status-dot';
           statusText = 'Warning';
         } else if (level === 'SUCCESS' || statusStr === 'COMPLETED') {
           statusBadgeClass = 'status-healthy';
-          statusIcon = '🟢';
+          statusDotClass = 'status-dot status-dot-healthy';
           statusText = 'Completed';
         }
 
@@ -3309,8 +3309,8 @@ export function getAdminScripts(): string {
         return \`
           <tr class="audit-row-clickable" onclick="toggleAuditDetail('\${detailId}')" title="Click to view full technical diagnostic details">
             <td>
-              <span class="status-badge \${statusBadgeClass}" style="white-space:nowrap;">
-                \${statusIcon} \${statusText}
+              <span class="status-badge \${statusBadgeClass}" style="white-space:nowrap; display:inline-flex; align-items:center; gap:0.4rem;">
+                <span class="\${statusDotClass}"></span> \${statusText}
               </span>
             </td>
             <td>

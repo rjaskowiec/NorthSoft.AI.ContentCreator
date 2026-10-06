@@ -70,6 +70,11 @@ CTA RULES:
 - Do NOT use generic questions ("What's the one thing you wish you could improve?").
 - If NorthSoft fits naturally, introduce it as an unobtrusive one-line suggestion at the end. Otherwise omit.
 
+HASHTAG RULES:
+- Include 1 to 4 highly relevant, topical hashtags in PascalCase (e.g. ["#SmallBusiness", "#WebDesign", "#LocalSEO"]).
+- Do NOT use spammy, generic tags (e.g. avoid #viral, #like, #trending, #fyp).
+- Never exceed 4 hashtags.
+
 AI CLICHÉS & PATTERNS TO STRICTLY AVOID:
 - "You're not just [X], you're [Y]"
 - "It's not about [X], it's about [Y]"
@@ -92,7 +97,7 @@ Return ONLY a valid JSON object matching this schema:
   "ctaType": "none | soft_invitation | discussion | explore_setup | contact",
   "callToAction": "Optional natural closing line — omit if the post ends better without one",
   "claims": [{ "text": "Key factual observation", "sourceIds": ["src-1"] }],
-  "hashtags": ["#optional"],
+  "hashtags": ["#TopicSpecific1", "#TopicSpecific2"],
   "imageSearchQuery": "2-8 word visual scene or metaphor (e.g. 'plumber checking phone on job site')"
 }`;
 
@@ -393,13 +398,30 @@ export class WriterService {
           }))
         : [];
 
-      const hashtagsList: string[] = Array.isArray(parsed.hashtags)
+      const rawHashtags: string[] = Array.isArray(parsed.hashtags)
         ? (parsed.hashtags as string[]).filter((h) => typeof h === 'string')
         : [];
 
+      // Normalize hashtags (ensure leading '#', strip invalid chars, limit to 4)
+      const hashtagsList: string[] = rawHashtags
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0)
+        .map((h) => (h.startsWith('#') ? h : `#${h}`))
+        .filter((h) => /^#[A-Za-z0-9_]+$/.test(h))
+        .slice(0, 4);
+
+      // Append 1-4 topical hashtags to body text if not already present in the body
+      let finalBody = bodyText;
+      if (hashtagsList.length > 0) {
+        const hasAnyTagAlready = hashtagsList.some((tag) => finalBody.includes(tag));
+        if (!hasAnyTagAlready) {
+          finalBody = `${finalBody.trimEnd()}\n\n${hashtagsList.join(' ')}`;
+        }
+      }
+
       const draft: PostDraft = {
         title: typeof parsed.title === 'string' ? parsed.title : topic.title,
-        body: bodyText,
+        body: finalBody,
         language: typeof parsed.language === 'string' ? parsed.language : 'en',
         tone: typeof parsed.tone === 'string' ? parsed.tone : 'conversational',
         topicId: topic.id,

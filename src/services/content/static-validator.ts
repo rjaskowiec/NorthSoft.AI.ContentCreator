@@ -84,9 +84,9 @@ export class StaticValidator {
       );
     }
 
-    // 3. Hashtags limit (Maximum 3 hashtags)
-    if (draft.hashtags && draft.hashtags.length > 3) {
-      errors.push(`Too many hashtags (${draft.hashtags.length}; maximum allowed is 3).`);
+    // 3. Hashtags limit (Maximum 4 hashtags)
+    if (draft.hashtags && draft.hashtags.length > 4) {
+      errors.push(`Too many hashtags (${draft.hashtags.length}; maximum allowed is 4).`);
     }
 
     // 4. Prohibited Clickbait / Hype Words

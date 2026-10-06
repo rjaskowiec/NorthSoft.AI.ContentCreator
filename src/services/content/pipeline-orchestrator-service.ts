@@ -151,7 +151,7 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * ETAP 1 — Content Discovery / Content Scout
+   * STAGE 1 — Content Discovery / Content Scout
    */
   async runDiscovery(actor: 'admin' | 'system' = 'admin'): Promise<DiscoveryStageResult> {
     const startTime = Date.now();
@@ -225,7 +225,7 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * ETAP 2 — Post Generation & Quality Pipeline
+   * STAGE 2 — Post Generation & Quality Pipeline
    */
   async runPostGeneration(
     ideaId?: string,
@@ -344,7 +344,7 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * ETAP 3 — Facebook Publishing
+   * STAGE 3 — Facebook Publishing
    */
   async runPublishing(
     postId: string,
@@ -389,7 +389,7 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * CZĘŚĆ 3 — 1-Click Full Pipeline (Executes End-to-End & Publishes EXACTLY 1 post)
+   * PART 3 — 1-Click Full Pipeline (Executes End-to-End & Publishes EXACTLY 1 post)
    */
   async runFullPipeline(actor: 'admin' | 'system' = 'admin'): Promise<FullPipelineResult> {
     const startTime = Date.now();
@@ -522,7 +522,7 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * CZĘŚĆ 4 — Get Scheduler Configuration
+   * PART 4 — Get Scheduler Configuration
    */
   async getSchedulerConfig(): Promise<SchedulerConfig> {
     const row = await this.db
@@ -566,7 +566,7 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * CZĘŚĆ 4 — Update Scheduler Configuration
+   * PART 4 — Update Scheduler Configuration
    */
   async updateSchedulerConfig(config: Partial<SchedulerConfig>): Promise<SchedulerConfig> {
     const current = await this.getSchedulerConfig();
