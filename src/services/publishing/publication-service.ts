@@ -420,6 +420,19 @@ export class PublicationService {
       }>();
 
     if (existingPub && existingPub.facebook_post_id) {
+      // Ensure local post, schedule, and content idea are consistently marked as published
+      const nowIso = new Date().toISOString();
+      const p1 = this.db.prepare("UPDATE posts SET status = 'published', updated_at = ? WHERE id = ?").bind(nowIso, postId);
+      const p2 = this.db.prepare("UPDATE schedules SET status = 'published', updated_at = ? WHERE post_id = ? AND status IN ('pending', 'publishing')").bind(nowIso, postId);
+      const p3 = this.db.prepare("UPDATE content_ideas SET status = 'published', updated_at = ? WHERE id = (SELECT idea_id FROM posts WHERE id = ?)").bind(nowIso, postId);
+      if (typeof this.db.batch === 'function') {
+        await this.db.batch([p1, p2, p3]).catch(() => {});
+      } else {
+        if (p1 && typeof p1.run === 'function') await p1.run().catch(() => {});
+        if (p2 && typeof p2.run === 'function') await p2.run().catch(() => {});
+        if (p3 && typeof p3.run === 'function') await p3.run().catch(() => {});
+      }
+
       return {
         success: true,
         publicationId: existingPub.id,
@@ -1569,6 +1582,66 @@ export class PublicationService {
           const existing = await this.db.prepare('SELECT id FROM publications WHERE facebook_post_id = ? AND fb_deleted_at IS NULL LIMIT 1')
             .bind(fbPost.id).first<{ id: string }>();
           if (existing) continue;
+
+          // Check if an existing local post matches this Facebook content or title
+          const existingLocalPost = await this.db.prepare(
+            `SELECT p.id as post_id, p.idea_id, pv.id as version_id, pv.content as body, p.status as post_status
+             FROM posts p
+             JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+             WHERE p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED'
+             ORDER BY p.created_at DESC`
+          ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string }>();
+
+          const normalize = (t: string) => (t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const normFbContent = normalize(content);
+
+          let matchedLocal = existingLocalPost.results?.find(row => {
+            const normBody = normalize(row.body);
+            if (!normBody || !normFbContent) return false;
+            // Exact or substantial prefix / substring match (FB message vs local draft body)
+            if (normBody === normFbContent) return true;
+            if (normFbContent.length > 50 && (normBody.includes(normFbContent.slice(0, 50)) || normFbContent.includes(normBody.slice(0, 50)))) {
+              return true;
+            }
+            return false;
+          });
+
+          if (matchedLocal) {
+            // Reconcile this Facebook post to the existing local post!
+            const matchedPostId = matchedLocal.post_id;
+            const matchedVersionId = matchedLocal.version_id;
+            const publicationId = crypto.randomUUID();
+            const createdAt = fbPost.createdTime || nowIso;
+            const hash = this.hashContent(content);
+
+            await this.db.batch([
+              // Upsert/create publication row
+              this.db.prepare(
+                `INSERT INTO publications (id, post_id, post_version_id, facebook_post_id, provider, status, attempt_count,
+                   published_at, fb_last_check_at, fb_last_sync_at, sync_status, fb_content_hash, pushed_content_hash, sync_source,
+                   fb_image_url, pushed_image_url, fb_is_hidden, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, 'facebook', 'published', 1, ?, ?, ?, 'SYNCED', ?, ?, 'facebook_reconciled', ?, ?, ?, ?, ?)`
+              ).bind(publicationId, matchedPostId, matchedVersionId, fbPost.id, createdAt, nowIso, nowIso, hash, hash,
+                fbPost.fullPicture || null, fbPost.fullPicture || null, fbPost.isHidden ? 1 : 0, nowIso, nowIso),
+              // Mark local post as published and synced
+              this.db.prepare(
+                `UPDATE posts SET status = 'published', sync_status = 'SYNCED', last_synced_at = ?, updated_at = ? WHERE id = ?`
+              ).bind(nowIso, nowIso, matchedPostId),
+              // Mark any pending schedules for this post as published
+              this.db.prepare(
+                `UPDATE schedules SET status = 'published', updated_at = ? WHERE post_id = ? AND status IN ('pending', 'publishing')`
+              ).bind(nowIso, matchedPostId),
+              // Mark linked content idea as published
+              ...(matchedLocal.idea_id ? [
+                this.db.prepare(
+                  `UPDATE content_ideas SET status = 'published', updated_at = ? WHERE id = ?`
+                ).bind(nowIso, matchedLocal.idea_id)
+              ] : [])
+            ]);
+
+            updated++;
+            continue;
+          }
 
           const postId = crypto.randomUUID();
           const versionId = crypto.randomUUID();

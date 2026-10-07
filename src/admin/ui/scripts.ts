@@ -2233,7 +2233,17 @@ export function getAdminScripts(): string {
             function isScheduledPost(p) {
               if (!p || isPublishedPost(p)) return false;
               const st = safeLower(p.status);
-              return st === 'scheduled' || Boolean(p.scheduled_at || p.scheduledAt || p.schedule_id);
+              // Must have an active schedule ID or scheduled timestamp, and cannot be published
+              return (st === 'scheduled' || Boolean(p.scheduled_at || p.scheduledAt || p.schedule_id));
+            }
+
+            function getEffectivePostStatus(p) {
+              if (!p) return 'DRAFT';
+              if (isPublishedPost(p)) return 'PUBLISHED';
+              if (isScheduledPost(p)) return 'SCHEDULED';
+              const rawSt = safeUpper(p.status, 'DRAFT');
+              if (rawSt === 'REJECTED' || rawSt === 'BLOCKED') return rawSt;
+              return rawSt === 'SCHEDULED' || rawSt === 'PUBLISHED' ? 'DRAFT' : rawSt;
             }
 
             const readyPosts = cachedPosts.filter(function(p) { return p && !isScheduledPost(p) && !isPublishedPost(p); });
@@ -2242,9 +2252,11 @@ export function getAdminScripts(): string {
 
             function renderPostRow(p) {
               if (!p) return '';
-              const statusStr = safeUpper(p.status, 'DRAFT');
+              const isPub = isPublishedPost(p);
+              const isSched = isScheduledPost(p);
+              const statusStr = getEffectivePostStatus(p);
               const syncStatus = safeUpper(p.sync_status, 'SYNCED');
-              let statusClass = statusStr === 'PUBLISHED' ? 'status-healthy' : statusStr === 'SCHEDULED' ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
+              let statusClass = isPub ? 'status-healthy' : isSched ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
               if (syncStatus === 'CONFLICT') {
                 statusClass = 'status-alert';
               } else if (syncStatus === 'LOCAL_AHEAD') {
@@ -2334,14 +2346,14 @@ export function getAdminScripts(): string {
                 <td style="width:160px; text-align:right;" onclick="event.stopPropagation()">
                   <div style="display:flex; gap:0.35rem; justify-content:flex-end; align-items:center;">
                     \${pIdeaId ? \`
-                      <button type="button" class="action-btn-icon" title="Regenerate post from idea" aria-label="Regenerate post" onclick="generatePostFromTopic('\${pIdeaId}')">
-                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                      </button>
-                      <button type="button" class="action-btn-icon" title="View linked research idea" aria-label="View idea" onclick="openTopicFromPost('\${pIdeaId}')">
-                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                      </button>
+                    <button type="button" class="action-btn-icon" title="Regenerate post from idea" aria-label="Regenerate post" onclick="generatePostFromTopic('\${pIdeaId}')">
+                      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    </button>
+                    <button type="button" class="action-btn-icon" title="View linked research idea" aria-label="View idea" onclick="openTopicFromPost('\${pIdeaId}')">
+                      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    </button>
                     \` : ''}
-                    \${statusStr !== 'PUBLISHED' ? \`
+                    \${!isPub ? \`
                       <button type="button" class="action-btn-icon action-btn-primary" title="Publish now to Facebook" aria-label="Publish Now" onclick="openInstantPublishModal('\${pId}')">
                         <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                       </button>
@@ -2362,7 +2374,7 @@ export function getAdminScripts(): string {
                 </td>
               </tr>
             \`;
-            };
+            }
 
             let bodyHtml = '';
             if (readyPosts.length > 0) {
@@ -2417,7 +2429,7 @@ export function getAdminScripts(): string {
         }
 
         const post = cachedPosts.find(item => item && item.id === postId);
-        if (post && (post.status === 'published' || post.facebook_post_id)) {
+        if (post && isPublishedPost(post)) {
           window.TaskQueue.stage(taskId, 'Syncing new image with Facebook Page...');
           const sync = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update-image', {
             method: 'POST', headers: { 'x-csrf-token': csrfToken }
@@ -4308,7 +4320,7 @@ export function getAdminScripts(): string {
         const regenBtn = document.getElementById('post-modal-regen-btn');
         const ideaBtn = document.getElementById('post-modal-idea-btn');
         
-        const isPublished = p.status === 'published' || Boolean(p.facebook_post_id);
+        const isPublished = isPublishedPost(p);
         if (pubBtn) pubBtn.style.display = isPublished ? 'none' : 'inline-flex';
         if (schedBtn) schedBtn.style.display = isPublished ? 'none' : 'inline-flex';
         if (regenBtn) regenBtn.style.display = p.idea_id ? 'inline-flex' : 'none';
@@ -4417,7 +4429,7 @@ export function getAdminScripts(): string {
           imageWasEdited = true;
         }
         const p = cachedPosts.find(item => item && item.id === id);
-        if (p && (p.status === 'published' || p.facebook_post_id)) {
+        if (p && isPublishedPost(p)) {
           // Push to Facebook immediately
           const fbRes = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update', {
             method: 'POST',
@@ -4436,7 +4448,7 @@ export function getAdminScripts(): string {
             }
           }
         }
-        if (imageWasEdited && p && (p.status === 'published' || p.facebook_post_id)) {
+        if (imageWasEdited && p && isPublishedPost(p)) {
           const imageSync = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(id) + '/update-image', {
             method: 'POST'
           });
@@ -4645,7 +4657,7 @@ export function getAdminScripts(): string {
     function openSchedulePostModal(postId) {
       if (postId) {
         const p = cachedPosts.find(item => item && item.id === postId);
-        if (p && (p.status === 'published' || p.status === 'publishing')) {
+        if (p && isPublishedPost(p)) {
           openEditPostModal(postId);
           return;
         }
@@ -4668,7 +4680,7 @@ export function getAdminScripts(): string {
       if (timeInput) timeInput.value = '10:00';
 
       if (selectEl) {
-        selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.filter(p => p && p.status !== 'published' && p.status !== 'publishing').map(p => {
+        selectEl.innerHTML = '<option value="">-- Select draft --</option>' + cachedPosts.filter(p => p && !isPublishedPost(p)).map(p => {
           if (!p) return '';
           const selectedAttr = (postId && p.id === postId) ? 'selected' : '';
           const preview = safeStr(p.latest_body || p.body || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);

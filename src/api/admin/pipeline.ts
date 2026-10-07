@@ -219,10 +219,14 @@ pipelineRouter.get('/schedules', async (c) => {
               p.title as post_title, p.status as post_status, p.idea_id, p.quality_score, p.quality_decision, p.current_version,
               pv.content as post_body, ci.title as topic_title, ci.source_title, ci.source_url,
               pi.url as image_url, pi.curated_image_id, pi.visual_verification_status as image_status,
-              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
-              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as published_at,
+              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
+              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL ORDER BY pub.created_at DESC LIMIT 1) as published_at,
               (SELECT pub.error_code FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'failed' ORDER BY pub.created_at DESC LIMIT 1) as error_code,
-              (SELECT pub.error_message FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'failed' ORDER BY pub.created_at DESC LIMIT 1) as error_message
+              (SELECT pub.error_message FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'failed' ORDER BY pub.created_at DESC LIMIT 1) as error_message,
+              CASE
+                WHEN EXISTS (SELECT 1 FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL) THEN 'published'
+                ELSE s.status
+              END as effective_schedule_status
        FROM schedules s
        JOIN posts p ON s.post_id = p.id
        LEFT JOIN content_ideas ci ON ci.id = p.idea_id
@@ -246,7 +250,16 @@ pipelineRouter.get('/schedules', async (c) => {
     )
     .all();
 
+  const schedules = ((schedulesRes.results || []) as Array<Record<string, unknown>>).map((s) => {
+    const isLiveOnFb = Boolean(s.facebook_post_id || s.published_at);
+    return {
+      ...s,
+      status: isLiveOnFb ? 'published' : s.status,
+      post_status: isLiveOnFb ? 'published' : s.post_status,
+    };
+  });
+
   return c.json({
-    schedules: schedulesRes.results || [],
+    schedules,
   });
 });

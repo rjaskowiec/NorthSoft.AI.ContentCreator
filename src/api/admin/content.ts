@@ -72,11 +72,18 @@ contentRouter.get('/content/posts', async (c) => {
               pi.url as image_url, pi.source_url as image_source_url, pi.source_id, pi.author, pi.author_url, pi.license, pi.license_url,
               pi.alt_text, pi.verification_status, pi.visual_verification_status, pi.visual_verification_reason,
               pi.selection_source, pi.curated_image_id,
-              (SELECT s.id FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as schedule_id,
-              (SELECT s.scheduled_at FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as scheduled_at,
-              (SELECT s.status FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') ORDER BY s.scheduled_at DESC LIMIT 1) as schedule_status,
-              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
-              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' ORDER BY pub.created_at DESC LIMIT 1) as published_at
+              (SELECT s.id FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now') ORDER BY s.scheduled_at ASC LIMIT 1) as schedule_id,
+              (SELECT s.scheduled_at FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now') ORDER BY s.scheduled_at ASC LIMIT 1) as scheduled_at,
+              (SELECT s.status FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now') ORDER BY s.scheduled_at ASC LIMIT 1) as schedule_status,
+              (SELECT pub.facebook_post_id FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL ORDER BY pub.created_at DESC LIMIT 1) as facebook_post_id,
+              (SELECT pub.published_at FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL ORDER BY pub.created_at DESC LIMIT 1) as published_at,
+              CASE
+                WHEN EXISTS (SELECT 1 FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL) THEN 'published'
+                WHEN EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now')) THEN 'scheduled'
+                WHEN p.quality_decision IN ('BLOCKED', 'REJECTED') OR p.status IN ('rejected', 'blocked') THEN 'rejected'
+                WHEN p.status = 'published' THEN 'published'
+                ELSE 'draft'
+              END as effective_status
        FROM posts p
        LEFT JOIN content_ideas ci ON ci.id = p.idea_id
        LEFT JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
@@ -106,8 +113,17 @@ contentRouter.get('/content/posts', async (c) => {
       throw err;
     });
 
+  const posts = ((postsRes.results || []) as Array<Record<string, unknown>>).map((post) => {
+    // Reconcile post.status with dynamic effective_status ground truth
+    const effStatus = typeof post.effective_status === 'string' ? post.effective_status : (post.status as string);
+    return {
+      ...post,
+      status: effStatus,
+    };
+  });
+
   return c.json({
-    posts: postsRes.results || [],
+    posts,
   });
 });
 

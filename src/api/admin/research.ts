@@ -38,10 +38,14 @@ researchRouter.get('/research', async (c) => {
                 source_title, source_url, relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at,
                 (SELECT COUNT(*) FROM posts p WHERE p.idea_id = content_ideas.id) AS post_count,
                 (SELECT p.id FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_id,
-                (SELECT p.status FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_status,
+                (SELECT CASE
+                  WHEN EXISTS (SELECT 1 FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL) THEN 'published'
+                  WHEN EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now')) THEN 'scheduled'
+                  ELSE p.status
+                END FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_status,
                 (SELECT pi.visual_verification_status FROM posts p JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_image_status,
-                (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at DESC LIMIT 1) AS latest_scheduled_at,
-                (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
+                (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at ASC LIMIT 1) AS latest_scheduled_at,
+                (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
          FROM content_ideas
          ORDER BY created_at DESC LIMIT 100`,
       )
@@ -65,10 +69,14 @@ researchRouter.get('/research', async (c) => {
               source_title, source_url, relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at,
               (SELECT COUNT(*) FROM posts p WHERE p.idea_id = content_ideas.id) AS post_count,
               (SELECT p.id FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_id,
-              (SELECT p.status FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_status,
+              (SELECT CASE
+                WHEN EXISTS (SELECT 1 FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL) THEN 'published'
+                WHEN EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now')) THEN 'scheduled'
+                ELSE p.status
+              END FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_status,
               (SELECT pi.visual_verification_status FROM posts p JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_image_status,
-              (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at DESC LIMIT 1) AS latest_scheduled_at,
-              (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
+              (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing') AND datetime(s.scheduled_at) > datetime('now') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at ASC LIMIT 1) AS latest_scheduled_at,
+              (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
        FROM content_ideas WHERE id = ?`,
       )
       .bind(requestedTopicId)
@@ -76,10 +84,19 @@ researchRouter.get('/research', async (c) => {
     if (requestedTopic) topics.push(requestedTopic);
   }
 
-  // Dynamic status computation: if a topic has 0 linked posts, its effective status is 'queued'
+  // Dynamic status computation: ground truth reconciliation
   topics = topics.map((topic) => {
     const postCount = Number(topic.post_count || 0);
     const rawStatus = String(topic.status || 'queued').toLowerCase();
+    const hasLivePub = Boolean(topic.latest_published_at);
+    const hasActiveSched = Boolean(topic.latest_scheduled_at);
+
+    if (hasLivePub) {
+      return { ...topic, status: 'published' };
+    }
+    if (hasActiveSched) {
+      return { ...topic, status: 'scheduled' };
+    }
     if (
       postCount === 0 &&
       ['post_generated', 'used', 'scheduled', 'published'].includes(rawStatus)
