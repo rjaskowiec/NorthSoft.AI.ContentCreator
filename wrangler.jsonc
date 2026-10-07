@@ -76,6 +76,9 @@
     },
     "production": {
       "name": "northsoft-ai-contentcreator",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
       "routes": [
         {
           "pattern": "ai.northsoft.is",

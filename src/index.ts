@@ -129,9 +129,15 @@ export default {
     const mailClient = new NorthSoftMailGatewayClient(env);
     const pubService = new PublicationService(env.DB, publisher, new D1AuditLogger(env.DB), mailClient, env.IMAGE_BUCKET);
 
-    const tasks: Array<[string, () => Promise<unknown>]> = [
-      // Publishing first: it is time-critical and must not depend on the AI pipeline.
-      ['publishScheduledDuePosts', () => pubService.publishScheduledDuePosts()],
+    // 1. Time-critical: Process scheduled due posts first with isolated error boundary
+    try {
+      await pubService.publishScheduledDuePosts();
+    } catch (err: unknown) {
+      console.error('[cron] Critical scheduled publishing task failed:', err);
+    }
+
+    // 2. Background maintenance and discovery tasks (run concurrently via waitUntil)
+    const backgroundTasks: Array<[string, () => Promise<unknown>]> = [
       ['syncFacebookPostsToSystem', () => pubService.syncFacebookPostsToSystem()],
       ['runPipeline', () => orchestrator.runPipeline('cron')],
       ['sendWeeklyDigest', () => NotificationService.sendWeeklyDigest(env.DB, mailClient)],
@@ -139,10 +145,10 @@ export default {
     ];
 
     ctx.waitUntil(
-      Promise.allSettled(tasks.map(([, run]) => run())).then((results) => {
+      Promise.allSettled(backgroundTasks.map(([, run]) => run())).then((results) => {
         results.forEach((r, i) => {
           if (r.status === 'rejected') {
-            console.error(`[cron] ${tasks[i]?.[0] ?? 'task'} failed:`, r.reason);
+            console.error(`[cron] ${backgroundTasks[i]?.[0] ?? 'task'} failed:`, r.reason);
           }
         });
       }),

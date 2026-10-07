@@ -189,8 +189,9 @@ export class PublicationService {
   /**
    * Recovers stale publication locks ('publishing' status older than threshold minutes).
    * Prevents crashed Worker instances from permanently blocking future publication attempts.
+   * Default threshold is 5 minutes (matching the 5-minute cron frequency).
    */
-  public async recoverStaleLocks(thresholdMinutes = 15): Promise<number> {
+  public async recoverStaleLocks(thresholdMinutes = 5): Promise<number> {
     try {
       // 1. Recover stale schedule locks in 'publishing' status older than threshold minutes
       await this.db
@@ -978,6 +979,11 @@ export class PublicationService {
 
         if (result.success) {
           succeeded++;
+          await this.db
+            .prepare(`UPDATE schedules SET status = 'published', updated_at = datetime('now') WHERE id = ? AND status = 'publishing'`)
+            .bind(item.schedule_id)
+            .run()
+            .catch(() => {});
         } else {
           failed++;
           if (!result.retryable) {
@@ -1047,9 +1053,17 @@ export class PublicationService {
           },
         });
         await this.db
-          .prepare(`UPDATE schedules SET status = 'failed', updated_at = datetime('now') WHERE id = ?`)
+          .prepare(`UPDATE schedules SET status = 'pending', updated_at = datetime('now') WHERE id = ?`)
           .bind(item.schedule_id)
-          .run();
+          .run()
+          .catch(() => {});
+      } finally {
+        // Ultimate invariant: Ensure schedule NEVER remains trapped in 'publishing' state
+        await this.db
+          .prepare(`UPDATE schedules SET status = 'pending', updated_at = datetime('now') WHERE id = ? AND status = 'publishing'`)
+          .bind(item.schedule_id)
+          .run()
+          .catch(() => {});
       }
     }
 

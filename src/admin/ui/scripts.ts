@@ -2540,6 +2540,7 @@ export function getAdminScripts(): string {
                   '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                   '<td>' + statusHtml + '</td>' +
                   '<td>' +
+                    '<button class="btn-primary" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-right:0.25rem;" onclick="publishNow(&quot;' + postIdStr + '&quot;)">Publish Now</button>' +
                     '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">Edit</button>' +
                     '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
                   '</td>' +
@@ -3013,6 +3014,8 @@ export function getAdminScripts(): string {
         window.TaskQueue.fail(taskId, 'Connection Error', 'Could not reach Facebook API.');
       } finally {
         loadFacebookPublications(false);
+        loadSchedulesData();
+        loadContentData();
       }
     }
 
@@ -3041,6 +3044,8 @@ export function getAdminScripts(): string {
         window.TaskQueue.fail(taskId, 'Connection Error', 'Could not reach Facebook API.');
       } finally {
         loadFacebookPublications(false);
+        loadSchedulesData();
+        loadContentData();
       }
     }
 
