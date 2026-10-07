@@ -2059,6 +2059,10 @@ export function getAdminScripts(): string {
                 ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle || 'Source article') + '</a>'
                 : escapeHtml(sourceTitle);
 
+              const deleteBtnHtml = hasPost
+                ? '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem; opacity:0.4; cursor:not-allowed;" title="Cannot delete topic linked to an existing post" disabled>Delete</button>'
+                : '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic(&quot;' + id + '&quot;)">Delete</button>';
+
               return '<tr data-id="' + id + '" id="topic-row-' + id + '">' +
                 '<td style="text-align:center;">' +
                   '<input type="checkbox" class="topic-select-checkbox" data-id="' + id + '" ' + isChecked + ' onchange="updateTopicSelectionState()" />' +
@@ -2074,7 +2078,7 @@ export function getAdminScripts(): string {
                   '<div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">' +
                     '<button class="btn-primary" title="' + (hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic') + '" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic(&quot;' + id + '&quot;)">' + (hasPost ? 'Regenerate post' : 'Generate post') + '</button>' +
                     '<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditTopicModal(&quot;' + id + '&quot;)">Edit</button>' +
-                    '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic(&quot;' + id + '&quot;)">Delete</button>' +
+                    deleteBtnHtml +
                   '</div>' +
                 '</td>' +
               '</tr>';
@@ -2232,9 +2236,14 @@ export function getAdminScripts(): string {
 
             function isScheduledPost(p) {
               if (!p || isPublishedPost(p)) return false;
-              const st = safeLower(p.status);
-              // Must have an active schedule ID or scheduled timestamp, and cannot be published
-              return (st === 'scheduled' || Boolean(p.scheduled_at || p.scheduledAt || p.schedule_id));
+              const schedTime = p.scheduled_at || p.scheduledAt;
+              const hasValidFutureSched = Boolean(
+                (p.schedule_id || schedTime) &&
+                schedTime &&
+                !isNaN(new Date(schedTime).getTime()) &&
+                new Date(schedTime).getTime() > Date.now()
+              );
+              return hasValidFutureSched;
             }
 
             function getEffectivePostStatus(p) {
@@ -4052,6 +4061,15 @@ export function getAdminScripts(): string {
 
     function confirmDeleteSelectedTopics() {
       if (selectedTopicIds.size === 0) return;
+      const linkedTopics = Array.from(selectedTopicIds)
+        .map(id => cachedTopics.find(item => item && item.id === id))
+        .filter(t => t && Number(t.post_count || 0) > 0);
+
+      if (linkedTopics.length > 0) {
+        alert('Cannot delete selected topics: ' + linkedTopics.length + ' topic(s) have linked post drafts. To protect post history, unlink or delete the posts first.');
+        return;
+      }
+
       pendingDeleteType = 'topics_bulk';
       pendingDeleteId = null;
       const title = document.getElementById('delete-confirm-title');
@@ -4136,9 +4154,13 @@ export function getAdminScripts(): string {
     }
 
     function confirmDeleteTopic(id) {
+      const t = cachedTopics.find(item => item && item.id === id);
+      if (t && Number(t.post_count || 0) > 0) {
+        alert('Cannot delete idea: this topic has linked post drafts. To protect post data, delete or unlink the posts first.');
+        return;
+      }
       pendingDeleteType = 'topic';
       pendingDeleteId = id;
-      const t = cachedTopics.find(item => item && item.id === id);
       const title = document.getElementById('delete-confirm-title');
       const msg = document.getElementById('delete-confirm-message');
       const itemLabel = safeStr(t?.description || t?.title, id);
@@ -5241,6 +5263,9 @@ export function getAdminScripts(): string {
           });
           if (res.ok) {
             loadResearchData();
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.error || 'Failed to delete topic.');
           }
         } else if (type === 'topics_bulk' && selectedTopicIds.size > 0) {
           const res = await fetch('/api/admin/research/topics/bulk-delete', {
@@ -5251,6 +5276,9 @@ export function getAdminScripts(): string {
           if (res.ok) {
             selectedTopicIds.clear();
             loadResearchData();
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.error || 'Failed to delete selected topics.');
           }
         } else if (type === 'post' && id) {
           const res = await fetch('/api/admin/content/posts/' + encodeURIComponent(id), {

@@ -282,10 +282,32 @@ researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) 
     return c.json({ success: false, error: 'Missing required field: ids (non-empty array)' }, 400);
   }
 
+  const placeholders = ids.map(() => '?').join(',');
+  let linkedCount = 0;
   try {
-    const placeholders = ids.map(() => '?').join(',');
+    const stmt = db.prepare(`SELECT COUNT(*) as count FROM posts WHERE idea_id IN (${placeholders})`);
+    const bound = stmt && typeof stmt.bind === 'function' ? stmt.bind(...ids) : null;
+    if (bound && typeof bound.first === 'function') {
+      const res = await bound.first<{ count: number }>();
+      linkedCount = Number(res?.count || 0);
+    }
+  } catch {
+    linkedCount = 0;
+  }
+
+  if (linkedCount > 0) {
+    return c.json(
+      {
+        success: false,
+        error: `Cannot delete selected topics: ${linkedCount} linked post draft(s) exist. Topics linked to posts are preserved to protect post metadata.`,
+      },
+      409,
+    );
+  }
+
+  try {
+
     await db.batch([
-      db.prepare(`UPDATE posts SET idea_id = NULL WHERE idea_id IN (${placeholders})`).bind(...ids),
       db
         .prepare(`DELETE FROM content_topic_history WHERE idea_id IN (${placeholders})`)
         .bind(...ids),
@@ -385,14 +407,36 @@ researchRouter.delete('/research/topics/:id', csrfProtection, async (c) => {
     return c.json({ success: false, error: 'Invalid topic ID' }, 400);
   }
 
-  try {
-    await db.batch([
-      db.prepare('UPDATE posts SET idea_id = NULL WHERE idea_id = ?').bind(id),
-      db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id),
-      db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id),
-    ]);
-    return c.json({ success: true, id });
-  } catch (err: unknown) {
+    let linkedCount = 0;
+    try {
+      const stmt = db.prepare('SELECT COUNT(*) as count FROM posts WHERE idea_id = ?');
+      const bound = stmt && typeof stmt.bind === 'function' ? stmt.bind(id) : null;
+      if (bound && typeof bound.first === 'function') {
+        const res = await bound.first<{ count: number }>();
+        linkedCount = Number(res?.count || 0);
+      }
+    } catch {
+      linkedCount = 0;
+    }
+
+    if (linkedCount > 0) {
+      return c.json(
+        {
+          success: false,
+          error: `Cannot delete topic: ${linkedCount} linked post draft(s) exist. Topics linked to posts are preserved to protect post metadata.`,
+        },
+        409,
+      );
+    }
+
+    try {
+      await db.batch([
+        db.prepare('DELETE FROM content_topic_history WHERE idea_id = ?').bind(id),
+        db.prepare('DELETE FROM content_ideas WHERE id = ?').bind(id),
+      ]);
+      return c.json({ success: true, id });
+    } catch (err: unknown) {
+    console.error('DELETE /research/topics/:id ERROR:', err);
     const errorLogger = new D1AuditLogger(db);
     await errorLogger
       .log({

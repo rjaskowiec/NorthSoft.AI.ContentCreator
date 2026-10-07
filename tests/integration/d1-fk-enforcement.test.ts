@@ -49,6 +49,14 @@ export function createMockDbWithFkEnforcement() {
           const id = boundArgs[0] as string;
           return (postsMap.get(id) || null) as unknown as T;
         }
+        if (normSql.includes('SELECT COUNT(*) as count FROM posts WHERE idea_id')) {
+          const ids = boundArgs as string[];
+          let count = 0;
+          for (const post of postsMap.values()) {
+            if (ids.includes(post.idea_id as string)) count++;
+          }
+          return { count } as unknown as T;
+        }
         return null as unknown as T;
       },
       all: async <T = Record<string, unknown>>() => {
@@ -225,13 +233,14 @@ describe('D1 Strict Foreign Key Enforcement & Atomic Deletion Integration Suite'
       headers: authHeaders,
     }, mockEnv);
 
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as { success: boolean };
-    expect(data.success).toBe(true);
+    expect(res.status).toBe(409);
+    const data = (await res.json()) as { success: boolean; error: string };
+    expect(data.success).toBe(false);
+    expect(data.error).toContain('linked post draft(s) exist');
 
-    expect(mockDb.topicsMap.has(topicId)).toBe(false);
-    expect(mockDb.postsMap.get('post-fk-1')?.idea_id).toBeNull();
-    expect(mockDb.topicHistoryMap.has('hist-fk-1')).toBe(false);
+    // Topic and its linked post must remain intact
+    expect(mockDb.topicsMap.has(topicId)).toBe(true);
+    expect(mockDb.postsMap.get('post-fk-1')?.idea_id).toBe(topicId);
   });
 
   it('2. bulk topic delete with active FK dependencies across multiple topics', async () => {
@@ -251,15 +260,14 @@ describe('D1 Strict Foreign Key Enforcement & Atomic Deletion Integration Suite'
       body: JSON.stringify({ ids: ['t1', 't2'] }),
     }, mockEnv);
 
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as { success: boolean; count: number };
-    expect(data.success).toBe(true);
-    expect(data.count).toBe(2);
+    expect(res.status).toBe(409);
+    const data = (await res.json()) as { success: boolean; error: string };
+    expect(data.success).toBe(false);
+    expect(data.error).toContain('linked post draft(s) exist');
 
-    expect(mockDb.topicsMap.size).toBe(0);
-    expect(mockDb.postsMap.get('p1')?.idea_id).toBeNull();
-    expect(mockDb.postsMap.get('p2')?.idea_id).toBeNull();
-    expect(mockDb.topicHistoryMap.size).toBe(0);
+    expect(mockDb.topicsMap.size).toBe(2);
+    expect(mockDb.postsMap.get('p1')?.idea_id).toBe('t1');
+    expect(mockDb.postsMap.get('p2')?.idea_id).toBe('t2');
   });
 
   it('3. single post delete with all child FK dependencies (versions, quality checks, schedules, publications)', async () => {
@@ -370,18 +378,20 @@ describe('D1 Strict Foreign Key Enforcement & Atomic Deletion Integration Suite'
     mockDb.postVersionsMap.set('v-orphan-1', { id: 'v-orphan-1', post_id: 'p-orphan-1' });
     mockDb.topicHistoryMap.set('h-orphan-1', { id: 'h-orphan-1', idea_id: 't-orphan-1', post_id: 'p-orphan-1' });
 
-    // Bulk delete topic first, then bulk delete post
-    await app.request('/api/admin/research/topics/bulk-delete', {
-      method: 'DELETE',
-      headers: authHeaders,
-      body: JSON.stringify({ ids: ['t-orphan-1'] }),
-    }, mockEnv);
-
-    await app.request('/api/admin/content/posts/bulk-delete', {
+    // Correct order: Bulk delete posts first, then bulk delete topic
+    const postDelRes = await app.request('/api/admin/content/posts/bulk-delete', {
       method: 'DELETE',
       headers: authHeaders,
       body: JSON.stringify({ ids: ['p-orphan-1'] }),
     }, mockEnv);
+    expect(postDelRes.status).toBe(200);
+
+    const topicDelRes = await app.request('/api/admin/research/topics/bulk-delete', {
+      method: 'DELETE',
+      headers: authHeaders,
+      body: JSON.stringify({ ids: ['t-orphan-1'] }),
+    }, mockEnv);
+    expect(topicDelRes.status).toBe(200);
 
     expect(mockDb.topicsMap.size).toBe(0);
     expect(mockDb.postsMap.size).toBe(0);
