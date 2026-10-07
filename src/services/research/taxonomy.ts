@@ -217,7 +217,7 @@ export const TOPIC_CLUSTERS: Record<TopicClusterKey, TopicClusterInfo> = {
     id: 'local_seo_maps',
     name: 'Local SEO & Google Business Profile',
     pillar: 'MARKETING',
-    family: 'search_discovery',
+    family: 'local_market_dynamics',
     description: 'Google Maps rankings, local pack, opening hours, local citations.',
     keywords: [
       'google maps',

@@ -202,10 +202,14 @@ describe('Content Taxonomy & Relevance Model', () => {
 
     it('identifies neighbor clusters within the same semantic family', async () => {
       const { getNeighborClusters } = await import('../../src/services/research/taxonomy');
-      const neighbors = getNeighborClusters('ai_search_visibility');
-      expect(neighbors).toContain('aeo_answer_engines');
-      expect(neighbors).toContain('local_seo_maps');
-      expect(neighbors).not.toContain('website_speed_conversion');
+      const aiNeighbors = getNeighborClusters('ai_search_visibility');
+      expect(aiNeighbors).toContain('aeo_answer_engines');
+      expect(aiNeighbors).not.toContain('local_seo_maps'); // local_seo_maps is in local_market_dynamics
+
+      const localNeighbors = getNeighborClusters('local_seo_maps');
+      expect(localNeighbors).toContain('seasonal_demand_shifts');
+      expect(localNeighbors).toContain('local_service_booking');
+      expect(localNeighbors).not.toContain('ai_search_visibility');
     });
   });
 });

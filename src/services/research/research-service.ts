@@ -24,6 +24,7 @@ import {
   MAX_CANDIDATES_PER_PILLAR,
   type SelectableCandidate,
   type ContentPillar,
+  type TopicClusterKey,
 } from './taxonomy';
 import { TopicRegistry } from './topic-registry';
 
@@ -359,6 +360,9 @@ export class ResearchService {
         }
       }
 
+      const topicRegistry = new TopicRegistry(this.db);
+      const history = await topicRegistry.getRecentTopicHistory(21);
+
       // Editorial Seeds Layer:
       // If fresh RSS items are scarce (or zero), inject evergreen editorial seeds
       // representing fundamental small-business client problems for NorthSoft.
@@ -386,6 +390,15 @@ export class ResearchService {
 
           const seeds = seedsRes.results || [];
           for (const seed of seeds) {
+            // Check cluster cooldown on seed before injecting
+            const clusterCheck = TopicRegistry.isClusterInCooldown(
+              seed.cluster_key as TopicClusterKey,
+              history,
+            );
+            if (clusterCheck.inCooldown) {
+              continue;
+            }
+
             candidateItems.push({
               id: `seed-${seed.id}`,
               source_id: 'editorial_seeds',
@@ -434,8 +447,6 @@ export class ResearchService {
         MAX_CANDIDATES_PER_PILLAR,
       );
 
-      const topicRegistry = new TopicRegistry(this.db);
-      const history = await topicRegistry.getRecentTopicHistory(21);
       potentialAnglesDiscovered = selectedCandidates.length;
 
       // Step 4: Execute Workers AI completion to extract social post angles for selected candidate sources
