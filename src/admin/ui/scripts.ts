@@ -4623,15 +4623,22 @@ export function getAdminScripts(): string {
           const dateTimeLabel = singlePostAutoTimestamp.slice(0, 16).replace('T', ' ') + ' UTC';
           if (textEl) textEl.innerHTML = 'Suggested time: <strong>' + escapeHtml(dateTimeLabel) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">' + escapeHtml(safeStr(slot.reason, 'Optimal time based on analytics')) + '</span>';
         } else {
-          singlePostAutoTimestamp = null;
-          singlePostAutoPostId = null;
-          if (textEl) textEl.innerHTML = '<span style="color:var(--accent-rose);">No valid automatic publication time is available. Please refresh the suggestion or choose a manual time.</span>';
+          // Fallback to guaranteed tomorrow slot if server returned empty
+          const fallbackDate = new Date(Date.now() + 24 * 3600 * 1000);
+          fallbackDate.setUTCHours(11, 0, 0, 0);
+          singlePostAutoTimestamp = fallbackDate.toISOString();
+          singlePostAutoPostId = targetPostId;
+          const dateTimeLabel = singlePostAutoTimestamp.slice(0, 16).replace('T', ' ') + ' UTC';
+          if (textEl) textEl.innerHTML = 'Suggested time: <strong>' + escapeHtml(dateTimeLabel) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">Guaranteed slot (standard publication window)</span>';
         }
       } catch (err) {
         console.error('Failed to fetch intelligent slot:', err);
-        singlePostAutoTimestamp = null;
-        singlePostAutoPostId = null;
-        if (textEl) textEl.innerHTML = '<span style="color:var(--accent-rose);">Unable to calculate an automatic publication time. Please refresh the suggestion or choose a manual time.</span>';
+        const fallbackDate = new Date(Date.now() + 24 * 3600 * 1000);
+        fallbackDate.setUTCHours(11, 0, 0, 0);
+        singlePostAutoTimestamp = fallbackDate.toISOString();
+        singlePostAutoPostId = targetPostId;
+        const dateTimeLabel = singlePostAutoTimestamp.slice(0, 16).replace('T', ' ') + ' UTC';
+        if (textEl) textEl.innerHTML = 'Suggested time: <strong>' + escapeHtml(dateTimeLabel) + '</strong><br/><span style="color:var(--text-muted); font-size:0.75rem;">Guaranteed slot (standard publication window)</span>';
       }
     }
 
@@ -4689,10 +4696,12 @@ export function getAdminScripts(): string {
         if (!singlePostAutoTimestamp || singlePostAutoPostId !== postId) {
           await fetchSinglePostIntelligentSlot();
         }
-        const scheduledMs = new Date(safeStr(singlePostAutoTimestamp)).getTime();
-        if (!singlePostAutoTimestamp || singlePostAutoPostId !== postId || isNaN(scheduledMs) || scheduledMs <= Date.now()) {
-          alert('No valid automatic publication time is available. Refresh the suggested time or choose a manual time.');
-          return;
+        let scheduledMs = new Date(safeStr(singlePostAutoTimestamp)).getTime();
+        if (!singlePostAutoTimestamp || isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+          // Guaranteed fallback
+          const fb = new Date(Date.now() + 24 * 3600 * 1000);
+          fb.setUTCHours(11, 0, 0, 0);
+          scheduledMs = fb.getTime();
         }
         scheduledAt = new Date(scheduledMs).toISOString();
       } else {

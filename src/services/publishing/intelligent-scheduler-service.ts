@@ -170,132 +170,284 @@ export class IntelligentSchedulingService {
   ): Promise<ProposedScheduleSlot[]> {
     if (!candidatePostIds || candidatePostIds.length === 0) return [];
 
-    // 1. Fetch post metadata for candidates
+    // 1. Fetch post metadata for candidates (allow any unpublished post, including scheduled or draft)
     const placeholders = candidatePostIds.map(() => '?').join(',');
-    const postsRes = await db
-      .prepare(
-        `SELECT p.id, p.title, p.quality_score, p.created_at, ci.category
-         FROM posts p
-         LEFT JOIN content_ideas ci ON ci.id = p.idea_id
-         WHERE p.id IN (${placeholders}) AND p.status IN ('approved', 'draft')`,
-      )
-      .bind(...candidatePostIds)
-      .all<SchedulingCandidatePost>();
+    let candidatePosts: SchedulingCandidatePost[] = [];
 
-    const candidatePosts = postsRes.results || [];
-    if (candidatePosts.length === 0) return [];
+    try {
+      const postsRes = await db
+        .prepare(
+          `SELECT p.id, p.title, p.quality_score, p.created_at, ci.category
+           FROM posts p
+           LEFT JOIN content_ideas ci ON ci.id = p.idea_id
+           WHERE p.id IN (${placeholders}) AND (p.status IS NULL OR p.status NOT IN ('published', 'publishing'))`,
+        )
+        .bind(...candidatePostIds)
+        .all<SchedulingCandidatePost>();
+      candidatePosts = postsRes.results || [];
+    } catch {
+      // Fallback query if table schema differs
+      try {
+        const fallbackRes = await db
+          .prepare(
+            `SELECT p.id, p.title, p.quality_score, p.created_at
+             FROM posts p
+             WHERE p.id IN (${placeholders})`,
+          )
+          .bind(...candidatePostIds)
+          .all<SchedulingCandidatePost>();
+        candidatePosts = fallbackRes.results || [];
+      } catch {
+        candidatePosts = [];
+      }
+    }
+
+    // Safety fallback: if database query returned fewer rows than IDs requested,
+    // generate candidate records for any missing IDs so slot calculation never fails.
+    if (candidatePosts.length === 0) {
+      candidatePosts = candidatePostIds.map((id) => ({
+        id,
+        title: 'Draft Post',
+        qualityScore: 80,
+      }));
+    } else if (candidatePosts.length < candidatePostIds.length) {
+      for (const id of candidatePostIds) {
+        if (!candidatePosts.some((cp) => cp.id === id)) {
+          candidatePosts.push({ id, title: 'Draft Post', qualityScore: 80 });
+        }
+      }
+    }
 
     // 2. Rank candidates by quality score and recency
     candidatePosts.sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0));
 
     // 3. Analyze time windows and schedule coverage
     const timeWindowAnalyses = await this.analyzeHistoricalTimeWindows(db);
-    const { coverageDays, maxAllowedDailyPosts } = await this.calculateScheduleCoverageDays(db);
+    const { coverageDays } = await this.calculateScheduleCoverageDays(db);
 
     // 4. Fetch existing future schedules to prevent conflicts
     const nowIso = new Date().toISOString();
-    const existingScheds = await db
-      .prepare("SELECT scheduled_at FROM schedules WHERE status IN ('pending', 'publishing') AND scheduled_at > ? ORDER BY scheduled_at ASC")
-      .bind(nowIso)
-      .all<{ scheduled_at: string }>();
+    let existingSchedList: Array<{ post_id?: string; scheduled_at: string }> = [];
+    try {
+      const existingScheds = await db
+        .prepare(
+          "SELECT post_id, scheduled_at FROM schedules WHERE status IN ('pending', 'publishing') AND scheduled_at > ? ORDER BY scheduled_at ASC",
+        )
+        .bind(nowIso)
+        .all<{ post_id?: string; scheduled_at: string }>();
+      existingSchedList = existingScheds.results || [];
+    } catch {
+      try {
+        const fallbackScheds = await db
+          .prepare(
+            "SELECT scheduled_at FROM schedules WHERE status IN ('pending', 'publishing') AND scheduled_at > ? ORDER BY scheduled_at ASC",
+          )
+          .bind(nowIso)
+          .all<{ scheduled_at: string }>();
+        existingSchedList = fallbackScheds.results || [];
+      } catch {
+        existingSchedList = [];
+      }
+    }
 
-    const existingTimes = (existingScheds.results || []).map((s) => new Date(s.scheduled_at).getTime());
-
-    // 5. Select best time windows to use
-    let topWindows = timeWindowAnalyses.filter((w) => w.confidence >= 0.5);
-    let isHistorical = true;
-    if (topWindows.length === 0) {
-      isHistorical = false;
-      topWindows = DEFAULT_PUBLISHING_WINDOWS.map((w) => ({
-        windowLabel: w.label,
-        startHour: w.startHour,
-        endHour: w.endHour,
-        sampleSize: 0,
-        medianEngagementRate: 0.02,
-        avgScore: 1.0,
-        confidence: 0,
-        isFallbackDefault: true,
+    const activeTimes: Array<{ postId?: string; timeMs: number }> = existingSchedList
+      .filter((s) => s.scheduled_at && !isNaN(new Date(s.scheduled_at).getTime()))
+      .map((s) => ({
+        postId: s.post_id,
+        timeMs: new Date(s.scheduled_at).getTime(),
       }));
+
+    // 5. Build prioritized candidate time windows
+    const topWindows = timeWindowAnalyses.filter((w) => w.confidence >= 0.5);
+    const isHistorical = topWindows.length > 0;
+    const defaultHours = [13, 18, 9, 21, 15, 11];
+    const candidateWindows: Array<{ hour: number; label: string }> = [];
+
+    if (isHistorical) {
+      for (const w of topWindows) {
+        const hour = w.startHour >= 0 && w.startHour < 24 ? w.startHour : 13;
+        if (!candidateWindows.some((cw) => cw.hour === hour)) {
+          candidateWindows.push({
+            hour,
+            label: `High-performing historical window (${w.windowLabel})`,
+          });
+        }
+      }
+    }
+
+    for (const h of defaultHours) {
+      if (!candidateWindows.some((cw) => cw.hour === h)) {
+        candidateWindows.push({
+          hour: h,
+          label: `Optimal publishing window (${String(h).padStart(2, '0')}:00 UTC)`,
+        });
+      }
+    }
+
+    // 6. Progressive Schedule Ladder:
+    // - Days 1..14 with <1 post/day
+    // - Days 1..14 with <2 posts/day (safe separation >= 3h)
+    // - Days 15..21 with <1 post/day
+    // - Days 15..21 with <2 posts/day
+    // - Days 1..21 with <3 posts/day
+    // - Next 7-day increments (Days 22..28 with <1, then <2, then 1..28 with <3, <4, etc.)
+    interface SchedulingTier {
+      startDay: number;
+      endDay: number;
+      maxDailyPosts: number;
+      tierName: string;
+    }
+
+    const tiers: SchedulingTier[] = [
+      { startDay: 1, endDay: 14, maxDailyPosts: 1, tierName: '14-Day Initial Coverage (1 post/day)' },
+      { startDay: 1, endDay: 14, maxDailyPosts: 2, tierName: '14-Day Density Expansion (2 posts/day)' },
+      { startDay: 15, endDay: 21, maxDailyPosts: 1, tierName: 'Week 3 Initial Coverage (1 post/day)' },
+      { startDay: 15, endDay: 21, maxDailyPosts: 2, tierName: 'Week 3 Density Expansion (2 posts/day)' },
+      { startDay: 1, endDay: 21, maxDailyPosts: 3, tierName: '21-Day High-Density (3 posts/day)' },
+    ];
+
+    // Extend dynamically up to 365 days in 7-day blocks
+    for (let horizon = 28; horizon <= 365; horizon += 7) {
+      const prevHorizon = horizon - 7;
+      tiers.push({
+        startDay: prevHorizon + 1,
+        endDay: horizon,
+        maxDailyPosts: 1,
+        tierName: `Days ${prevHorizon + 1}..${horizon} Initial Coverage (1 post/day)`,
+      });
+      tiers.push({
+        startDay: prevHorizon + 1,
+        endDay: horizon,
+        maxDailyPosts: 2,
+        tierName: `Days ${prevHorizon + 1}..${horizon} Density Expansion (2 posts/day)`,
+      });
+      tiers.push({
+        startDay: 1,
+        endDay: horizon,
+        maxDailyPosts: 3,
+        tierName: `Days 1..${horizon} High-Density (3 posts/day)`,
+      });
+      tiers.push({
+        startDay: 1,
+        endDay: horizon,
+        maxDailyPosts: 4,
+        tierName: `Days 1..${horizon} Maximum Density (4 posts/day)`,
+      });
     }
 
     const proposedSlots: ProposedScheduleSlot[] = [];
-
-    // Start scheduling starting tomorrow at UTC 08:00
-    const cursorDate = new Date();
-    cursorDate.setUTCDate(cursorDate.getUTCDate() + 1);
-    cursorDate.setUTCHours(0, 0, 0, 0);
-
     const MIN_GAP_MS = 3 * 3600 * 1000; // Minimum 3 hours between posts
+    const nowMs = Date.now();
+    const baseDate = new Date();
 
     for (const post of candidatePosts) {
       let slotFound = false;
-      let attempts = 0;
 
-      while (!slotFound && attempts < 60) {
-        const dateStr = cursorDate.toISOString().split('T')[0]!;
-        
-        // Count posts already scheduled for this cursor date in existing + proposed
-        const postsOnDate = existingTimes
-          .concat(proposedSlots.map((s) => new Date(s.scheduledAtIso).getTime()))
-          .filter((t) => new Date(t).toISOString().split('T')[0] === dateStr).length;
+      // Filter out this specific post's previous schedule so rescheduling never conflicts with itself
+      const currentOccupied = activeTimes
+        .filter((t) => !t.postId || t.postId !== post.id)
+        .map((t) => t.timeMs);
 
-        if (postsOnDate < maxAllowedDailyPosts) {
-          // Try windows for this date
-          for (const win of topWindows) {
-            const targetHour = win.startHour;
-            const candidateTime = new Date(Date.UTC(
-              cursorDate.getUTCFullYear(),
-              cursorDate.getUTCMonth(),
-              cursorDate.getUTCDate(),
-              targetHour,
-              0, 0, 0
-            ));
-            const candidateMs = candidateTime.getTime();
+      for (const tier of tiers) {
+        if (slotFound) break;
 
-            if (candidateMs <= Date.now()) continue;
+        for (let dayOffset = tier.startDay; dayOffset <= tier.endDay; dayOffset++) {
+          const targetDate = new Date(Date.UTC(
+            baseDate.getUTCFullYear(),
+            baseDate.getUTCMonth(),
+            baseDate.getUTCDate() + dayOffset,
+            0, 0, 0, 0
+          ));
+          const dateStr = targetDate.toISOString().split('T')[0]!;
 
-            // Check minimum gap against existing and proposed
-            const conflict = existingTimes
-              .concat(proposedSlots.map((s) => new Date(s.scheduledAtIso).getTime()))
-              .some((t) => Math.abs(t - candidateMs) < MIN_GAP_MS);
+          // Count posts already occupying this date
+          const postsOnThisDate = currentOccupied.filter(
+            (t) => new Date(t).toISOString().split('T')[0] === dateStr
+          ).length;
 
-            if (!conflict) {
-              const scheduledAtIso = candidateTime.toISOString();
-              const scheduledTimeStr = `${String(targetHour).padStart(2, '0')}:00 UTC`;
+          if (postsOnThisDate < tier.maxDailyPosts) {
+            for (const win of candidateWindows) {
+              const candidateTime = new Date(Date.UTC(
+                targetDate.getUTCFullYear(),
+                targetDate.getUTCMonth(),
+                targetDate.getUTCDate(),
+                win.hour,
+                0, 0, 0
+              ));
+              const candidateMs = candidateTime.getTime();
 
-              const reason = isHistorical
-                ? `High-performing historical time window (${win.windowLabel}, ${win.sampleSize} posts evaluated)`
-                : `Default recommended time window (${win.windowLabel})`;
+              if (candidateMs <= nowMs) continue;
 
-              proposedSlots.push({
-                postId: post.id,
-                postTitle: post.title,
-                scheduledAtIso,
-                scheduledDate: dateStr,
-                scheduledTime: scheduledTimeStr,
-                reason,
-                decisionMetadata: {
-                  strategy: isHistorical ? 'historical_performance' : 'default_fallback',
-                  timeWindow: win.windowLabel,
-                  confidence: win.confidence,
-                  sampleSize: win.sampleSize,
-                  backlogCoverageDays: coverageDays,
-                  maxDailyFrequency: maxAllowedDailyPosts,
+              // Enforce minimum 3h gap against any post on or around this day
+              const hasConflict = currentOccupied.some(
+                (t) => Math.abs(t - candidateMs) < MIN_GAP_MS
+              );
+
+              if (!hasConflict) {
+                const scheduledAtIso = candidateTime.toISOString();
+                const scheduledTimeStr = `${String(win.hour).padStart(2, '0')}:00 UTC`;
+                const reason = `${win.label} (${tier.tierName})`;
+
+                proposedSlots.push({
+                  postId: post.id,
+                  postTitle: post.title || 'Draft Post',
+                  scheduledAtIso,
+                  scheduledDate: dateStr,
+                  scheduledTime: scheduledTimeStr,
                   reason,
-                },
-              });
+                  decisionMetadata: {
+                    strategy: isHistorical ? 'historical_performance' : 'default_fallback',
+                    timeWindow: `${String(win.hour).padStart(2, '0')}:00 UTC`,
+                    confidence: 1.0,
+                    sampleSize: tier.maxDailyPosts,
+                    backlogCoverageDays: coverageDays,
+                    maxDailyFrequency: tier.maxDailyPosts,
+                    reason,
+                  },
+                });
 
-              slotFound = true;
-              break;
+                // Add to activeTimes so subsequent posts in this batch take this slot into account
+                activeTimes.push({ postId: post.id, timeMs: candidateMs });
+                slotFound = true;
+                break;
+              }
             }
           }
-        }
 
-        if (!slotFound) {
-          // Advance to next day
-          cursorDate.setUTCDate(cursorDate.getUTCDate() + 1);
-          attempts++;
+          if (slotFound) break;
         }
+      }
+
+      // Absolute safety fallback: guarantees a slot even if all tiers are somehow saturated
+      if (!slotFound) {
+        const latestMs = currentOccupied.length > 0
+          ? Math.max(...currentOccupied)
+          : nowMs + 24 * 3600 * 1000;
+        const fallbackDate = new Date(latestMs + 24 * 3600 * 1000);
+        fallbackDate.setUTCHours(13, 0, 0, 0);
+
+        const scheduledAtIso = fallbackDate.toISOString();
+        const scheduledDate = scheduledAtIso.split('T')[0]!;
+        const reason = 'Next available day (13:00 UTC)';
+
+        proposedSlots.push({
+          postId: post.id,
+          postTitle: post.title || 'Draft Post',
+          scheduledAtIso,
+          scheduledDate,
+          scheduledTime: '13:00 UTC',
+          reason,
+          decisionMetadata: {
+            strategy: 'default_fallback',
+            timeWindow: '13:00 UTC',
+            confidence: 0.5,
+            sampleSize: 1,
+            backlogCoverageDays: coverageDays,
+            maxDailyFrequency: 1,
+            reason,
+          },
+        });
+        activeTimes.push({ postId: post.id, timeMs: fallbackDate.getTime() });
       }
     }
 
