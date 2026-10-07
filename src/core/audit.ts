@@ -79,6 +79,7 @@ export type AuditEventType =
   | 'PUBLICATION_RECORD_DELETED'
   | 'DUPLICATE_TITLE_REJECTED'
   | 'DUPLICATE_ANGLE_REJECTED'
+  | 'CLUSTER_COOLDOWN_REJECTED'
   | 'CONTENT_QUALITY_GATE_PASSED'
   | 'CONTENT_QUALITY_GATE_FAILED'
   | 'SMQG_FAILED'
@@ -186,7 +187,10 @@ export function sanitizeStringValue(str: string): string {
 
   let sanitized = str;
   // Redact URL tokens: ?access_token=..., &token=..., resetToken=...
-  sanitized = sanitized.replace(/(access_token|resetToken|token|secret|GATEWAY_TOKEN)=[^& \s]+/gi, '$1=[REDACTED]');
+  sanitized = sanitized.replace(
+    /(access_token|resetToken|token|secret|GATEWAY_TOKEN)=[^& \s]+/gi,
+    '$1=[REDACTED]',
+  );
   // Redact Bearer headers
   sanitized = sanitized.replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [REDACTED]');
 
@@ -207,9 +211,12 @@ export function sanitizeDetails(details: Record<string, unknown>): Record<string
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       sanitized[key] = sanitizeDetails(value as Record<string, unknown>);
     } else if (Array.isArray(value)) {
-      sanitized[key] = value.map(item =>
-        typeof item === 'string' ? sanitizeStringValue(item) :
-        item && typeof item === 'object' ? sanitizeDetails(item as Record<string, unknown>) : item
+      sanitized[key] = value.map((item) =>
+        typeof item === 'string'
+          ? sanitizeStringValue(item)
+          : item && typeof item === 'object'
+            ? sanitizeDetails(item as Record<string, unknown>)
+            : item,
       );
     } else {
       sanitized[key] = value;
@@ -229,13 +236,28 @@ export function inferAuditLevel(eventType?: AuditEventType, status?: AuditStatus
 
   if (!eventType) return 'INFO';
   const evt = String(eventType).toUpperCase();
-  if (evt.includes('FAILED') || evt.includes('ERROR') || evt.includes('BLOCKED') || evt.includes('EXCEEDED')) {
+  if (
+    evt.includes('FAILED') ||
+    evt.includes('ERROR') ||
+    evt.includes('BLOCKED') ||
+    evt.includes('EXCEEDED')
+  ) {
     return 'ERROR';
   }
-  if (evt.includes('DEFERRED') || evt.includes('DUPLICATE') || evt.includes('RETRY') || evt.includes('WARNING')) {
+  if (
+    evt.includes('DEFERRED') ||
+    evt.includes('DUPLICATE') ||
+    evt.includes('RETRY') ||
+    evt.includes('WARNING')
+  ) {
     return 'WARNING';
   }
-  if (evt.includes('COMPLETED') || evt.includes('PASSED') || evt.includes('SUCCESS') || evt.includes('APPROVED')) {
+  if (
+    evt.includes('COMPLETED') ||
+    evt.includes('PASSED') ||
+    evt.includes('SUCCESS') ||
+    evt.includes('APPROVED')
+  ) {
     return 'SUCCESS';
   }
   return 'INFO';
@@ -254,7 +276,8 @@ export class D1AuditLogger implements IAuditLogger {
     try {
       const id = crypto.randomUUID();
       const timestamp = new Date().toISOString();
-      const level = entry.level || inferAuditLevel(entry.eventType || (entry as any).action, entry.status);
+      const level =
+        entry.level || inferAuditLevel(entry.eventType || (entry as any).action, entry.status);
       const sanitizedDetails = sanitizeDetails(entry.details || {});
 
       const errCode = entry.error?.code || null;
@@ -264,9 +287,10 @@ export class D1AuditLogger implements IAuditLogger {
 
       // Extract error details from details object if not explicitly provided in entry.error
       if (!errMsg && sanitizedDetails.error) {
-        errMsg = typeof sanitizedDetails.error === 'string'
-          ? sanitizeStringValue(sanitizedDetails.error)
-          : JSON.stringify(sanitizedDetails.error);
+        errMsg =
+          typeof sanitizedDetails.error === 'string'
+            ? sanitizeStringValue(sanitizedDetails.error)
+            : JSON.stringify(sanitizedDetails.error);
       }
 
       const operation = entry.operation ? sanitizeStringValue(entry.operation) : null;
@@ -374,16 +398,19 @@ export class D1AuditLogger implements IAuditLogger {
         } else if (filters.category === 'facebook') {
           whereClause += " AND (event_type LIKE 'FACEBOOK_%' OR event_type LIKE 'PUBLICATION_%')";
         } else if (filters.category === 'auth') {
-          whereClause += " AND (event_type LIKE 'AUTH_%' OR event_type LIKE 'SESSION_%' OR event_type LIKE 'ADMIN_%')";
+          whereClause +=
+            " AND (event_type LIKE 'AUTH_%' OR event_type LIKE 'SESSION_%' OR event_type LIKE 'ADMIN_%')";
         } else if (filters.category === 'system') {
-          whereClause += " AND (event_type LIKE 'ORCHESTRATOR_%' OR event_type LIKE 'WORKFLOW_%' OR event_type = 'SYSTEM_ERROR')";
+          whereClause +=
+            " AND (event_type LIKE 'ORCHESTRATOR_%' OR event_type LIKE 'WORKFLOW_%' OR event_type = 'SYSTEM_ERROR')";
         }
       }
 
       // Search text filter across operation, event_type, entity_id, and error_message
       if (filters.search && filters.search.trim()) {
         const searchTerm = `%${filters.search.trim()}%`;
-        whereClause += ' AND (operation LIKE ? OR event_type LIKE ? OR entity_id LIKE ? OR error_message LIKE ? OR details LIKE ?)';
+        whereClause +=
+          ' AND (operation LIKE ? OR event_type LIKE ? OR entity_id LIKE ? OR error_message LIKE ? OR details LIKE ?)';
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
         countParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
       }
@@ -397,29 +424,33 @@ export class D1AuditLogger implements IAuditLogger {
       params.push(limit, offset);
 
       const stmtCount = this.db.prepare(countSql).bind(...countParams);
-      const countPromise = typeof stmtCount.first === 'function'
-        ? stmtCount.first<{ cnt: number }>()
-        : stmtCount.all<{ cnt: number }>().then(r => r.results?.[0] || null);
+      const countPromise =
+        typeof stmtCount.first === 'function'
+          ? stmtCount.first<{ cnt: number }>()
+          : stmtCount.all<{ cnt: number }>().then((r) => r.results?.[0] || null);
 
       const [rows, countRow] = await Promise.all([
-        this.db.prepare(sql).bind(...params).all<{
-          id: string;
-          event_type: string;
-          entity_type: string;
-          entity_id: string;
-          actor: 'system' | 'admin' | 'ai';
-          details: string;
-          created_at: string;
-          level: string | null;
-          operation: string | null;
-          status: string | null;
-          duration_ms: number | null;
-          correlation_id: string | null;
-          error_code: string | null;
-          error_message: string | null;
-          error_stage: string | null;
-          http_status: number | null;
-        }>(),
+        this.db
+          .prepare(sql)
+          .bind(...params)
+          .all<{
+            id: string;
+            event_type: string;
+            entity_type: string;
+            entity_id: string;
+            actor: 'system' | 'admin' | 'ai';
+            details: string;
+            created_at: string;
+            level: string | null;
+            operation: string | null;
+            status: string | null;
+            duration_ms: number | null;
+            correlation_id: string | null;
+            error_code: string | null;
+            error_message: string | null;
+            error_stage: string | null;
+            http_status: number | null;
+          }>(),
         countPromise,
       ]);
 
@@ -431,7 +462,9 @@ export class D1AuditLogger implements IAuditLogger {
           parsedDetails = { raw: row.details };
         }
 
-        const level = (row.level as AuditLevel) || inferAuditLevel(row.event_type as AuditEventType, row.status as AuditStatus);
+        const level =
+          (row.level as AuditLevel) ||
+          inferAuditLevel(row.event_type as AuditEventType, row.status as AuditStatus);
 
         let errorObj: AuditErrorDetails | undefined;
         if (row.error_message || row.error_code || row.error_stage || row.http_status) {
@@ -443,7 +476,10 @@ export class D1AuditLogger implements IAuditLogger {
           };
         } else if (parsedDetails.error) {
           errorObj = {
-            message: typeof parsedDetails.error === 'string' ? parsedDetails.error : JSON.stringify(parsedDetails.error),
+            message:
+              typeof parsedDetails.error === 'string'
+                ? parsedDetails.error
+                : JSON.stringify(parsedDetails.error),
           };
         }
 
@@ -451,13 +487,21 @@ export class D1AuditLogger implements IAuditLogger {
           id: row.id,
           eventType: row.event_type as AuditEventType,
           level,
-          operation: row.operation || (parsedDetails.title as string) || (parsedDetails.sourceName as string) || undefined,
+          operation:
+            row.operation ||
+            (parsedDetails.title as string) ||
+            (parsedDetails.sourceName as string) ||
+            undefined,
           actor: row.actor,
           entityType: row.entity_type,
           entityId: row.entity_id,
           status: (row.status as AuditStatus) || undefined,
           durationMs: row.duration_ms ?? (parsedDetails.durationMs as number) ?? undefined,
-          correlationId: row.correlation_id || (parsedDetails.correlationId as string) || (parsedDetails.runId as string) || undefined,
+          correlationId:
+            row.correlation_id ||
+            (parsedDetails.correlationId as string) ||
+            (parsedDetails.runId as string) ||
+            undefined,
           details: parsedDetails,
           error: errorObj,
           timestamp: row.created_at,

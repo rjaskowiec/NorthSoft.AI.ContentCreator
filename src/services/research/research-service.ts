@@ -126,7 +126,8 @@ export class ResearchService {
         itemsNormalized: 0,
         rejectedLowQuality: 0,
         pillarBreakdown: {},
-        errorMessage: 'Outside AI background execution window (18:00–23:30 UTC). Research run deferred.',
+        errorMessage:
+          'Outside AI background execution window (18:00–23:30 UTC). Research run deferred.',
         durationMs: Date.now() - startTime,
         localEstimatedTokens: 0,
         cloudflareVerifiedUsage: null,
@@ -221,7 +222,7 @@ export class ResearchService {
     let rejectedIrrelevant = 0;
     let rejectedTooTechnical = 0;
     let rejectedDuplicateAngle = 0;
-    const rejectedRecentCooldown = 0;
+    let rejectedRecentCooldown = 0;
     let ideasQueued = 0;
     let ideasDeferred = 0;
 
@@ -305,26 +306,100 @@ export class ResearchService {
       }
 
       // Step 2: Fetch source items eligible for angle extraction
-      // Max 3 active angles per source material to prevent single-source domination
+      // Strictly enforce source freshness: only process items fetched/published since the last completed run.
+      // Prevents re-analyzing the same old 50 records when RSS feeds have no new updates.
+      let watermarkIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      try {
+        const lastCompletedRun = await this.db
+          .prepare(
+            "SELECT started_at, completed_at FROM research_runs WHERE status = 'completed' AND id != ? ORDER BY started_at DESC LIMIT 1",
+          )
+          .bind(runId)
+          .first<{ started_at?: string; completed_at?: string }>();
+
+        if (lastCompletedRun?.started_at) {
+          watermarkIso = lastCompletedRun.started_at;
+        }
+      } catch {
+        // Fallback to 7 days
+      }
+
       let candidateItems: RawItemRecord[] = [];
       try {
         const candidateRes = await this.db
           .prepare(
             `SELECT id, source_id, title, url, url_hash, content_summary, published_at, active_angles_count
              FROM research_items
-             WHERE status != 'REJECTED' AND (active_angles_count IS NULL OR active_angles_count < 3)
+             WHERE status != 'REJECTED' 
+               AND (active_angles_count IS NULL OR active_angles_count < 3)
+               AND (
+                 (published_at IS NOT NULL AND published_at >= ?) OR 
+                 (fetched_at >= ?)
+               )
              ORDER BY fetched_at DESC
              LIMIT 50`,
           )
+          .bind(watermarkIso, watermarkIso)
           .all<RawItemRecord>();
         candidateItems = candidateRes.results || [];
       } catch {
-        const candidateRes = await this.db
-          .prepare(
-            "SELECT id, source_id, title, url, url_hash, content_summary, published_at FROM research_items ORDER BY fetched_at DESC LIMIT 50",
-          )
-          .all<RawItemRecord>();
-        candidateItems = candidateRes.results || [];
+        try {
+          const candidateRes = await this.db
+            .prepare(
+              `SELECT id, source_id, title, url, url_hash, content_summary, published_at
+               FROM research_items
+               WHERE (fetched_at >= ? OR published_at >= ?)
+               ORDER BY fetched_at DESC LIMIT 50`,
+            )
+            .bind(watermarkIso, watermarkIso)
+            .all<RawItemRecord>();
+          candidateItems = candidateRes.results || [];
+        } catch {
+          candidateItems = [];
+        }
+      }
+
+      // Editorial Seeds Layer:
+      // If fresh RSS items are scarce (or zero), inject evergreen editorial seeds
+      // representing fundamental small-business client problems for NorthSoft.
+      try {
+        const seedSlotsNeeded = Math.max(0, 5 - candidateItems.length);
+        if (seedSlotsNeeded > 0) {
+          const seedsRes = await this.db
+            .prepare(
+              `SELECT id, pillar, cluster_key, title, business_problem, client_opportunity, suggested_angle
+               FROM editorial_seeds
+               WHERE enabled = 1
+               ORDER BY times_used ASC, last_used_at ASC NULLS FIRST
+               LIMIT ?`,
+            )
+            .bind(seedSlotsNeeded)
+            .all<{
+              id: string;
+              pillar: string;
+              cluster_key: string;
+              title: string;
+              business_problem: string;
+              client_opportunity: string;
+              suggested_angle: string;
+            }>();
+
+          const seeds = seedsRes.results || [];
+          for (const seed of seeds) {
+            candidateItems.push({
+              id: `seed-${seed.id}`,
+              source_id: 'editorial_seeds',
+              title: seed.title,
+              url: `https://northsoft.is/insights/${seed.cluster_key}`,
+              url_hash: `seed-${seed.id}`,
+              content_summary: `${seed.business_problem} Client opportunity: ${seed.client_opportunity}. Practical angle: ${seed.suggested_angle}`,
+              published_at: nowIso,
+              active_angles_count: 0,
+            });
+          }
+        }
+      } catch {
+        // Fallback if editorial_seeds table does not exist yet
       }
 
       sourceReuseCandidates = candidateItems.length;
@@ -360,7 +435,7 @@ export class ResearchService {
       );
 
       const topicRegistry = new TopicRegistry(this.db);
-      const history = await topicRegistry.getRecentTopicHistory();
+      const history = await topicRegistry.getRecentTopicHistory(21);
       potentialAnglesDiscovered = selectedCandidates.length;
 
       // Step 4: Execute Workers AI completion to extract social post angles for selected candidate sources
@@ -394,40 +469,58 @@ export class ResearchService {
 
         const systemInstructions = `You are a Content Scout for NorthSoft AI.
 NorthSoft builds websites, landing pages, local SEO, online marketing, automation, and AI solutions for small and local businesses.
-Your objective is to read a source item and derive a focused social-media idea (Facebook/Instagram) that can lead to a useful post for an Icelandic small-business owner and a natural NorthSoft enquiry.
+Your objective is to read a source item and discover a genuine business opportunity for small-business owners, then derive a focused social-media post topic (Facebook/Instagram).
 
 CRITICAL LANGUAGE REQUIREMENT:
-- ALL OUTPUT MUST BE WRITTEN STRICTLY AND 100% IN ENGLISH. Do NOT write in Polish, German, Spanish, or any other language. All topic titles, hooks, angles, summaries, key points, and questions MUST be in clean, human, conversational English.
+- ALL OUTPUT MUST BE WRITTEN STRICTLY AND 100% IN ENGLISH. All topic titles, hooks, angles, summaries, key points, and questions MUST be in clean, human, conversational English.
 
-CORE PHILOSOPHY:
-- Treat the article as a loose inspiration and factual anchor, not a text to translate, summarize, or follow word-for-word.
-- Make one clear reasoning step: source insight → practical implication for a business owner → a focused post idea.
-- Ask what the change means for customer discovery, a business website or sales process, customer service, or repetitive work. Relevant NorthSoft solutions include website updates, online sales, local SEO, marketing, workflow automation, and AI assistants.
-- Create a mid-level topic: specific enough to suggest one post and one business implication, but broad enough to be useful to many owners. Avoid vague labels such as "AI and business" and excessively narrow article summaries or technical release details.
-- Example: an article about AI-assisted search can inspire a topic about changing search habits and whether a business website is easy for both people and modern search tools to understand. Do not merely restate the article headline.
-- Do not force a NorthSoft sales angle when there is no credible connection. Reject sources whose only possible post would be a strained promotion.
-- Do not require a fixed post format. Use a list, question, example, or short observation only if it fits the idea.
+CORE REASONING DISCOVERY PROCESS (Insight → Opportunity → Cluster → Topic):
+1. MARKET PHENOMENON: Identify the observable market trend, consumer shift, platform change, or tech development from the source.
+2. CUSTOMER PAIN / OPPORTUNITY: Translate that phenomenon into a direct, concrete business problem or opportunity for a small business owner (e.g. lost website inquiries, slow response times, customer confusion, manual admin overload).
+3. CONTROLLED TOPIC CLUSTER: Select the single best matching cluster from the approved NorthSoft cluster taxonomy:
+   - ai_search_visibility (AI search like ChatGPT/Perplexity finding local services)
+   - aeo_answer_engines (Answer Engine Optimization and structured answers)
+   - local_seo_maps (Google Business Profile and local map rankings)
+   - website_speed_conversion (Load speed impacting mobile bounce rates)
+   - mobile_first_experience (Smartphone UX and tap navigation)
+   - landing_page_clarity (Clear value proposition and removing clutter)
+   - lead_response_time (Speed to lead and avoiding lost inquiries)
+   - contact_form_friction (Simplifying contact pages to double quote submissions)
+   - pricing_service_transparency (Publishing starting rates to build buyer trust)
+   - chatbot_first_touch (24/7 AI chat answering routine questions after hours)
+   - internal_workflow_automation (Automating repetitive spreadsheet busywork)
+   - ai_content_overload (Standing out with authentic proof against generic AI noise)
+   - reviews_social_proof (Systematic Google reviews and client proof)
+   - brand_credibility_trust (Modern website credibility and looking established)
+   - customer_communication_channels (Meeting customer preferences: messaging vs phone tag)
+   - time_management_entrepreneur (Owner bottleneck and delegating repetitive tech)
+   - tech_stack_simplification (Reducing software tool sprawl and subscriptions)
+   - local_competition_positioning (Competing directly without paying middleman commissions)
+   - seasonal_demand_shifts (Preparing digital channels for seasonal traffic shifts)
+   - local_service_booking (Frictionless online booking for appointment-based services)
+4. BUSINESS ANGLE: How a NorthSoft service (website overhaul, local SEO, speed optimization, workflow automation, AI assistant) naturally solves this without sounding like a forced sales pitch.
+5. FINAL TOPIC: A mid-level, focused social post topic (NOT just the article headline).
 
 CRITICAL RULES:
-1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. The following buzzwords are FORBIDDEN:
-   "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business",
-   "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
-2. FACT PRESERVATION RULE: If referencing specific numbers, percentages, or statistics from the source, KEEP THEM 100% ACCURATE. NEVER fabricate or invent stats, percentages, quotes, or fake research not present in the source. If there are no numbers in the source, write a broad, honest observation without inventing fake numbers.
-3. Write in friendly, human conversational English speaking directly to a small business owner.
-4. BUSINESS RELEVANCE: Keep the article's verifiable claims distinct from your business implication. Do not invent data, imply that a trend affects everyone, or make unsupported claims about a business owner's website.
-5. NO ARTIFICIAL BRIDGES: If the source does NOT offer genuine, useful inspiration for a business owner (for example, a technical release with no clear customer or workflow impact), return {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
+1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. Forbidden: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
+2. SOURCE AS INSPIRATION: The article is a loose springboard, not something to summarize. Do NOT merely repeat tech release details.
+3. FACT PRESERVATION: Never invent fake numbers, percentages, or false statistics.
+4. If the source cannot yield any credible small-business angle, return {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
 
 Return ONLY a valid JSON object matching this schema:
 {
   "usefulAngle": true,
-  "title": "A focused, plain-English topic describing one business implication",
-  "angle": "How the source insight leads to the business implication and why an owner may care",
-  "hook": "A concise question or observation that could open the finished post",
-  "summary": "A short idea for useful social copy, not an article summary",
-  "keyPoints": ["One concrete implication for an owner", "One practical consideration or next step"],
+  "marketPhenomenon": "What observable trend or change is happening in the market or technology",
+  "customerOpportunity": "The concrete pain point, risk, or opportunity for a small business owner",
+  "clusterKey": "One exact cluster key from the approved taxonomy list above",
+  "title": "A focused, conversational social post topic for business owners",
+  "angle": "How the customer opportunity connects to a practical digital solution",
+  "hook": "A concise question or observation that opens the finished post",
+  "summary": "A short summary of the advice to share in social copy",
+  "keyPoints": ["One concrete implication for an owner", "One practical next step"],
   "contentPillar": "WEBSITE | MARKETING | SALES | AI | SMALL_BUSINESS | CUSTOMER_EXPERIENCE | LOCAL_BUSINESS",
   "postType": "LIST | CHECKLIST | QUESTION | STAT_INSIGHT | MYTH | TIPS | COMPARISON | PROBLEM_SOLUTION | ENGAGEMENT",
-  "engagementQuestion": "Simple question at the end encouraging readers to comment in English",
+  "engagementQuestion": "Simple question at the end encouraging readers to comment",
   "commercialRelevance": 85,
   "engagementPotential": 90,
   "relevanceScore": 80
@@ -492,7 +585,26 @@ Return ONLY a valid JSON object matching this schema:
             continue;
           }
 
-          // Check if angle is a substantive duplicate against TopicRegistry history
+          // Step 4.1: Topic Cluster Memory & Topic Fatigue Check (First line of diversity)
+          const clusterCooldown = TopicRegistry.isClusterInCooldown(ideaData.clusterKey, history);
+
+          if (clusterCooldown.inCooldown) {
+            rejectedRecentCooldown++;
+            await this.auditLogger.log({
+              eventType: 'CLUSTER_COOLDOWN_REJECTED',
+              entityType: 'content_idea',
+              entityId: item.id,
+              actor: 'ai',
+              details: {
+                clusterKey: ideaData.clusterKey,
+                conflictingCluster: clusterCooldown.conflictingCluster,
+                reason: clusterCooldown.reason,
+              },
+            });
+            continue;
+          }
+
+          // Step 4.2: Duplicate Detection Check against history and active angles (Last line of defense)
           const scheduling = topicRegistry.calculateSuggestedPublishDate(
             ideaData.contentPillar as ContentPillar,
             ideaData.angle,
@@ -533,15 +645,16 @@ Return ONLY a valid JSON object matching this schema:
           const pillar = ideaData.contentPillar;
           pillarBreakdown[pillar] = (pillarBreakdown[pillar] || 0) + 1;
 
-          // Insert into content_ideas (queued)
+          // Insert into content_ideas (queued) with cluster_key, market_phenomenon, and customer_opportunity
           try {
             await this.db
               .prepare(
                 `INSERT INTO content_ideas (
                   id, title, description, short_description, content_angle, hook, category, content_pillar,
                   source_type, source_url, source_title, source_published_at, relevance_score,
-                  engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
+                  engagement_potential, commercial_relevance, suggested_publish_date, priority, status,
+                  cluster_key, market_phenomenon, customer_opportunity, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
               )
               .bind(
                 ideaId,
@@ -560,38 +673,102 @@ Return ONLY a valid JSON object matching this schema:
                 ideaData.commercialRelevance,
                 scheduling.suggestedDate,
                 ideaData.commercialRelevance,
+                ideaData.clusterKey,
+                ideaData.marketPhenomenon,
+                ideaData.customerOpportunity,
                 nowIso,
                 nowIso,
               )
               .run();
           } catch {
             // Fallback for older database schema
-            await this.db
-              .prepare(
-                `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, 'research', ?, 'queued', ?, ?)`,
-              )
-              .bind(
-                ideaId,
-                ideaData.title,
-                ideaData.summary,
-                pillar,
-                ideaData.relevanceScore,
-                nowIso,
-                nowIso,
-              )
-              .run();
+            try {
+              await this.db
+                .prepare(
+                  `INSERT INTO content_ideas (
+                    id, title, description, short_description, content_angle, hook, category, content_pillar,
+                    source_type, source_url, source_title, source_published_at, relevance_score,
+                    engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
+                )
+                .bind(
+                  ideaId,
+                  ideaData.title,
+                  ideaData.summary,
+                  ideaData.summary,
+                  ideaData.angle,
+                  ideaData.hook,
+                  pillar,
+                  pillar,
+                  item.url,
+                  item.title,
+                  item.published_at,
+                  ideaData.relevanceScore,
+                  ideaData.engagementPotential,
+                  ideaData.commercialRelevance,
+                  scheduling.suggestedDate,
+                  ideaData.commercialRelevance,
+                  nowIso,
+                  nowIso,
+                )
+                .run();
+            } catch {
+              await this.db
+                .prepare(
+                  `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'research', ?, 'queued', ?, ?)`,
+                )
+                .bind(
+                  ideaId,
+                  ideaData.title,
+                  ideaData.summary,
+                  pillar,
+                  ideaData.relevanceScore,
+                  nowIso,
+                  nowIso,
+                )
+                .run();
+            }
           }
 
-          // Record in Topic History
+          // Record in Topic History with cluster_key
           await topicRegistry.recordTopicHistory({
             idea_id: ideaId,
             content_pillar: pillar,
             content_angle: ideaData.angle,
             title: ideaData.title,
+            cluster_key: ideaData.clusterKey,
             status: 'queued',
             suggested_publish_date: scheduling.suggestedDate,
           });
+
+          // Add to in-memory history so subsequent candidates in this run respect cluster cooldown
+          history.push({
+            id: ideaId,
+            idea_id: ideaId,
+            content_pillar: pillar,
+            content_angle: ideaData.angle,
+            title: ideaData.title,
+            cluster_key: ideaData.clusterKey,
+            status: 'queued',
+            suggested_publish_date: scheduling.suggestedDate,
+            created_at: nowIso,
+          });
+
+          // If derived from an editorial seed, increment seed usage
+          if (item.id.startsWith('seed-')) {
+            const realSeedId = item.id.replace('seed-', '');
+            try {
+              await this.db
+                .prepare(
+                  'UPDATE editorial_seeds SET times_used = times_used + 1, last_used_at = ? WHERE id = ?',
+                )
+                .bind(nowIso, realSeedId)
+                .run();
+            } catch {
+              // Ignore fallback
+            }
+          }
 
           // Increment active_angles_count on source material
           try {
@@ -681,10 +858,12 @@ Return ONLY a valid JSON object matching this schema:
 
     // Fetch Telemetry Summary (Cloudflare Verified & Application Safety)
     const telemetry = await this.quotaManager.getFullUsageSummary(this.db, this.env);
-    const localEstTokens = telemetry.internalDiagnostics?.estimatedTokensToday ?? telemetry.todayNeurons ?? 0;
+    const localEstTokens =
+      telemetry.internalDiagnostics?.estimatedTokensToday ?? telemetry.todayNeurons ?? 0;
     const cfVerifiedNeurons = telemetry.cloudflareVerifiedUsage?.actualNeurons ?? null;
     const usageSource = telemetry.cloudflareVerifiedUsage?.source ?? 'Cloudflare Analytics';
-    const usageTimestamp = telemetry.cloudflareVerifiedUsage?.lastUpdated || new Date().toISOString();
+    const usageTimestamp =
+      telemetry.cloudflareVerifiedUsage?.lastUpdated || new Date().toISOString();
 
     await this.auditLogger.log({
       eventType: 'RESEARCH_RUN_COMPLETED',

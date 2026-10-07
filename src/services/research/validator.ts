@@ -5,7 +5,12 @@
  */
 
 import { parseAiJsonResponse } from '../../core/json-parser';
-import { determineContentPillar, type ContentPillar } from './taxonomy';
+import {
+  determineContentPillar,
+  resolveClusterKey,
+  type ContentPillar,
+  type TopicClusterKey,
+} from './taxonomy';
 
 export interface CandidateIdeaPayload {
   title: string;
@@ -24,6 +29,9 @@ export interface CandidateIdeaPayload {
   publishedAt: string;
   usefulAngle?: boolean;
   noUsefulAngleReason?: string;
+  marketPhenomenon: string;
+  customerOpportunity: string;
+  clusterKey: TopicClusterKey;
 }
 
 export interface CandidateTopicPayload {
@@ -95,6 +103,9 @@ export function validateCandidateIdeaOutput(
         publishedAt: '',
         usefulAngle: false,
         noUsefulAngleReason: typeof obj.reason === 'string' ? obj.reason : 'NO_USEFUL_ANGLE',
+        marketPhenomenon: '',
+        customerOpportunity: '',
+        clusterKey: 'website_speed_conversion',
       },
     };
   }
@@ -112,34 +123,34 @@ export function validateCandidateIdeaOutput(
     typeof obj.angle === 'string'
       ? obj.angle.trim()
       : typeof obj.whyRelevant === 'string'
-      ? obj.whyRelevant.trim()
-      : title;
+        ? obj.whyRelevant.trim()
+        : title;
 
   // Hook validation
   const hook =
     typeof obj.hook === 'string'
       ? obj.hook.trim()
       : typeof obj.summary === 'string'
-      ? obj.summary.substring(0, 150)
-      : title;
+        ? obj.summary.substring(0, 150)
+        : title;
 
   // Summary validation
   const summary =
     typeof obj.summary === 'string'
       ? obj.summary.trim()
       : typeof obj.description === 'string'
-      ? (obj.description as string).trim()
-      : hook;
+        ? (obj.description as string).trim()
+        : hook;
 
   // Key points validation
   const keyPoints: string[] = [];
   const rawPoints = Array.isArray(obj.keyPoints)
     ? obj.keyPoints
     : Array.isArray(obj.key_points)
-    ? obj.key_points
-    : Array.isArray(obj.keyClaims)
-    ? obj.keyClaims
-    : [];
+      ? obj.key_points
+      : Array.isArray(obj.keyClaims)
+        ? obj.keyClaims
+        : [];
 
   for (const item of rawPoints) {
     if (typeof item === 'string' && item.trim()) {
@@ -152,10 +163,10 @@ export function validateCandidateIdeaOutput(
     typeof obj.contentPillar === 'string'
       ? obj.contentPillar
       : typeof obj.content_pillar === 'string'
-      ? obj.content_pillar
-      : typeof obj.category === 'string'
-      ? obj.category
-      : 'WEBSITE';
+        ? obj.content_pillar
+        : typeof obj.category === 'string'
+          ? obj.category
+          : 'WEBSITE';
 
   const contentPillar = determineContentPillar(title, summary, [pillarInput]);
 
@@ -164,31 +175,31 @@ export function validateCandidateIdeaOutput(
     typeof obj.postType === 'string'
       ? obj.postType.trim()
       : typeof obj.post_type === 'string'
-      ? obj.post_type.trim()
-      : 'TIPS';
+        ? obj.post_type.trim()
+        : 'TIPS';
 
   // Engagement Question validation
   const engagementQuestion =
     typeof obj.engagementQuestion === 'string'
       ? obj.engagementQuestion.trim()
       : typeof obj.engagement_question === 'string'
-      ? obj.engagement_question.trim()
-      : 'What is your take on this?';
+        ? obj.engagement_question.trim()
+        : 'What is your take on this?';
 
   // Scores
   const commercialRelevance =
     typeof obj.commercialRelevance === 'number'
       ? Math.max(0, Math.min(100, Math.round(obj.commercialRelevance)))
       : typeof obj.commercial_relevance === 'number'
-      ? Math.max(0, Math.min(100, Math.round(obj.commercial_relevance)))
-      : 80;
+        ? Math.max(0, Math.min(100, Math.round(obj.commercial_relevance)))
+        : 80;
 
   const engagementPotential =
     typeof obj.engagementPotential === 'number'
       ? Math.max(0, Math.min(100, Math.round(obj.engagementPotential)))
       : typeof obj.engagement_potential === 'number'
-      ? Math.max(0, Math.min(100, Math.round(obj.engagement_potential)))
-      : 80;
+        ? Math.max(0, Math.min(100, Math.round(obj.engagement_potential)))
+        : 80;
 
   const relevanceScore =
     typeof obj.relevanceScore === 'number'
@@ -200,18 +211,62 @@ export function validateCandidateIdeaOutput(
     typeof obj.sourceUrl === 'string'
       ? obj.sourceUrl.trim()
       : typeof obj.source_url === 'string'
-      ? obj.source_url.trim()
-      : 'https://ai.northsoft.is';
+        ? obj.source_url.trim()
+        : 'https://ai.northsoft.is';
 
   const sourceName =
     typeof obj.sourceName === 'string'
       ? obj.sourceName.trim()
       : typeof obj.source_name === 'string'
-      ? obj.source_name.trim()
-      : 'NorthSoft Research';
+        ? obj.source_name.trim()
+        : 'NorthSoft Research';
 
   const publishedAt =
     typeof obj.publishedAt === 'string' ? obj.publishedAt.trim() : new Date().toISOString();
+
+  // Market / Business Phenomenon (Market insight)
+  const marketPhenomenon =
+    typeof obj.marketPhenomenon === 'string' && obj.marketPhenomenon.trim()
+      ? obj.marketPhenomenon.trim()
+      : typeof obj.market_phenomenon === 'string' && obj.market_phenomenon.trim()
+        ? obj.market_phenomenon.trim()
+        : typeof obj.businessPhenomenon === 'string' && obj.businessPhenomenon.trim()
+          ? obj.businessPhenomenon.trim()
+          : typeof obj.business_phenomenon === 'string' && obj.business_phenomenon.trim()
+            ? obj.business_phenomenon.trim()
+            : summary;
+
+  // Customer Pain / Opportunity for small business
+  const customerOpportunity =
+    typeof obj.customerOpportunity === 'string' && obj.customerOpportunity.trim()
+      ? obj.customerOpportunity.trim()
+      : typeof obj.customer_opportunity === 'string' && obj.customer_opportunity.trim()
+        ? obj.customer_opportunity.trim()
+        : typeof obj.clientOpportunity === 'string' && obj.clientOpportunity.trim()
+          ? obj.clientOpportunity.trim()
+          : typeof obj.client_opportunity === 'string' && obj.client_opportunity.trim()
+            ? obj.client_opportunity.trim()
+            : typeof obj.painPoint === 'string' && obj.painPoint.trim()
+              ? obj.painPoint.trim()
+              : angle;
+
+  // Controlled Topic Cluster Key
+  const rawClusterInput =
+    typeof obj.clusterKey === 'string'
+      ? obj.clusterKey
+      : typeof obj.cluster_key === 'string'
+        ? obj.cluster_key
+        : typeof obj.subtopic === 'string'
+          ? obj.subtopic
+          : typeof obj.topicCluster === 'string'
+            ? obj.topicCluster
+            : '';
+
+  const clusterKey = resolveClusterKey(
+    rawClusterInput,
+    contentPillar,
+    `${title} ${angle} ${summary} ${marketPhenomenon}`,
+  );
 
   if (errors.length > 0) {
     return { valid: false, errors };
@@ -234,6 +289,9 @@ export function validateCandidateIdeaOutput(
       sourceUrl,
       sourceName,
       publishedAt,
+      marketPhenomenon,
+      customerOpportunity,
+      clusterKey,
     },
   };
 }

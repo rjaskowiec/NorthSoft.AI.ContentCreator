@@ -35,12 +35,28 @@ export class MockAIProvider implements IAIProvider {
     if (responseContent === 'Mock AI completion response') {
       if (request.role === 'researcher') {
         responseContent = JSON.stringify({
-          title: 'Mock AI Topic Analysis',
+          usefulAngle: true,
+          marketPhenomenon:
+            'Search engines are increasingly serving direct synthesized AI answers.',
+          customerOpportunity:
+            'Local businesses risk losing visibility unless their websites and services are clearly structured for answer engines.',
+          clusterKey: 'ai_search_visibility',
+          title: 'Mock AI Topic Analysis: How Modern Search Changes Business Visibility',
+          angle:
+            'Show small business owners how structuring their website answers protects local discovery.',
+          hook: 'Are potential customers finding your business when they ask AI for recommendations?',
           summary: 'A structured candidate topic derived from research sources.',
+          keyPoints: [
+            'Search behavior is shifting to conversational queries',
+            'Structured website answers capture new leads',
+          ],
+          contentPillar: 'AI',
           sourceUrl: 'https://blog.cloudflare.com/rss/',
           sourceName: 'Cloudflare Blog',
           publishedAt: new Date().toISOString(),
           relevanceScore: 88,
+          commercialRelevance: 85,
+          engagementPotential: 80,
           categories: ['Cloudflare', 'AI'],
           keyClaims: ['Claim 1', 'Claim 2'],
           whyRelevant: 'Relevant to small business technology and modern cloud infrastructure.',

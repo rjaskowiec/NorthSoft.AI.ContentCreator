@@ -13,44 +13,68 @@ import {
 describe('Content Taxonomy & Relevance Model', () => {
   describe('isExcludedTopic', () => {
     it('rejects celebrity gossip', () => {
-      const res = isExcludedTopic('Latest celebrity news in Hollywood', 'Gossip about famous actors');
+      const res = isExcludedTopic(
+        'Latest celebrity news in Hollywood',
+        'Gossip about famous actors',
+      );
       expect(res.excluded).toBe(true);
     });
 
     it('rejects sports results', () => {
-      const res = isExcludedTopic('Premier league football results', 'Scores from last night match');
+      const res = isExcludedTopic(
+        'Premier league football results',
+        'Scores from last night match',
+      );
       expect(res.excluded).toBe(true);
     });
 
     it('rejects political controversy', () => {
-      const res = isExcludedTopic('Political controversy in parliament election', 'Debate between republican and democrat');
+      const res = isExcludedTopic(
+        'Political controversy in parliament election',
+        'Debate between republican and democrat',
+      );
       expect(res.excluded).toBe(true);
     });
 
     it('allows business and website topics', () => {
-      const res = isExcludedTopic('5 reasons your business website loses customers', 'How to optimize contact forms and website speed');
+      const res = isExcludedTopic(
+        '5 reasons your business website loses customers',
+        'How to optimize contact forms and website speed',
+      );
       expect(res.excluded).toBe(false);
     });
   });
 
   describe('determineContentPillar', () => {
     it('categorizes website topics under WEBSITE', () => {
-      const pillar = determineContentPillar('Why small businesses need a website', 'Website trust and landing pages');
+      const pillar = determineContentPillar(
+        'Why small businesses need a website',
+        'Website trust and landing pages',
+      );
       expect(pillar).toBe('WEBSITE');
     });
 
     it('categorizes SEO and local search under MARKETING', () => {
-      const pillar = determineContentPillar('3 simple ways a local business can get more customers from Google', 'Local SEO and Google Business Profile');
+      const pillar = determineContentPillar(
+        '3 simple ways a local business can get more customers from Google',
+        'Local SEO and Google Business Profile',
+      );
       expect(pillar).toBe('MARKETING');
     });
 
     it('categorizes AI automation under AI', () => {
-      const pillar = determineContentPillar('What can a small business actually automate with AI today?', 'Practical AI use cases and customer service chatbots');
+      const pillar = determineContentPillar(
+        'What can a small business actually automate with AI today?',
+        'Practical AI use cases and customer service chatbots',
+      );
       expect(pillar).toBe('AI');
     });
 
     it('categorizes Icelandic local trends under LOCAL_BUSINESS', () => {
-      const pillar = determineContentPillar('Digital adoption for Iceland tourism and local business', 'How local Icelandic service providers handle online bookings');
+      const pillar = determineContentPillar(
+        'Digital adoption for Iceland tourism and local business',
+        'How local Icelandic service providers handle online bookings',
+      );
       expect(pillar).toBe('LOCAL_BUSINESS');
     });
   });
@@ -122,7 +146,7 @@ describe('Content Taxonomy & Relevance Model', () => {
       const selected = selectDiverseCandidates(candidates, 6, 2);
 
       expect(selected).toHaveLength(6);
-      const aiSelected = selected.filter(s => s.pillar === 'AI');
+      const aiSelected = selected.filter((s) => s.pillar === 'AI');
       expect(aiSelected).toHaveLength(2); // Maximum 2 AI items
     });
 
@@ -156,6 +180,32 @@ describe('Content Taxonomy & Relevance Model', () => {
 
       const selected = selectDiverseCandidates(candidates, 6, 2);
       expect(selected).toHaveLength(6);
+    });
+  });
+
+  describe('Controlled Topic Clusters & Taxonomy', () => {
+    it('resolves exact cluster keys', async () => {
+      const { resolveClusterKey } = await import('../../src/services/research/taxonomy');
+      expect(resolveClusterKey('ai_search_visibility')).toBe('ai_search_visibility');
+      expect(resolveClusterKey('website_speed_conversion')).toBe('website_speed_conversion');
+      expect(resolveClusterKey('lead_response_time')).toBe('lead_response_time');
+    });
+
+    it('resolves common aliases to canonical clusters', async () => {
+      const { resolveClusterKey } = await import('../../src/services/research/taxonomy');
+      expect(resolveClusterKey('searchgpt')).toBe('ai_search_visibility');
+      expect(resolveClusterKey('aeo')).toBe('aeo_answer_engines');
+      expect(resolveClusterKey('page_speed')).toBe('website_speed_conversion');
+      expect(resolveClusterKey('speed_to_lead')).toBe('lead_response_time');
+      expect(resolveClusterKey('chatbots')).toBe('chatbot_first_touch');
+    });
+
+    it('identifies neighbor clusters within the same semantic family', async () => {
+      const { getNeighborClusters } = await import('../../src/services/research/taxonomy');
+      const neighbors = getNeighborClusters('ai_search_visibility');
+      expect(neighbors).toContain('aeo_answer_engines');
+      expect(neighbors).toContain('local_seo_maps');
+      expect(neighbors).not.toContain('website_speed_conversion');
     });
   });
 });

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { validateCandidateTopicOutput } from '../../src/services/research/validator';
+import {
+  validateCandidateIdeaOutput,
+  validateCandidateTopicOutput,
+} from '../../src/services/research/validator';
 
 describe('AI Output Validator', () => {
   it('validates a well-formed JSON candidate topic', () => {
@@ -55,8 +58,43 @@ describe('AI Output Validator', () => {
       sourceUrl: 'not-a-url',
     });
 
-    const res2 = validateCandidateTopicOutput(missingTitle);
+    const res2 = validateCandidateIdeaOutput(missingTitle);
     expect(res2.valid).toBe(false);
     expect(res2.errors?.length).toBeGreaterThan(0);
+  });
+
+  it('validates and extracts transformed idea output with market phenomenon and customer opportunity', async () => {
+    const { validateCandidateIdeaOutput } = await import('../../src/services/research/validator');
+    const validIdeaJson = JSON.stringify({
+      usefulAngle: true,
+      marketPhenomenon:
+        'Search engines are deploying generative AI answers directly on SERP pages.',
+      customerOpportunity:
+        'Small businesses risk zero-click dropoff unless their websites have clear structured answers.',
+      clusterKey: 'ai_search_visibility',
+      title: 'Is Your Website Visible When Customers Search With AI?',
+      angle:
+        'Show local business owners how simple FAQ structured answers keep them visible in AI overviews.',
+      hook: 'When someone asks ChatGPT for a local recommendation, does your business appear?',
+      summary: 'Why structured website content is essential for modern search visibility.',
+      keyPoints: ['Generative answers bypass standard links', 'Structured FAQs win citations'],
+      contentPillar: 'AI',
+      postType: 'TIPS',
+      engagementQuestion: 'Have you tested how AI answers describe your services?',
+      commercialRelevance: 90,
+      engagementPotential: 85,
+      relevanceScore: 88,
+    });
+
+    const res = validateCandidateIdeaOutput(validIdeaJson);
+    expect(res.valid).toBe(true);
+    expect(res.data?.marketPhenomenon).toBe(
+      'Search engines are deploying generative AI answers directly on SERP pages.',
+    );
+    expect(res.data?.customerOpportunity).toBe(
+      'Small businesses risk zero-click dropoff unless their websites have clear structured answers.',
+    );
+    expect(res.data?.clusterKey).toBe('ai_search_visibility');
+    expect(res.data?.contentPillar).toBe('AI');
   });
 });

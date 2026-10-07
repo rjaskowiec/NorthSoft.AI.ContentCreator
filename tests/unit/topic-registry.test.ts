@@ -41,7 +41,7 @@ describe('TopicRegistry & Content Queue Management', () => {
     for (let i = 0; i < 10; i++) {
       const angle = distinctAngles[i]!;
       const result = registry.calculateSuggestedPublishDate('AI', angle, history, baseDate);
-      
+
       expect(result.isDuplicateAngle).toBe(false);
 
       history.push({
@@ -82,7 +82,12 @@ describe('TopicRegistry & Content Queue Management', () => {
 
     // Near identical angle within cooldown
     const nearDuplicateAngle = '5 ways small businesses can use AI for customer support';
-    const result = registry.calculateSuggestedPublishDate('AI', nearDuplicateAngle, history, baseDate);
+    const result = registry.calculateSuggestedPublishDate(
+      'AI',
+      nearDuplicateAngle,
+      history,
+      baseDate,
+    );
 
     expect(result.cooldownApplied).toBe(true);
     // Suggested publish date should be pushed out significantly by cooldown (at least +7 days)
@@ -137,5 +142,66 @@ describe('TopicRegistry & Content Queue Management', () => {
     });
 
     expect(highDiversityScore).toBeGreaterThan(recentPillarPenaltyScore);
+  });
+
+  describe('Topic Cluster Memory & Fatigue (isClusterInCooldown)', () => {
+    const baseDate = new Date('2026-10-01T12:00:00Z');
+
+    it('enforces direct cluster cooldown (21 days) on identical clusters', () => {
+      const history: TopicHistoryRecord[] = [
+        {
+          id: 'hist-1',
+          content_pillar: 'AI',
+          content_angle: 'AI Search visibility for local business',
+          title: 'How AI Search impacts discovery',
+          cluster_key: 'ai_search_visibility',
+          status: 'published',
+          created_at: new Date(baseDate.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
+        },
+      ];
+
+      const res = TopicRegistry.isClusterInCooldown('ai_search_visibility', history, baseDate);
+      expect(res.inCooldown).toBe(true);
+      expect(res.conflictingCluster).toBe('ai_search_visibility');
+      expect(res.reason).toContain('21-day cooldown active');
+    });
+
+    it('enforces family fatigue window (12 days) on neighbor clusters like AEO and AI search', () => {
+      const history: TopicHistoryRecord[] = [
+        {
+          id: 'hist-1',
+          content_pillar: 'AI',
+          content_angle: 'AI Search visibility for local business',
+          title: 'How AI Search impacts discovery',
+          cluster_key: 'ai_search_visibility', // Family: search_discovery
+          status: 'published',
+          created_at: new Date(baseDate.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(), // 4 days ago
+        },
+      ];
+
+      // Propose AEO (also in search_discovery family)
+      const res = TopicRegistry.isClusterInCooldown('aeo_answer_engines', history, baseDate);
+      expect(res.inCooldown).toBe(true);
+      expect(res.conflictingCluster).toBe('ai_search_visibility');
+      expect(res.reason).toContain('search_discovery');
+    });
+
+    it('allows distinct clusters from other families even when search_discovery is in cooldown', () => {
+      const history: TopicHistoryRecord[] = [
+        {
+          id: 'hist-1',
+          content_pillar: 'AI',
+          content_angle: 'AI Search visibility for local business',
+          title: 'How AI Search impacts discovery',
+          cluster_key: 'ai_search_visibility',
+          status: 'published',
+          created_at: new Date(baseDate.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ];
+
+      // Propose website speed (Family: website_performance_ux)
+      const res = TopicRegistry.isClusterInCooldown('website_speed_conversion', history, baseDate);
+      expect(res.inCooldown).toBe(false);
+    });
   });
 });

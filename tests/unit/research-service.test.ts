@@ -3,7 +3,11 @@ import { getAIProvider } from '../../src/ai/factory';
 import { MockAIProvider } from '../../src/ai/mock-provider';
 import { ResearchService } from '../../src/services/research/research-service';
 
-function createMockStatement(firstVal: unknown = null, allResults: unknown[] = [], runRes = { success: true }) {
+function createMockStatement(
+  firstVal: unknown = null,
+  allResults: unknown[] = [],
+  runRes = { success: true },
+) {
   const stmt: Record<string, unknown> = {};
   stmt.first = vi.fn().mockResolvedValue(firstVal);
   stmt.all = vi.fn().mockResolvedValue({ results: allResults });
@@ -53,7 +57,8 @@ describe('ResearchService Pipeline', () => {
         title: '5 Ways Small Businesses Can Get More Leads From Google Search',
         url: 'https://blog.hubspot.com/local-seo-leads',
         url_hash: 'hash123',
-        content_summary: 'Optimizing your website and Google Business profile to attract local customers online.',
+        content_summary:
+          'Optimizing your website and Google Business profile to attract local customers online.',
         published_at: new Date().toISOString(),
       },
     ];
@@ -277,5 +282,91 @@ describe('ResearchService Pipeline', () => {
     expect(summary.noUsefulAngleCount).toBe(1);
     expect(summary.ideasQueued).toBe(0);
     expect(summary.fallbackExecutions).toBe(0);
+  });
+
+  it('rejects candidate ideas when the cluster is in active cooldown window', async () => {
+    const mockSources = [
+      {
+        id: 'src-tech',
+        name: 'Tech Blog',
+        url: 'https://tech.example.com/rss',
+        type: 'rss',
+        category: 'AI',
+        enabled: 1,
+        priority: 10,
+      },
+    ];
+
+    const mockItems = [
+      {
+        id: 'item-ai-fresh',
+        source_id: 'src-tech',
+        title: 'How Generative AI Search Is Changing Local Discovery',
+        url: 'https://tech.example.com/ai-search-fresh',
+        url_hash: 'hash-ai-search',
+        content_summary: 'New search engines summarize local businesses for conversational users.',
+        published_at: new Date().toISOString(),
+      },
+    ];
+
+    // History contains an existing entry with the same cluster published 3 days ago
+    const existingHistory = [
+      {
+        id: 'hist-recent',
+        content_pillar: 'AI',
+        content_angle: 'AI Search visibility for local business',
+        title: 'AI Search for Local Business',
+        cluster_key: 'ai_search_visibility',
+        status: 'published',
+        created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes("status = 'running'")) return createMockStatement(null);
+      if (sql.includes('FROM research_sources')) return createMockStatement(null, mockSources);
+      if (sql.includes('FROM research_items')) return createMockStatement(null, mockItems);
+      if (sql.includes('FROM content_topic_history'))
+        return createMockStatement(null, existingHistory);
+      return createMockStatement(null, []);
+    });
+
+    const mockDb = { prepare: prepareMock } as unknown as D1Database;
+    const mockAiProvider = {
+      name: 'cloudflare-workers-ai',
+      complete: vi.fn().mockResolvedValue({
+        content: JSON.stringify({
+          usefulAngle: true,
+          marketPhenomenon: 'Search engines are deploying generative AI answers directly.',
+          customerOpportunity: 'Local businesses risk being omitted from AI search results.',
+          clusterKey: 'ai_search_visibility',
+          title: 'How Local Businesses Can Be Discovered by AI Search',
+          angle: 'Show owners how to format basic service answers for AI tools.',
+          hook: 'Does AI recommend your local business?',
+          summary: 'Why search visibility is changing.',
+          keyPoints: ['Generative answers bypass standard links', 'Structured FAQs win citations'],
+          contentPillar: 'AI',
+          postType: 'TIPS',
+          engagementQuestion: 'Have you tested how AI answers describe your services?',
+          commercialRelevance: 85,
+          engagementPotential: 80,
+          relevanceScore: 85,
+        }),
+        model: '@cf/meta/llama-3.1-8b-instruct',
+        provider: 'cloudflare-workers-ai',
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+        finishReason: 'stop',
+        durationMs: 120,
+      }),
+      healthCheck: vi.fn().mockResolvedValue(true),
+    };
+
+    const service = new ResearchService(mockDb, mockAiProvider as unknown as MockAIProvider);
+    const summary = await service.runResearchPipeline('manual');
+
+    expect(summary.aiInferenceRequests).toBe(1);
+    expect(summary.aiInferenceSuccessful).toBe(1);
+    expect(summary.rejectedRecentCooldown).toBe(1);
+    expect(summary.ideasQueued).toBe(0);
   });
 });

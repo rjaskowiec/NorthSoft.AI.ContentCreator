@@ -34,6 +34,7 @@ researchRouter.get('/research', async (c) => {
     const topicsRes = await db
       .prepare(
         `SELECT id, title, description, short_description, content_angle, hook, category, content_pillar,
+                cluster_key, market_phenomenon, customer_opportunity,
                 source_title, source_url, relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at,
                 (SELECT COUNT(*) FROM posts p WHERE p.idea_id = content_ideas.id) AS post_count,
                 (SELECT p.id FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_id,
@@ -49,7 +50,7 @@ researchRouter.get('/research', async (c) => {
   } catch {
     const topicsRes = await db
       .prepare(
-         "SELECT id, title, description, category, priority, status, created_at, 0 AS post_count FROM content_ideas WHERE source_type = 'research' ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, title, description, category, priority, status, created_at, 0 AS post_count FROM content_ideas WHERE source_type = 'research' ORDER BY created_at DESC LIMIT 100",
       )
       .all<Record<string, unknown>>();
     topics = topicsRes.results || [];
@@ -57,8 +58,10 @@ researchRouter.get('/research', async (c) => {
 
   const requestedTopicId = (c.req.query('topicId') || '').trim();
   if (requestedTopicId && !topics.some((topic) => topic.id === requestedTopicId)) {
-    const requestedTopic = await db.prepare(
-      `SELECT id, title, description, short_description, content_angle, hook, category, content_pillar,
+    const requestedTopic = await db
+      .prepare(
+        `SELECT id, title, description, short_description, content_angle, hook, category, content_pillar,
+              cluster_key, market_phenomenon, customer_opportunity,
               source_title, source_url, relevance_score, engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at,
               (SELECT COUNT(*) FROM posts p WHERE p.idea_id = content_ideas.id) AS post_count,
               (SELECT p.id FROM posts p WHERE p.idea_id = content_ideas.id ORDER BY p.created_at DESC LIMIT 1) AS latest_post_id,
@@ -67,7 +70,9 @@ researchRouter.get('/research', async (c) => {
               (SELECT s.scheduled_at FROM posts p JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'publishing', 'published') WHERE p.idea_id = content_ideas.id ORDER BY s.scheduled_at DESC LIMIT 1) AS latest_scheduled_at,
               (SELECT pub.published_at FROM posts p JOIN publications pub ON pub.post_id = p.id AND pub.status = 'published' WHERE p.idea_id = content_ideas.id ORDER BY pub.published_at DESC LIMIT 1) AS latest_published_at
        FROM content_ideas WHERE id = ?`,
-    ).bind(requestedTopicId).first<Record<string, unknown>>();
+      )
+      .bind(requestedTopicId)
+      .first<Record<string, unknown>>();
     if (requestedTopic) topics.push(requestedTopic);
   }
 
@@ -75,7 +80,10 @@ researchRouter.get('/research', async (c) => {
   topics = topics.map((topic) => {
     const postCount = Number(topic.post_count || 0);
     const rawStatus = String(topic.status || 'queued').toLowerCase();
-    if (postCount === 0 && ['post_generated', 'used', 'scheduled', 'published'].includes(rawStatus)) {
+    if (
+      postCount === 0 &&
+      ['post_generated', 'used', 'scheduled', 'published'].includes(rawStatus)
+    ) {
       return {
         ...topic,
         status: 'queued',
@@ -122,7 +130,9 @@ researchRouter.get('/research', async (c) => {
     }
   }
 
-  const queuedCount = topics.filter((t) => t.status === 'queued' || t.status === 'new' || t.status === 'discovered').length;
+  const queuedCount = topics.filter(
+    (t) => t.status === 'queued' || t.status === 'new' || t.status === 'discovered',
+  ).length;
 
   return c.json({
     sources,
@@ -248,7 +258,9 @@ researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) 
     ids?: string[];
   };
 
-  const ids = Array.isArray(body.ids) ? body.ids.filter((i): i is string => typeof i === 'string' && i.trim().length > 0) : [];
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((i): i is string => typeof i === 'string' && i.trim().length > 0)
+    : [];
   if (ids.length === 0) {
     return c.json({ success: false, error: 'Missing required field: ids (non-empty array)' }, 400);
   }
@@ -257,19 +269,27 @@ researchRouter.delete('/research/topics/bulk-delete', csrfProtection, async (c) 
     const placeholders = ids.map(() => '?').join(',');
     await db.batch([
       db.prepare(`UPDATE posts SET idea_id = NULL WHERE idea_id IN (${placeholders})`).bind(...ids),
-      db.prepare(`DELETE FROM content_topic_history WHERE idea_id IN (${placeholders})`).bind(...ids),
+      db
+        .prepare(`DELETE FROM content_topic_history WHERE idea_id IN (${placeholders})`)
+        .bind(...ids),
       db.prepare(`DELETE FROM content_ideas WHERE id IN (${placeholders})`).bind(...ids),
     ]);
     return c.json({ success: true, count: ids.length });
   } catch (err: unknown) {
     const errorLogger = new D1AuditLogger(db);
-    await errorLogger.log({
-      eventType: 'SYSTEM_ERROR',
-      entityType: 'topic',
-      entityId: 'bulk',
-      actor: 'admin',
-      details: { action: 'bulk-delete', count: ids.length, error: err instanceof Error ? err.message : String(err) },
-    }).catch(() => {});
+    await errorLogger
+      .log({
+        eventType: 'SYSTEM_ERROR',
+        entityType: 'topic',
+        entityId: 'bulk',
+        actor: 'admin',
+        details: {
+          action: 'bulk-delete',
+          count: ids.length,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      })
+      .catch(() => {});
 
     return c.json({ success: false, error: 'Unable to bulk delete selected topics' }, 500);
   }
@@ -290,10 +310,7 @@ researchRouter.patch('/research/topics/:id', csrfProtection, async (c) => {
     priority?: number;
   };
 
-  const existing = await db
-    .prepare('SELECT id FROM content_ideas WHERE id = ?')
-    .bind(id)
-    .first();
+  const existing = await db.prepare('SELECT id FROM content_ideas WHERE id = ?').bind(id).first();
 
   if (!existing) {
     return c.json({ error: 'Topic not found' }, 404);
@@ -331,7 +348,10 @@ researchRouter.patch('/research/topics/:id', csrfProtection, async (c) => {
   bindings.push(id);
 
   const sql = `UPDATE content_ideas SET ${updates.join(', ')} WHERE id = ?`;
-  await db.prepare(sql).bind(...bindings).run();
+  await db
+    .prepare(sql)
+    .bind(...bindings)
+    .run();
 
   return c.json({ success: true, id });
 });
@@ -357,15 +377,19 @@ researchRouter.delete('/research/topics/:id', csrfProtection, async (c) => {
     return c.json({ success: true, id });
   } catch (err: unknown) {
     const errorLogger = new D1AuditLogger(db);
-    await errorLogger.log({
-      eventType: 'SYSTEM_ERROR',
-      entityType: 'topic',
-      entityId: id,
-      actor: 'admin',
-      details: { action: 'single-delete', error: err instanceof Error ? err.message : String(err) },
-    }).catch(() => {});
+    await errorLogger
+      .log({
+        eventType: 'SYSTEM_ERROR',
+        entityType: 'topic',
+        entityId: id,
+        actor: 'admin',
+        details: {
+          action: 'single-delete',
+          error: err instanceof Error ? err.message : String(err),
+        },
+      })
+      .catch(() => {});
 
     return c.json({ success: false, error: 'Unable to delete selected topic' }, 500);
   }
 });
-
