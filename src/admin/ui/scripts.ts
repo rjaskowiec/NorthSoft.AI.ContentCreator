@@ -26,8 +26,8 @@ export function getAdminScripts(): string {
         ? Number(item.post_count || 0) > 0
         : Boolean(item?.internalPostId || item?.postId || item?.id);
       const postDone = hasPost;
-      const publishedDone = hasPost && Boolean(item?.published_at || item?.publishedAt || item?.facebook_post_id || item?.isPublished);
-      const scheduledDone = hasPost && Boolean(item?.scheduled_at || item?.scheduledAt || item?.latest_scheduled_at || publishedDone);
+      const publishedDone = hasPost && Boolean(item?.published_at || item?.publishedAt || item?.latest_published_at || item?.facebook_post_id || item?.isPublished || (isTopic && item?.status === 'published'));
+      const scheduledDone = hasPost && Boolean(item?.scheduled_at || item?.scheduledAt || item?.latest_scheduled_at || publishedDone || (isTopic && item?.status === 'scheduled'));
       const imageDone = hasPost && Boolean(item?.image_url || item?.imageUrl || (item?.latest_image_status && item.latest_image_status !== 'rejected') || (publishedDone && item?.hasImage === true));
 
       const stages = [
@@ -2798,6 +2798,10 @@ export function getAdminScripts(): string {
         const result = data.result || {};
         window.TaskQueue.complete(taskId, 'Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated.');
         await loadFacebookPublications(false);
+        await Promise.allSettled([
+          loadContentData(),
+          loadSchedulesData()
+        ]);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         window.TaskQueue.fail(taskId, 'Facebook Sync Failed', errMsg);

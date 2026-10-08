@@ -515,6 +515,9 @@ export function renderAdminHtml(): string {
                 <button class="btn-secondary" style="border-color:var(--accent-blue); color:var(--accent-blue);" onclick="scheduleAllEligibleIntelligently()">
                   Schedule all eligible
                 </button>
+                <button class="btn-secondary" onclick="syncFacebookPublications()" title="Reconcile and synchronize published posts from Facebook">
+                  Sync with Facebook
+                </button>
                 <button class="btn-primary" onclick="openAddPostModal()">
                   + Add post
                 </button>
