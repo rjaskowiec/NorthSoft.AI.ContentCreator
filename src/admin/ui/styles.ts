@@ -619,12 +619,14 @@ export function getAdminCss(): string {
       background: rgba(255, 255, 255, 0.02);
     }
 
-    .clickable-post-row {
+    .clickable-post-row,
+    .clickable-table-row {
       cursor: pointer;
       transition: background-color 0.15s ease;
     }
 
-    .clickable-post-row:hover td {
+    .clickable-post-row:hover td,
+    .clickable-table-row:hover td {
       background: rgba(96, 165, 250, 0.05);
     }
 

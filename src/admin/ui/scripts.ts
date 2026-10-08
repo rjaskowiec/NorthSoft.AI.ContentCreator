@@ -2091,8 +2091,8 @@ export function getAdminScripts(): string {
                 ? '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem; opacity:0.4; cursor:not-allowed;" title="Cannot delete topic linked to an existing post" disabled>Delete</button>'
                 : '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic(&quot;' + id + '&quot;)">Delete</button>';
 
-              return '<tr data-id="' + id + '" id="topic-row-' + id + '">' +
-                '<td style="text-align:center;">' +
+              return '<tr data-id="' + id + '" id="topic-row-' + id + '" class="clickable-table-row" onclick="handleTopicRowClick(event, &quot;' + id + '&quot;)" title="Click row to edit idea">' +
+                '<td style="text-align:center;" onclick="event.stopPropagation()">' +
                   '<input type="checkbox" class="topic-select-checkbox" data-id="' + id + '" ' + isChecked + ' onchange="updateTopicSelectionState()" />' +
                 '</td>' +
                 '<td>' +
@@ -2100,12 +2100,11 @@ export function getAdminScripts(): string {
                   (sourceTitle ? '<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + sourceLink + '</div>' : '') +
                 '</td>' +
                 '<td><span class="code-tag">' + category + '</span></td>' +
-                '<td>' + renderWorkflowStages(t) + (hasPost && t.latest_post_id ? '<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="openPostFromTopic(&quot;' + escapeHtml(safeStr(t.latest_post_id)) + '&quot;)">Open post</button>' : '') + '</td>' +
+                '<td>' + renderWorkflowStages(t) + (hasPost && t.latest_post_id ? '<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="event.stopPropagation(); openPostFromTopic(&quot;' + escapeHtml(safeStr(t.latest_post_id)) + '&quot;)">Open post</button>' : '') + '</td>' +
                 '<td><span class="status-badge ' + statusClass + '">' + statusUpper + '</span></td>' +
-                '<td>' +
+                '<td onclick="event.stopPropagation()">' +
                   '<div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">' +
                     '<button class="btn-primary" title="' + (hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic') + '" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic(&quot;' + id + '&quot;)">' + (hasPost ? 'Regenerate post' : 'Generate post') + '</button>' +
-                    '<button class="btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="openEditTopicModal(&quot;' + id + '&quot;)">Edit</button>' +
                     deleteBtnHtml +
                   '</div>' +
                 '</td>' +
@@ -2581,17 +2580,16 @@ export function getAdminScripts(): string {
                 const errorTooltip = isFailed && (sched.error_code || sched.error_message) ? ' title="' + escapeHtml((sched.error_code || '') + (sched.error_message ? ': ' + sched.error_message : '')) + '"' : '';
                 const statusHtml = '<span class="' + statusClass + '"' + errorTooltip + '>' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span>' +
                   (isFailed && sched.error_code ? '<div style="font-size:0.7rem; color:var(--accent-rose); margin-top:0.25rem; max-width:180px; word-break:break-word;"' + errorTooltip + '>' + escapeHtml(sched.error_code) + '</div>' : '');
-                return '<tr>' +
+                return '<tr class="clickable-table-row" onclick="handleScheduleRowClick(event, &quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;, false)" title="Click row to edit scheduled post">' +
                   '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
-                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
+                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
                   '</td>' +
                   '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
                   '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
                   '<td>' + statusHtml + '</td>' +
-                  '<td>' +
+                  '<td onclick="event.stopPropagation()">' +
                     '<button class="btn-primary" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-right:0.25rem;" onclick="publishNow(&quot;' + postIdStr + '&quot;)">Publish Now</button>' +
-                    '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openScheduledPostDetailModal(&quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;)">Edit</button>' +
-                    '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-left:0.25rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
+                    '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
                   '</td>' +
                 '</tr>';
               }).join('');
@@ -2610,15 +2608,15 @@ export function getAdminScripts(): string {
                 const topicTitle = safeStr(sched.topic_title);
                 const topicId = safeStr(sched.idea_id);
                 const displayDate = sched.published_at ? 'Published · ' + formatDateUtcSafe(sched.published_at) : (sched.scheduled_at ? 'Published · ' + formatDateUtcSafe(sched.scheduled_at) : 'Published');
-                return '<tr class="schedule-published-dimmed" style="opacity:0.75; background:rgba(255,255,255,0.015);">' +
+                return '<tr class="schedule-published-dimmed clickable-table-row" style="opacity:0.85; background:rgba(255,255,255,0.015);" onclick="handleScheduleRowClick(event, &quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;, true, &quot;' + fbPostId + '&quot;)" title="Click row to view published Facebook post details">' +
                   '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
-                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);font-size:0.75rem;text-align:left;" onclick="openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
+                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);font-size:0.75rem;text-align:left;" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
                   '</td>' +
                   '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: fbPostId, isPublished: true }) + '</td>' +
                   '<td data-sort-value="' + escapeHtml(safeStr(sched.published_at || sched.scheduled_at)) + '" style="color:var(--accent-emerald); font-weight:500;">' + escapeHtml(displayDate) + '</td>' +
                   '<td><span class="status-badge status-healthy" style="opacity:0.85;">PUBLISHED</span></td>' +
-                  '<td>' +
-                    '<button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openFacebookPostDetails(&quot;' + (fbPostId || postIdStr) + '&quot;)">View / Edit</button>' +
+                  '<td onclick="event.stopPropagation()">' +
+                    '<span style="color:var(--accent-emerald); font-size:0.75rem; font-weight:500;">Live</span>' +
                   '</td>' +
                 '</tr>';
               }).join('');
@@ -2776,16 +2774,31 @@ export function getAdminScripts(): string {
           const snippet = content.length > 120 ? content.slice(0, 117) + '...' : content;
           const metric = value => value == null ? '<span title="Metric unavailable from Meta">—</span>' : Number(value).toLocaleString();
           const date = post.createdTime ? new Date(post.createdTime).toLocaleString() : '—';
-          const topicLink = post.topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);" onclick="openTopicFromPost(&quot;' + escapeHtml(safeStr(post.topicId)) + '&quot;)">' + escapeHtml(safeStr(post.topicTitle, 'View idea')) + '</button>' : '<span style="color:var(--text-muted);">No linked idea</span>';
-          const sourceLink = post.sourceTitle && (safeStr(post.sourceUrl).startsWith('https://') || safeStr(post.sourceUrl).startsWith('http://')) ? '<a href="' + escapeHtml(post.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(post.sourceTitle) + '</a>' : escapeHtml(safeStr(post.sourceTitle));
-          const workflow = renderWorkflowStages({ internalPostId: post.internalPostId, topicId: post.topicId, topicTitle: post.topicTitle, imageUrl: post.imageUrl || post.fullPicture, scheduledAt: post.scheduledAt, publishedAt: post.publishedAt, isPublished: post.isPublished });
-          return '<tr><td data-sort-value="' + escapeHtml(safeStr(post.createdTime)) + '">' + escapeHtml(date) + '</td>' +
+          const topicLink = post.topicId ? '<button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(safeStr(post.topicId)) + '&quot;)">' + escapeHtml(safeStr(post.topicTitle, 'View idea')) + '</button>' : '<span style="color:var(--text-muted);">No linked idea</span>';
+          const sourceLink = post.sourceTitle && (safeStr(post.sourceUrl).startsWith('https://') || safeStr(post.sourceUrl).startsWith('http://')) ? '<a href="' + escapeHtml(post.sourceUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">' + escapeHtml(post.sourceTitle) + '</a>' : escapeHtml(safeStr(post.sourceTitle));
+          const imgUrl = safeStr(post.fullPicture || post.imageUrl);
+          const workflow = renderWorkflowStages({ internalPostId: post.internalPostId, topicId: post.topicId, topicTitle: post.topicTitle, imageUrl: imgUrl, scheduledAt: post.scheduledAt, publishedAt: post.publishedAt, isPublished: post.isPublished });
+
+          let thumbnailHtml = '';
+          if (imgUrl) {
+            thumbnailHtml = '<button type="button" class="img-preview-btn" onclick="event.stopPropagation(); openImageLightboxModal(\\x27' + escapeHtml(imgUrl) + '\\x27, \\x27' + escapeHtml(safeStr(post.topicTitle || 'Facebook post image')) + '\\x27)" title="Preview full image" style="border:none; background:transparent; padding:0; cursor:pointer;">' +
+              '<img src="' + escapeHtml(imgUrl) + '" alt="Post image" style="width:58px; height:40px; object-fit:cover; border-radius:6px; display:block; border:1px solid rgba(255,255,255,0.1);"/>' +
+            '</button>';
+          } else {
+            thumbnailHtml = '<div style="width:58px; height:40px; border-radius:6px; border:1px dashed rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); color:var(--text-muted); font-size:0.7rem;" title="No image assigned">' +
+              '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
+            '</div>';
+          }
+
+          return '<tr class="clickable-table-row" onclick="handleFacebookPostRowClick(event, &quot;' + id + '&quot;)" title="Click row to view details and edit">' +
+            '<td style="width:75px;" onclick="event.stopPropagation()">' + thumbnailHtml + '</td>' +
+            '<td data-sort-value="' + escapeHtml(safeStr(post.createdTime)) + '">' + escapeHtml(date) + '</td>' +
             '<td style="max-width:420px;white-space:normal;">' + escapeHtml(snippet) + '<div style="font-size:0.76rem;margin-top:0.3rem;">' + topicLink + (sourceLink ? '<span style="color:var(--text-muted);"> · Inspired by: </span>' + sourceLink : '') + '</div></td>' +
             '<td>' + workflow + '</td>' +
             '<td data-sort-value="' + (post.views == null ? '' : String(post.views)) + '">' + metric(post.views) + (post.uniqueViews == null ? '' : '<small style="display:block;color:var(--text-muted);">' + metric(post.uniqueViews) + ' unique</small>') + (post.insightsError ? '<small title="' + escapeHtml(post.insightsError) + '" style="display:block;color:var(--text-muted);">not available</small>' : '') + '</td>' +
             '<td data-sort-value="' + (post.reactions == null ? '' : String(post.reactions)) + '">' + metric(post.reactions) + '</td><td data-sort-value="' + (post.comments == null ? '' : String(post.comments)) + '">' + metric(post.comments) + '</td><td data-sort-value="' + (post.shares == null ? '' : String(post.shares)) + '">' + metric(post.shares) + '</td>' +
             '<td><span class="status-badge ' + (post.isHidden ? 'status-disabled' : 'status-healthy') + '">' + (post.isHidden ? 'Hidden' : 'Published') + '</span></td>' +
-            '<td><button class="btn-secondary" style="padding:0.3rem 0.55rem;font-size:0.78rem;" onclick="openFacebookPostDetails(&quot;' + id + '&quot;)">Details &amp; edit</button></td></tr>';
+          '</tr>';
         }).join('');
         if (body) {
           if (isAppend) body.insertAdjacentHTML('beforeend', rows);
@@ -4465,6 +4478,33 @@ export function getAdminScripts(): string {
         return;
       }
       openEditPostModal(postId);
+    }
+
+    function handleFacebookPostRowClick(evt, facebookPostId) {
+      if (!facebookPostId) return;
+      if (evt && evt.target && evt.target.closest && evt.target.closest('button, a, input, select, .img-preview-btn')) {
+        return;
+      }
+      openFacebookPostDetails(facebookPostId);
+    }
+
+    function handleTopicRowClick(evt, topicId) {
+      if (!topicId) return;
+      if (evt && evt.target && evt.target.closest && evt.target.closest('button, a, input, select, .topic-select-checkbox')) {
+        return;
+      }
+      openEditTopicModal(topicId);
+    }
+
+    function handleScheduleRowClick(evt, schedId, postId, isPublished, fbPostId) {
+      if (evt && evt.target && evt.target.closest && evt.target.closest('button, a, input, select, .img-preview-btn')) {
+        return;
+      }
+      if (isPublished) {
+        openFacebookPostDetails(fbPostId || postId);
+      } else {
+        openScheduledPostDetailModal(schedId, postId);
+      }
     }
 
     async function handleSavePost(evt) {
@@ -6674,6 +6714,9 @@ export function getAdminScripts(): string {
     window.selectDraftIllustration = selectDraftIllustration;
     window.confirmAssignDraftIllustration = confirmAssignDraftIllustration;
     window.handlePostRowClick = handlePostRowClick;
+    window.handleFacebookPostRowClick = handleFacebookPostRowClick;
+    window.handleTopicRowClick = handleTopicRowClick;
+    window.handleScheduleRowClick = handleScheduleRowClick;
     window.handleModalPublishNow = handleModalPublishNow;
     window.handleModalSchedule = handleModalSchedule;
     window.handleModalRegenerate = handleModalRegenerate;

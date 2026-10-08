@@ -719,6 +719,7 @@ export function renderAdminHtml(): string {
                 <table>
                   <thead>
                     <tr>
+                      <th style="width:80px;">Image</th>
                       <th>Published</th>
                       <th>Post</th>
                       <th>Progress</th>
@@ -727,7 +728,6 @@ export function renderAdminHtml(): string {
                       <th>Comments</th>
                       <th>Shares</th>
                       <th>Status</th>
-                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="publications-table-body">
