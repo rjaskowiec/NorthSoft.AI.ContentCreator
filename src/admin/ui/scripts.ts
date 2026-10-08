@@ -291,11 +291,12 @@ export function getAdminScripts(): string {
         opts.headers['x-session-token'] = sessionToken;
       }
 
-      // Activity Center integration -- only surface mutating requests, not background data loads
+      // Activity Center integration -- only surface mutating requests, not background data loads or callers managing their own tasks
       const isAuthCall = url.includes('/api/auth/');
       const isMutation = method !== 'GET';
+      const skipTask = Boolean(opts.skipTask);
       let taskId = null;
-      if (!isAuthCall && isMutation) {
+      if (!isAuthCall && isMutation && !skipTask) {
         taskId = window.TaskQueue.add('Fetching ' + method + ' ' + url, { type: 'network' });
         window.TaskQueue.start(taskId);
       }
@@ -2813,25 +2814,63 @@ export function getAdminScripts(): string {
     }
 
     async function syncFacebookPublications() {
-      const taskId = window.TaskQueue.add('Syncing Facebook', { type: 'manual', detail: 'Fetching latest publications and engagement metrics...' });
-      window.TaskQueue.start(taskId, 'Fetching latest publications and engagement metrics...');
+      const taskId = window.TaskQueue.add('Facebook Synchronization', {
+        type: 'manual',
+        detail: 'Connecting to Facebook and checking published posts...'
+      });
+      window.TaskQueue.start(taskId, 'Connecting to Facebook and checking published posts...');
 
       const button = document.getElementById('sync-facebook-publications');
       if (button) { button.disabled = true; button.textContent = 'Syncing...'; }
+
       try {
-        const response = await guardedFetch('/api/admin/facebook/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }, body: '{}' });
+        window.TaskQueue.stage(taskId, 'Fetching latest publications and engagement metrics from Facebook...');
+
+        const response = await guardedFetch('/api/admin/facebook/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: '{}',
+          skipTask: true
+        });
+
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.success) throw new Error(safeStr(data.error, 'Facebook sync failed.'));
+        if (!response.ok) {
+          const detailMsg = safeStr(data.error, 'Server returned error ' + response.status);
+          throw new Error(detailMsg);
+        }
+
         const result = data.result || {};
-        window.TaskQueue.complete(taskId, 'Sync complete: ' + safeStr(result.imported, '0') + ' imported, ' + safeStr(result.updated, '0') + ' updated.');
+        const imported = Number(result.imported || 0);
+        const updated = Number(result.updated || 0);
+        const checked = Number(result.checked || 0);
+        const errors = Number(result.errors || 0);
+
+        window.TaskQueue.stage(taskId, 'Updating local publications and schedules...');
+
         await loadFacebookPublications(false);
         await Promise.allSettled([
           loadContentData(),
           loadSchedulesData()
         ]);
+
+        if (errors > 0 && checked === 0 && imported === 0 && updated === 0) {
+          throw new Error('Unable to connect to Facebook. Please verify API access token and permissions in settings.');
+        }
+
+        let summary = 'Sync complete: ';
+        const parts = [];
+        if (updated > 0) parts.push(updated + ' updated');
+        if (imported > 0) parts.push(imported + ' imported');
+        if (checked > 0 && parts.length === 0) parts.push(checked + ' verified up to date');
+        if (parts.length === 0) parts.push('Everything is up to date');
+        if (errors > 0) parts.push('(' + errors + ' remote items skipped)');
+        summary += parts.join(', ') + '.';
+
+        window.TaskQueue.complete(taskId, summary);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
-        window.TaskQueue.fail(taskId, 'Facebook Sync Failed', errMsg);
+        console.error('[Facebook Sync Error]', error);
+        window.TaskQueue.fail(taskId, 'Facebook synchronization could not be completed.', errMsg);
       } finally {
         if (button) { button.disabled = false; button.textContent = 'Sync with Facebook'; }
       }
