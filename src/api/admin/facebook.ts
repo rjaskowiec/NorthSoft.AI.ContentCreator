@@ -361,15 +361,29 @@ facebookRouter.post('/facebook/page-posts/:facebookPostId/visibility', csrfProte
 facebookRouter.delete('/facebook/page-posts/:facebookPostId', csrfProtection, async (c) => {
   const facebookPostId = c.req.param('facebookPostId');
   if (!facebookPostId) return c.json({ success: false, error: 'Facebook post ID is required.' }, 400);
-  const publisher = new FacebookPublisher(c.env);
-  if (!publisher.deletePost) return c.json({ success: false, error: 'Facebook post deletion is not supported.' }, 501);
-  const result = await publisher.deletePost(facebookPostId);
-  if (!result.success) return c.json({ success: false, error: result.error || 'Meta rejected the delete request.' }, result.httpStatus && result.httpStatus >= 400 ? result.httpStatus as 400 : 502);
+
+  // If this is a synthetic / non-Facebook ID or Meta returns object does not exist (HTTP 400/404),
+  // handle gracefully by marking/cleaning the local publication instead of failing.
+  let isAlreadyMissingOnFb = facebookPostId.includes('manual_');
+  if (!isAlreadyMissingOnFb) {
+    const publisher = new FacebookPublisher(c.env);
+    if (!publisher.deletePost) return c.json({ success: false, error: 'Facebook post deletion is not supported.' }, 501);
+    const result = await publisher.deletePost(facebookPostId);
+    if (!result.success) {
+      // Check if the object does not exist on Facebook anymore
+      const errStr = (result.error || '').toLowerCase();
+      if (errStr.includes('does not exist') || errStr.includes('cannot be loaded') || result.httpStatus === 404) {
+        isAlreadyMissingOnFb = true;
+      } else {
+        return c.json({ success: false, error: result.error || 'Meta rejected the delete request.' }, result.httpStatus && result.httpStatus >= 400 ? result.httpStatus as 400 : 502);
+      }
+    }
+  }
 
   const deletedAt = new Date().toISOString();
   await c.env.DB.prepare("UPDATE publications SET fb_deleted_at = ?, sync_status = 'SYNCED', fb_last_check_at = ?, fb_last_sync_at = ? WHERE facebook_post_id = ?")
     .bind(deletedAt, deletedAt, deletedAt, facebookPostId).run();
-  return c.json({ success: true, deletedAt });
+  return c.json({ success: true, deletedAt, missingOnFb: isAlreadyMissingOnFb });
 });
 
 /**

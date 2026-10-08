@@ -1584,24 +1584,35 @@ export class PublicationService {
           if (existing) continue;
 
           // Check if an existing local post matches this Facebook content or title
+          // IMPORTANT: Do NOT reconcile posts that have a schedule set in the future!
           const existingLocalPost = await this.db.prepare(
-            `SELECT p.id as post_id, p.idea_id, pv.id as version_id, pv.content as body, p.status as post_status
+            `SELECT p.id as post_id, p.idea_id, pv.id as version_id, pv.content as body, p.status as post_status,
+                    s.scheduled_at as schedule_time, s.status as schedule_status
              FROM posts p
              JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+             LEFT JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'scheduled')
              WHERE p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED'
              ORDER BY p.created_at DESC`
-          ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string }>();
+          ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string; schedule_time: string | null; schedule_status: string | null }>();
 
           const normalize = (t: string) => (t || '').trim().toLowerCase().replace(/\s+/g, ' ');
           const normFbContent = normalize(content);
 
           let matchedLocal = existingLocalPost.results?.find(row => {
+            // Never reconcile a post scheduled for the future
+            if (row.schedule_time && new Date(row.schedule_time).getTime() > Date.now()) {
+              return false;
+            }
             const normBody = normalize(row.body);
             if (!normBody || !normFbContent) return false;
-            // Exact or substantial prefix / substring match (FB message vs local draft body)
+            // Exact match
             if (normBody === normFbContent) return true;
-            if (normFbContent.length > 50 && (normBody.includes(normFbContent.slice(0, 50)) || normFbContent.includes(normBody.slice(0, 50)))) {
-              return true;
+            // Substantial body containment with high similarity threshold
+            if (normFbContent.length >= 100 && normBody.length >= 100) {
+              const prefixLen = Math.min(100, Math.min(normFbContent.length, normBody.length));
+              if (normBody.slice(0, prefixLen) === normFbContent.slice(0, prefixLen)) {
+                return true;
+              }
             }
             return false;
           });
