@@ -19,6 +19,33 @@ export function getAdminScripts(): string {
     let pendingDeleteType = null;
     let pendingDeleteId = null;
 
+    function isPublishedPost(p) {
+      if (!p) return false;
+      const st = safeLower(p.status);
+      return st === 'published' || Boolean(p.published_at || p.publishedAt || p.facebook_post_id || p.isPublished);
+    }
+
+    function isScheduledPost(p) {
+      if (!p || isPublishedPost(p)) return false;
+      const schedTime = p.scheduled_at || p.scheduledAt;
+      const hasValidFutureSched = Boolean(
+        (p.schedule_id || schedTime) &&
+        schedTime &&
+        !isNaN(new Date(schedTime).getTime()) &&
+        new Date(schedTime).getTime() > Date.now()
+      );
+      return hasValidFutureSched;
+    }
+
+    function getEffectivePostStatus(p) {
+      if (!p) return 'DRAFT';
+      if (isPublishedPost(p)) return 'PUBLISHED';
+      if (isScheduledPost(p)) return 'SCHEDULED';
+      const rawSt = safeUpper(p.status, 'DRAFT');
+      if (rawSt === 'REJECTED' || rawSt === 'BLOCKED') return rawSt;
+      return rawSt === 'SCHEDULED' || rawSt === 'PUBLISHED' ? 'DRAFT' : rawSt;
+    }
+
     function renderWorkflowStages(item) {
       const isTopic = item && item.post_count !== undefined;
       const topicDone = isTopic || Boolean(item?.idea_id || item?.topicId || item?.topicTitle || item?.topic_title);
