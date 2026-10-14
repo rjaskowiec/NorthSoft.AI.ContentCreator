@@ -54,7 +54,7 @@ Most of the time, lost inquiries aren't because of your prices or your work qual
 
 They happen because the mobile site hides the one thing a stressed customer needs right now: an immediate tap-to-call button and clear opening hours.
 
-Moving your contact details and hours to the top of the mobile screen takes under an hour, but it can stop half your mobile visitors from bouncing.
+Moving your contact details and opening hours right to the top of the mobile screen helps visitors get in touch before they bounce to a competitor.
 
 If you suspect your current website is quietly losing calls between jobs, drop us a message at NorthSoft — we can take a quick look at your mobile setup together."
 
@@ -445,8 +445,48 @@ export class WriterService {
         .filter((h) => /^#[A-Za-z0-9_]+$/.test(h))
         .slice(0, 4);
 
-      // Append 1-4 topical hashtags to body text if not already present in the body
+      // Validate and normalize ctaType
+      const rawCtaType = typeof parsed.ctaType === 'string' ? parsed.ctaType.trim().toLowerCase() : '';
+      const allowedCtaTypes = new Set(['none', 'soft_invitation', 'discussion', 'explore_setup', 'contact']);
+      let normalizedCtaType: string;
+      if (allowedCtaTypes.has(rawCtaType)) {
+        normalizedCtaType = rawCtaType;
+      } else {
+        normalizedCtaType = 'none';
+      }
+
+      // Safe CTA consolidation: Ensure `body` contains the full publication-ready text
+      const rawCta = typeof parsed.callToAction === 'string' ? parsed.callToAction.trim() : '';
+      const effectiveCta: string | undefined = rawCta.length > 0 ? rawCta : undefined;
+
       let finalBody = bodyText;
+
+      if (effectiveCta) {
+        // Normalize comparison by stripping punctuation and whitespace
+        const cleanCta = effectiveCta.replace(/[^\w\s]/g, '').toLowerCase().replace(/\s+/g, ' ');
+        const cleanBody = finalBody.replace(/[^\w\s]/g, '').toLowerCase().replace(/\s+/g, ' ');
+
+        const ctaAlreadyInBody = cleanBody.includes(cleanCta) || finalBody.includes(effectiveCta);
+
+        if (!ctaAlreadyInBody) {
+          // CTA was returned only in callToAction field — safely append to body before hashtags
+          finalBody = `${finalBody.trimEnd()}\n\n${effectiveCta}`;
+        }
+
+        // If ctaType was fallback 'none' but a real CTA exists, set appropriate ctaType
+        if (normalizedCtaType === 'none') {
+          normalizedCtaType = 'soft_invitation';
+        }
+      } else {
+        // Detect if body already ends with an unforced invitation to set ctaType appropriately
+        if (normalizedCtaType === 'none') {
+          if (/NorthSoft/i.test(finalBody) || /\b(?:drop us (?:a line|a message)|send us a message|let's (?:take a look|chat)|reach out)\b/i.test(finalBody)) {
+            normalizedCtaType = 'soft_invitation';
+          }
+        }
+      }
+
+      // Append 1-4 topical hashtags to body text if not already present in the body
       if (hashtagsList.length > 0) {
         const hasAnyTagAlready = hashtagsList.some((tag) => finalBody.includes(tag));
         if (!hasAnyTagAlready) {
@@ -463,7 +503,7 @@ export class WriterService {
         sourceIds: sources.map((s) => s.id),
         claims: claimsList,
         hashtags: hashtagsList,
-        callToAction: typeof parsed.callToAction === 'string' ? parsed.callToAction : undefined,
+        callToAction: effectiveCta,
         imageSearchQuery:
           typeof parsed.imageSearchQuery === 'string'
             ? parsed.imageSearchQuery.trim().slice(0, 120)
@@ -474,7 +514,7 @@ export class WriterService {
         reasoningStructure:
           typeof parsed.reasoningStructure === 'string' ? parsed.reasoningStructure : chosenPattern?.name,
         readerValue: typeof parsed.readerValue === 'string' ? parsed.readerValue : undefined,
-        ctaType: typeof parsed.ctaType === 'string' ? parsed.ctaType : undefined,
+        ctaType: normalizedCtaType,
       };
 
       return { draft, chosenPattern };
