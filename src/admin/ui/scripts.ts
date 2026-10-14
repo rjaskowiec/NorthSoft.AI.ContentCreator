@@ -5991,6 +5991,25 @@ export function getAdminScripts(): string {
         return;
       }
 
+      let forceGeneration = false;
+      try {
+        const quotaRes = await guardedFetch('/api/admin/images/quota');
+        const quotaData = await quotaRes.json().catch(() => ({}));
+        if (quotaData && quotaData.countToday >= quotaData.limit) {
+          const proceed = confirm(
+            'Dzisiaj wygenerowano już obraz AI (' + quotaData.countToday + '/' + quotaData.limit + ').\\n\\n' +
+            'Generowanie kolejnego zużyje dodatkowe neurony Cloudflare Workers AI.\\n\\n' +
+            'Czy na pewno chcesz kontynuować i wygenerować kolejne zdjęcie?'
+          );
+          if (!proceed) {
+            return;
+          }
+          forceGeneration = true;
+        }
+      } catch (qErr) {
+        console.warn('Quota pre-check failed, proceeding with standard request:', qErr);
+      }
+
       isCandidateDiscoveryRunning = true;
 
       const discHeaderBtn = document.getElementById('discover-candidates-btn');
@@ -6011,7 +6030,7 @@ export function getAdminScripts(): string {
       }
 
       try {
-        if (detailBox) detailBox.textContent = 'Checking Cloudflare Workers AI daily quota (max 1/day)...';
+        if (detailBox) detailBox.textContent = 'Preparing Cloudflare Workers AI generation...';
         await new Promise((r) => setTimeout(r, 200));
 
         updateDiscoverStep(1, 'completed');
@@ -6021,7 +6040,7 @@ export function getAdminScripts(): string {
         const resPromise = guardedFetch('/api/admin/images/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ description, category }),
+          body: JSON.stringify({ description, category, force: forceGeneration }),
         });
 
         await new Promise((r) => setTimeout(r, 400));

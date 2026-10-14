@@ -29,6 +29,7 @@ export interface GenerateImageOptions {
   category: string;
   description: string;
   postContext?: string;
+  force?: boolean;
 }
 
 export interface GeneratedImageResult {
@@ -439,9 +440,9 @@ export class AiImageGeneratorService {
       throw new AppError('Cloudflare R2 IMAGE_BUCKET is not configured.', 503, 'STORAGE_UNAVAILABLE');
     }
 
-    // 1. Strict server-side quota verification
+    // 1. Server-side quota verification (with explicit user override support)
     const quota = await this.checkDailyImageQuota(db);
-    if (!quota.allowed) {
+    if (!quota.allowed && !options.force) {
       throw new AppError(quota.reason || 'Daily image generation quota reached.', 429, 'QUOTA_EXCEEDED');
     }
 

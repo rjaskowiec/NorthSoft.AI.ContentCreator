@@ -264,9 +264,27 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 });
 
 /**
+ * GET /api/admin/images/quota
+ * Checks today's AI image generation status and neuron conservation limits.
+ */
+imagesRouter.get('/images/quota', async (c) => {
+  const db = c.env.DB;
+  const { AiImageGeneratorService } = await import('../../services/content/ai-image-generator');
+  const generator = new AiImageGeneratorService(c.env);
+  const quota = await generator.checkDailyImageQuota(db);
+  return c.json({
+    success: true,
+    allowed: quota.allowed,
+    countToday: quota.countToday,
+    limit: quota.limit,
+    reason: quota.reason || null,
+  });
+});
+
+/**
  * POST /api/admin/images/generate
  * Generates a photorealistic business image via Cloudflare Workers AI.
- * Strict limits: 1 image/day, author "NorthSoft", license "NorthSoft internal use", status "PENDING".
+ * Limits: default 1 image/day soft limit (with user confirmation override), author "NorthSoft", license "NorthSoft internal use", status "PENDING".
  */
 imagesRouter.post('/images/generate', csrfProtection, async (c) => {
   const db = c.env.DB;
@@ -274,11 +292,13 @@ imagesRouter.post('/images/generate', csrfProtection, async (c) => {
     description?: string;
     category?: string;
     postContext?: string;
+    force?: boolean;
   };
 
   const description = (body.description || '').trim();
   const category = (body.category || 'General').trim();
   const postContext = (body.postContext || '').trim();
+  const force = Boolean(body.force);
 
   if (!description) {
     return c.json({ success: false, error: 'Image search description or prompt is required for AI generation.' }, 400);
@@ -292,6 +312,7 @@ imagesRouter.post('/images/generate', csrfProtection, async (c) => {
       description,
       category,
       postContext: postContext || undefined,
+      force,
     });
 
     return c.json({

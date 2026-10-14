@@ -245,7 +245,7 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       expect(json.error).toContain('description or prompt is required');
     });
 
-    it('returns HTTP 429 when daily generation quota is exceeded', async () => {
+    it('returns HTTP 429 when daily generation quota is exceeded without force flag', async () => {
       const { db } = createMockD1Database([
         {
           role: 'image_generator',
@@ -281,6 +281,70 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       const json = (await res.json()) as any;
       expect(json.success).toBe(false);
       expect(json.error).toContain('Daily AI image generation quota reached');
+    });
+
+    it('allows generation when force flag is set to true even if quota was reached', async () => {
+      const { db } = createMockD1Database([
+        {
+          role: 'image_generator',
+          status: 'completed',
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      const mockEnv: any = {
+        DB: db,
+        AI: { run: async () => new Uint8Array(256).fill(42).buffer },
+        IMAGE_BUCKET: { put: async () => {} },
+      };
+
+      const app = new Hono<AppEnv>();
+      app.use('*', async (c, next) => {
+        c.set('session', { csrf_secret: 'test-csrf' } as any);
+        await next();
+      });
+      app.route('/', imagesRouter);
+
+      const req = new Request('http://localhost/images/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': 'test-csrf' },
+        body: JSON.stringify({
+          description: 'contemporary business meeting room',
+          category: 'General',
+          force: true,
+        }),
+      });
+
+      const res = await app.fetch(req, mockEnv);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.image).toBeDefined();
+    });
+
+    it('GET /api/admin/images/quota returns current usage and quota status', async () => {
+      const { db } = createMockD1Database([
+        {
+          role: 'image_generator',
+          status: 'completed',
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      const app = new Hono<AppEnv>();
+      app.route('/', imagesRouter);
+
+      const req = new Request('http://localhost/images/quota', {
+        method: 'GET',
+      });
+
+      const res = await app.fetch(req, { DB: db });
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.countToday).toBe(1);
+      expect(json.limit).toBe(1);
+      expect(json.allowed).toBe(false);
     });
   });
 });
