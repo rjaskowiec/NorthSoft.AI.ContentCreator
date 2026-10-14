@@ -6,7 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { D1AuditLogger, type AuditEventType, type AuditLevel, type AuditQueryFilters, type AuditStatus } from '../../core/audit';
 
 export const auditRouter = new Hono<AppEnv>();

@@ -2,8 +2,8 @@
  * Admin API — Publications Route Handler
  */
 
-import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import { Hono, type Context } from 'hono';
+import type { AppEnv } from '../../core/types';
 import { D1AuditLogger } from '../../core/audit';
 import { csrfProtection } from '../../core/auth/csrf';
 import { FacebookPublisher } from '../../publishing/facebook-publisher';
@@ -139,7 +139,7 @@ publicationsRouter.post('/publications/:id/retry', csrfProtection, async (c) => 
  * Changes the assigned publication image to an approved item from Image Library.
  * Protected by requireAdmin and csrfProtection.
  */
-const handlePublicationImageChange = async (c: any) => {
+const handlePublicationImageChange = async (c: Context<AppEnv>) => {
   const db = c.env.DB;
   const id = c.req.param('id') || '';
   const auditLogger = new D1AuditLogger(db);

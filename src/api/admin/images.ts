@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ImageLibraryService } from '../../services/content/image-library-service';
 import { OpenverseImageService } from '../../services/content/image-service';
@@ -95,8 +95,11 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
     // Generate bounded retry queries: initial query -> broader business query -> category scene
     const searchQueries = buildDiscoveryQueryHierarchy(query, category);
     let chosenQuery = query;
-    let rawCandidates: any[] = [];
-    let relevantCandidatesWithScore: any[] = [];
+    let rawCandidates: import('../../services/content/image-service.interface').ImageCandidate[] = [];
+    let relevantCandidatesWithScore: Array<{
+      cand: import('../../services/content/image-service.interface').ImageCandidate;
+      relevance: import('../../services/content/image-relevance-evaluator').ImageRelevanceResult;
+    }> = [];
 
     for (const q of searchQueries) {
       chosenQuery = q;
@@ -286,7 +289,8 @@ imagesRouter.post('/images/generate', csrfProtection, async (c) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    const status = (err as any)?.statusCode || (err as any)?.status || 500;
+    const errObj = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+    const status = (typeof errObj.statusCode === 'number' ? errObj.statusCode : typeof errObj.status === 'number' ? errObj.status : 500) as 400 | 500;
     return c.json({ success: false, error: message }, status);
   }
 });

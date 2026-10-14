@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ContentPlannerService } from '../../services/content/content-planner-service';
 import { D1AuditLogger } from '../../core/audit';

@@ -5,7 +5,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../index';
+import type { AppEnv } from '../core/types';
 import { D1AuditLogger } from '../core/audit';
 import { verifyPassword } from '../core/auth/crypto';
 import { csrfProtection } from '../core/auth/csrf';

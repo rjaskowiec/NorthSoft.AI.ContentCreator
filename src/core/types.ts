@@ -1,8 +1,15 @@
+import type { AdminSession, AdminUser } from './auth/session';
+
+export type AppEnv = {
+  Bindings: Env;
+  Variables: {
+    adminUser: AdminUser;
+    session: AdminSession;
+  };
+};
+
 /**
- * Content Pipeline Types
- *
  * Domain types representing the content lifecycle from idea to publication.
- * These map to the D1 database schema.
  */
 
 // ============================================================

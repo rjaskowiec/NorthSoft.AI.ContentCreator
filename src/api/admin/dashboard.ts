@@ -7,7 +7,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { D1AuditLogger } from '../../core/audit';
 import { getEnvironment, isFacebookPublishEnabled } from '../../core/environment';
 import { FacebookPublisher } from '../../publishing/facebook-publisher';
