@@ -97,20 +97,25 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
   });
 
   describe('2. Business Prompt Builder & Scene Diversification', () => {
-    it('constructs an authentic commercial photograph prompt with natural human characteristics and clean screen guidelines', () => {
+    it('constructs a modular commercial photograph prompt with separated scene, emotion, style, and clean screen guidelines', () => {
       const prompt = buildBusinessImagePrompt(
         'small business owner reviewing laptop analytics',
         'Small Business Productivity & Ops',
         'Tips for streamlining weekly business tracking',
       );
 
-      expect(prompt).toContain('candid commercial photograph');
-      expect(prompt).toContain('small business owner reviewing laptop analytics');
-      expect(prompt).toContain('Small Business Productivity & Ops');
-      expect(prompt).toContain('Authentic human subjects feature natural skin texture with visible fine pores');
-      expect(prompt).toContain('candid relaxed expressions');
-      expect(prompt).toContain('anatomically accurate with natural finger curvature');
-      expect(prompt).toContain('Device screens present clean minimalist graphic layouts');
+      // Modular non-overlapping structure
+      expect(prompt).toContain('A 35mm candid commercial photograph of small business owner reviewing laptop analytics.');
+      expect(prompt).toContain('Category: Small Business Productivity & Ops.');
+      expect(prompt).toContain('Expression:');
+      expect(prompt).toContain('Style: 35mm lens, natural directional window daylight');
+      expect(prompt).toContain('realistic skin texture with fine pores');
+      expect(prompt).toContain('Screens: any visible monitor, tablet or phone displays clean minimalist geometric blocks');
+
+      // Verify no redundant AI buzzword spamming or conflicting tablet descriptions
+      expect(prompt).not.toContain('ultra realistic');
+      expect(prompt).not.toContain('hyper realistic');
+      expect(prompt).not.toContain('holding a slim tablet resting on the tabletop');
     });
 
     it('diversifies scenes away from repetitive laptop desk setups when selecting complementary scene', async () => {
@@ -134,15 +139,73 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
 
       // Should choose a non-laptop archetype (e.g. tablet consultation, mobile checkout, or large monitor)
       expect(chosenArchetype.id).not.toBe('web-laptop-minimal');
-      expect(['web-tablet-consultation', 'web-designer-desktop', 'web-mobile-checkout', 'web-team-review']).toContain(chosenArchetype.id);
+      expect(['web-client-booking-tablet', 'web-designer-desktop', 'web-mobile-checkout', 'web-team-review']).toContain(chosenArchetype.id);
     });
 
-    it('gracefully handles empty library by returning a valid category scene archetype', async () => {
-      const { selectComplementaryScene } = await import('../../src/services/content/ai-image-generator');
-      const chosenArchetype = selectComplementaryScene('Sales & Conversion Process', []);
-      expect(chosenArchetype).toBeDefined();
-      expect(chosenArchetype.category).toBe('Sales & Conversion Process');
-      expect(chosenArchetype.compositionGuidance).toBeTruthy();
+    it('detects emotional intent from post context and tailors expression direction', async () => {
+      const { detectEmotionalIntent, buildBusinessImagePrompt } = await import('../../src/services/content/ai-image-generator');
+
+      // Problem-aware context
+      const problemIntent = detectEmotionalIntent('Dlaczego klienci uciekają z Twojej strony? Spadek konwersji i błędy UX');
+      expect(problemIntent).toBe('problem-aware');
+
+      const problemPrompt = buildBusinessImagePrompt(
+        'business owner analyzing bounce rates',
+        'Sales & Conversion Process',
+        'Dlaczego klienci uciekają z Twojej strony? Spadek konwersji i błędy UX',
+      );
+      expect(problemPrompt).toContain('analytical contemplation');
+
+      // Positive context
+      const positiveIntent = detectEmotionalIntent('Wzrost sprzedaży o 35% po wdrożeniu nowego koszyka zakupowego!');
+      expect(positiveIntent).toBe('positive');
+
+      const positivePrompt = buildBusinessImagePrompt(
+        'store manager celebrating sales numbers',
+        'Sales & Conversion Process',
+        'Wzrost sprzedaży o 35% po wdrożeniu nowego koszyka zakupowego!',
+      );
+      expect(positivePrompt).toContain('calm satisfaction');
+
+      // Collaborative context
+      const collabIntent = detectEmotionalIntent('Wspólne warsztaty i konsultacja strategii digitalowej z zespołem');
+      expect(collabIntent).toBe('collaborative');
+
+      // Safe neutral fallback
+      const neutralIntent = detectEmotionalIntent('Przegląd cotygodniowy');
+      expect(neutralIntent).toBe('neutral');
+    });
+
+    it('guarantees physical consistency in all archetype definitions (hands, gaze, device orientation)', async () => {
+      const { CATEGORY_SCENE_ARCHETYPES } = await import('../../src/services/content/ai-image-generator');
+
+      for (const [, archetypes] of Object.entries(CATEGORY_SCENE_ARCHETYPES)) {
+        for (const arch of archetypes) {
+          // Check that archetype specifies clear subject action, gaze/orientation, and valid subject category
+          expect(['person', 'people', 'device_only', 'environment_only']).toContain(arch.primarySubject);
+          expect(arch.intendedEmotions.length).toBeGreaterThan(0);
+          expect(arch.subjectDescription.length).toBeGreaterThan(20);
+          expect(arch.compositionGuidance.length).toBeGreaterThan(20);
+
+          // Physical consistency checks: no contradiction where device is both held and resting on tabletop
+          const lowerSubject = arch.subjectDescription.toLowerCase();
+          const lowerGuidance = arch.compositionGuidance.toLowerCase();
+          const combined = `${lowerSubject} ${lowerGuidance}`;
+
+          if (combined.includes('tablet')) {
+            const isResting = combined.includes('resting flat') || combined.includes('tabletop') || combined.includes('on the desk');
+            const isHeldTwoHands = combined.includes('holding') && combined.includes('both hands');
+            // Must not contradict resting flat on table and two-handed floating hold
+            expect(isResting && isHeldTwoHands).toBe(false);
+          }
+
+          // Single person vs consultation archetype consistency
+          if (arch.primarySubject === 'person') {
+            expect(combined).not.toContain('two colleagues discussing');
+            expect(combined).not.toContain('team of professionals');
+          }
+        }
+      }
     });
   });
 

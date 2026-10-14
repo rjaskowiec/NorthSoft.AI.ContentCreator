@@ -46,62 +46,111 @@ export interface GeneratedImageResult {
   model: string;
 }
 
-/**
- * Structured scene composition archetype for realistic business imagery.
- */
+export type EmotionalIntent = 'positive' | 'neutral' | 'problem-aware' | 'collaborative';
+
 export interface SceneCompositionArchetype {
   id: string;
   category: string;
   sceneTitle: string;
   subjectDescription: string;
   compositionGuidance: string;
+  primarySubject: 'person' | 'people' | 'device_only' | 'environment_only';
+  intendedEmotions: EmotionalIntent[];
   keywords: string[];
 }
 
 /**
- * Curated archetypes per category that vary device, setting, subject, and perspective.
- * Prevents the single static 'contemporary business website layout on laptop screen modern desk' trap.
+ * Derives emotional intent from post text, title, or search query.
+ * Falls back safely to 'neutral' when intent is ambiguous.
+ */
+export function detectEmotionalIntent(text?: string): EmotionalIntent {
+  if (!text || !text.trim()) return 'neutral';
+  const lower = text.toLowerCase();
+
+  // Problem-aware signals: frustration, failure, drop in conversion, bugs, friction, obstacles
+  const problemPatterns = [
+    /\b(?:problem|issue|bug|error|slow|drop|lost|losing|frustrated|frustrating|confusing|failing|failure|bounce|churn|struggle|struggling|headache|friction|broken)\b/i,
+    /\b(?:spadek|problem|błąd|awaria|porażka|frustracja|trudności|strata|wolna strona)\b/i,
+  ];
+  if (problemPatterns.some((p) => p.test(lower))) {
+    return 'problem-aware';
+  }
+
+  // Collaborative signals: teamwork, client meeting, co-working, joint planning, discussion, consulting
+  const collabPatterns = [
+    /\b(?:team|teamwork|collaborat|meeting|discussion|consulting|partnership|advisory|co-work|together|workshop|brainstorm)\b/i,
+    /\b(?:zespół|współpraca|spotkanie|dyskusja|konsultacja|doradztwo|warsztaty|razem)\b/i,
+  ];
+  if (collabPatterns.some((p) => p.test(lower))) {
+    return 'collaborative';
+  }
+
+  // Positive signals: success, celebration, growth, relief, 5-star, satisfaction, launch, smooth, win
+  const positivePatterns = [
+    /\b(?:success|growth|grow|thriving|celebrat|happy|satisfied|satisfaction|relief|boost|increase|launch|achievement|winning|5-star|five-star|delight)\b/i,
+    /\b(?:sukces|wzrost|zadowolen|satysfakcj|ulga|sukcesem|uruchomienie|zwycięstwo|5 gwiazdek)\b/i,
+  ];
+  if (positivePatterns.some((p) => p.test(lower))) {
+    return 'positive';
+  }
+
+  return 'neutral';
+}
+
+/**
+ * Curated archetypes per category with unambiguous physical interactions,
+ * clear gaze direction, explicit screen orientation, and emotional intents.
  */
 export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype[]> = {
   'Websites & Landing Pages': [
     {
-      id: 'web-tablet-consultation',
+      id: 'web-client-booking-tablet',
       category: 'Websites & Landing Pages',
-      sceneTitle: 'Client viewing clean booking portal on modern tablet',
-      subjectDescription: 'independent business professional sitting at an oak desk, one hand resting naturally on the edge while holding a slim tablet resting on the tabletop, showing an appointment calendar',
-      compositionGuidance: 'natural seated posture with authentic weight distribution, genuine candid concentration, natural skin texture with subtle tonal variation, soft window daylight from the side, clean screen with simple geometric layout',
-      keywords: ['tablet', 'booking', 'clean interface', 'scheduling', 'customer'],
+      sceneTitle: 'Client viewing clean booking calendar on tablet placed on desk',
+      subjectDescription: 'a client seated at a tidy oak consultation desk, looking down attentively at a slim tablet resting flat on the tabletop, with right index finger touching a calendar appointment slot while the left hand rests loosely beside a glass of water',
+      compositionGuidance: 'the tablet screen faces directly upward toward the seated person who is looking down at it, natural side daylight from window, authentic posture with elbows on desk, clean minimalist calendar blocks on screen without pseudo-text',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'neutral'],
+      keywords: ['tablet', 'booking', 'calendar', 'scheduling', 'client'],
     },
     {
       id: 'web-designer-desktop',
       category: 'Websites & Landing Pages',
-      sceneTitle: 'Creative professional evaluating modern web typography and wireframe on large monitor',
-      subjectDescription: 'web professional viewed from three-quarter over-shoulder angle, sitting comfortably in an ergonomic office chair with hands resting on desk beside a wireless mouse, looking at a minimalist web layout on a matte display',
-      compositionGuidance: 'authentic relaxed posture, natural shoulder angle and slight head tilt, realistic hands with natural finger curvature resting on desk surface, soft natural workplace illumination, no fake text',
+      sceneTitle: 'Web designer evaluating responsive layout on large desktop monitor',
+      subjectDescription: 'a web professional seated in an ergonomic office chair seen from a three-quarter back angle, right hand resting on a computer mouse on the desk while looking directly at a 27-inch matte desktop display showing a minimalist website mockup',
+      compositionGuidance: 'the monitor screen is positioned on the desk facing the designer, natural over-shoulder viewpoint, comfortable working posture, clean geometric wireframe sections without messy dashboard charts',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'problem-aware'],
       keywords: ['monitor', 'minimalist website', 'desktop', 'clean layout', 'designer'],
     },
     {
       id: 'web-mobile-checkout',
       category: 'Websites & Landing Pages',
-      sceneTitle: 'Customer using modern mobile website checkout on smartphone',
-      subjectDescription: 'hands holding modern smartphone at waist height in a warm contemporary cafe, with natural finger grip and realistic skin folds on knuckles, displaying a clean one-click payment card',
-      compositionGuidance: 'anatomically precise two-handed phone grip, authentic skin texture and natural fingernails, softly blurred warm ambient background, sharp focus on device',
+      sceneTitle: 'Customer using one-click mobile checkout on smartphone',
+      subjectDescription: 'customer hands holding a modern smartphone at chest height in a warm cafe, looking down at the screen where a clean green confirmation card is displayed after completing an online purchase',
+      compositionGuidance: 'the phone screen is angled toward the user eyes, natural two-handed grip with realistic knuckles and skin texture, warm ambient cafe background softly out of focus',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'neutral'],
       keywords: ['smartphone', 'mobile web', 'checkout', 'ecommerce', 'hands'],
     },
     {
       id: 'web-laptop-minimal',
       category: 'Websites & Landing Pages',
-      sceneTitle: 'Laptop displaying modern minimalist company homepage on bright oak desk',
-      subjectDescription: 'sleek ultra-thin laptop resting open on a tidy Scandinavian desk, with a ceramic mug and closed notebook nearby, showing a clean corporate homepage with abstract photography',
-      compositionGuidance: 'eye-level architectural perspective, bright natural side window illumination, crisp material textures of oak wood, ceramic and metal, balanced composition without people',
+      sceneTitle: 'Modern laptop showing business homepage on quiet wooden desk',
+      subjectDescription: 'an ultra-thin laptop open at a 105-degree angle on an oak desk beside a ceramic coffee cup and closed notebook, displaying a clean corporate homepage with simple photo banner and clean navigation',
+      compositionGuidance: 'architectural commercial still life without people, natural morning side lighting, tactile material textures of wood grain, glazed ceramic, and anodized aluminum',
+      primarySubject: 'device_only',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['laptop', 'landing page', 'minimalist', 'oak desk', 'workspace'],
     },
     {
       id: 'web-team-review',
       category: 'Websites & Landing Pages',
-      sceneTitle: 'Small business colleagues discussing website launch around meeting table',
-      subjectDescription: 'two colleagues in thoughtful collaborative discussion seated around a timber studio table, one gesturing subtly toward a shared laptop with relaxed fingers',
-      compositionGuidance: 'candid unposed documentary photography, natural facial expressions without forced corporate smiles, realistic posture and eye contact, soft daylight atmosphere',
+      sceneTitle: 'Two colleagues reviewing website launch around a studio table',
+      subjectDescription: 'two business colleagues seated together at a timber studio table, looking at a shared laptop positioned centrally between them facing both persons, discussing the webpage structure with relaxed expressions',
+      compositionGuidance: 'unforced candid documentary capture, both people focused on the centrally placed laptop screen, natural posture leaning slightly forward with hands resting on the table',
+      primarySubject: 'people',
+      intendedEmotions: ['collaborative', 'positive'],
       keywords: ['team', 'discussion', 'launch', 'studio', 'colleagues'],
     },
   ],
@@ -109,25 +158,31 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'mkt-team-growth-board',
       category: 'Marketing & Customer Acquisition',
-      sceneTitle: 'Marketing specialists discussing digital metrics in bright studio',
-      subjectDescription: 'marketing professional standing naturally beside a wall-mounted glass board with clean upward trend cards, holding a notebook loosely against the arm',
-      compositionGuidance: 'natural standing balance with realistic weight shift, relaxed shoulders, candid thoughtful expression, authentic facial shadows and natural skin pores, bright morning sunlight',
+      sceneTitle: 'Marketing specialists discussing acquisition metrics at glass board',
+      subjectDescription: 'two colleagues standing in a bright modern studio beside a glass marker board with simple upward trend diagrams, one holding a paper notepad while looking at the board in active conversation',
+      compositionGuidance: 'natural standing posture with believable weight shift, candid collaborative expressions, soft diffuse daylight, clear simple trend charts without micro-numbers',
+      primarySubject: 'people',
+      intendedEmotions: ['collaborative', 'positive'],
       keywords: ['growth', 'marketing', 'team', 'charts', 'presentation'],
     },
     {
       id: 'mkt-social-strategy-tablet',
       category: 'Marketing & Customer Acquisition',
-      sceneTitle: 'Digital strategist planning content campaign on digital tablet',
-      subjectDescription: 'creative strategist seated at a tidy workspace, right hand holding a digital stylus touching a flat tablet screen, left arm resting comfortably on the wooden desk surface',
-      compositionGuidance: 'believable hand ergonomics and stylus grip, natural skin wrinkles at wrist and knuckles, 45-degree angle documentary shot, warm ambient lighting',
+      sceneTitle: 'Strategist mapping marketing campaign on tablet with stylus',
+      subjectDescription: 'a digital marketer seated at a sunlit desk with a tablet lying flat on the surface, holding a digital stylus in the right hand to reposition a card on screen, looking down with focused concentration',
+      compositionGuidance: 'the tablet lies flat on desk with screen facing up toward the user, authentic stylus grip with realistic skin folds at wrist, warm morning light, uncluttered workspace',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['strategist', 'campaign', 'tablet', 'calendar', 'planning'],
     },
     {
       id: 'mkt-ad-performance-laptop',
       category: 'Marketing & Customer Acquisition',
-      sceneTitle: 'Entrepreneur analyzing online advertising reach on laptop',
-      subjectDescription: 'focused professional in casual knitwear sitting at a sunlit co-working table, resting chin thoughtfully on one hand while browsing clean campaign overview charts',
-      compositionGuidance: 'authentic concentration and natural facial asymmetry, soft skin texture catching side window light, believable relaxed pose, shallow depth of field',
+      sceneTitle: 'Entrepreneur analyzing online funnel performance on laptop',
+      subjectDescription: 'a business founder seated at a clean co-working table with laptop open in front, chin resting thoughtfully in one hand while reading conversion statistics displayed as clean bar graphs',
+      compositionGuidance: 'the laptop screen faces the founder who is looking directly at it, natural analytical posture, side window daylight, shallow depth of field',
+      primarySubject: 'person',
+      intendedEmotions: ['problem-aware', 'neutral'],
       keywords: ['entrepreneur', 'acquisition', 'funnel', 'laptop', 'analytics'],
     },
   ],
@@ -135,25 +190,31 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'sales-pos-contactless',
       category: 'Sales & Conversion Process',
-      sceneTitle: 'Customer completing fast contactless payment at boutique counter',
-      subjectDescription: 'customer hand naturally tapping payment card against a minimalist POS payment terminal on a solid timber retail counter',
-      compositionGuidance: 'macro close-up on realistic human hand and payment terminal, authentic skin texture and realistic knuckle lines, soft warm boutique ambient lighting',
+      sceneTitle: 'Customer tapping contactless payment card on boutique terminal',
+      subjectDescription: 'a customer hand holding a payment card tapping it against a minimalist payment terminal fixed on a solid timber retail counter, completing a swift checkout',
+      compositionGuidance: 'close-up on the physical interaction between card and terminal, believable hand posture and realistic skin texture, soft ambient boutique lighting',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'neutral'],
       keywords: ['pos', 'contactless payment', 'checkout', 'retail', 'counter'],
     },
     {
       id: 'sales-client-agreement',
       category: 'Sales & Conversion Process',
-      sceneTitle: 'Consultant and business client concluding successful service agreement',
-      subjectDescription: 'consultant and client in comfortable conversational meeting across a wooden table with tablet and glasses of water, sharing an authentic moment of agreement',
-      compositionGuidance: 'natural relaxed seating, genuine candid eye contact, unposed smiles with natural crinkles around eyes, authentic fabric textures and diffuse indoor daylight',
-      keywords: ['agreement', 'consultation', 'client', 'handshake', 'partnership'],
+      sceneTitle: 'Advisor and client seated at meeting table concluding agreement',
+      subjectDescription: 'an advisor and client seated in comfortable armchairs across a low timber table with a tablet and two glasses of water, looking at each other during a cordial conversation',
+      compositionGuidance: 'natural eye contact between two seated people, relaxed posture, the tablet rests flat on the table between them, soft daylight through sheer curtains',
+      primarySubject: 'people',
+      intendedEmotions: ['collaborative', 'positive'],
+      keywords: ['agreement', 'consultation', 'client', 'meeting', 'partnership'],
     },
     {
       id: 'sales-ecommerce-dispatch',
       category: 'Sales & Conversion Process',
-      sceneTitle: 'Store owner preparing packaged online orders in workshop',
-      subjectDescription: 'artisan entrepreneur standing at a clean packing bench, holding a cardboard shipping box with both hands while affixing a shipping label',
-      compositionGuidance: 'authentic practical craftsmanship, natural posture and arm placement, realistic focused expression, airy daylight from industrial window',
+      sceneTitle: 'Store owner preparing packaged customer order in studio',
+      subjectDescription: 'an independent business owner standing at a wooden packing workbench, holding a neat cardboard delivery box with both hands while smoothing down an address label',
+      compositionGuidance: 'authentic practical craftsmanship, hands actively engaged with the box, focused downcast gaze on the package, bright natural window light',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['orders', 'shipping', 'packaging', 'ecommerce', 'dispatch'],
     },
   ],
@@ -161,25 +222,31 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'ai-automated-workflow-screen',
       category: 'AI & Business Automation',
-      sceneTitle: 'Engineer configuring visual automated workflow pipeline on dual monitors',
-      subjectDescription: 'software engineer seen from side profile at a modern standing desk, resting one hand lightly on a wireless keyboard while observing clean node workflow diagrams on screen',
-      compositionGuidance: 'natural standing posture, authentic relaxed grip on keyboard, subtle natural backlight, realistic skin tones with natural ambient fill',
+      sceneTitle: 'Developer at standing desk configuring automated workflow',
+      subjectDescription: 'a software engineer seen from side profile at a standing desk, hands resting on a keyboard while looking attentively at a monitor displaying a clean node-based automation pipeline',
+      compositionGuidance: 'the screen faces the engineer, authentic standing posture, natural relaxed hand placement, clean flowchart blocks on display with balanced lighting',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'problem-aware'],
       keywords: ['workflow', 'automation', 'diagram', 'dual monitor', 'standing desk'],
     },
     {
       id: 'ai-smart-ops-tablet',
       category: 'AI & Business Automation',
-      sceneTitle: 'Operations manager verifying automated inventory syncing on tablet',
-      subjectDescription: 'operations specialist walking thoughtfully through an airy logistics center, holding a tablet securely in both hands at comfortable viewing height',
-      compositionGuidance: 'believable mid-stride posture, authentic documentary photojournalism style, natural daylight through high warehouse skylights, genuine focus',
+      sceneTitle: 'Operations specialist walking through fulfillment center with tablet',
+      subjectDescription: 'an operations manager walking through an airy logistics facility, holding a rugged tablet with both hands angled toward their own eyes to review simple inventory status cards',
+      compositionGuidance: 'the tablet screen faces directly toward the walking person, natural mid-stride posture, realistic warehouse skylight illumination, documentary photography feel',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['operations', 'automation', 'tablet', 'syncing', 'manager'],
     },
     {
       id: 'ai-customer-bot-review',
       category: 'AI & Business Automation',
-      sceneTitle: 'Support lead reviewing automated customer service workflows on laptop',
-      subjectDescription: 'support lead sitting at an open-plan office desk, smiling warmly with relaxed shoulders while viewing a clean conversational flow diagram',
-      compositionGuidance: 'subtle authentic smile without exaggeration, natural facial skin texture with pores and realistic highlights, soft ambient office daylight',
+      sceneTitle: 'Support lead reviewing conversational assistant flow on laptop',
+      subjectDescription: 'a customer support lead seated comfortably at an office desk with laptop open directly in front, looking at the screen with calm relief while reviewing an automated customer greeting diagram',
+      compositionGuidance: 'screen faces the seated person, relaxed shoulders and subtle natural smile, authentic indoor lighting, clean conversational flowchart on screen',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'neutral'],
       keywords: ['support', 'assistant', 'conversational', 'laptop', 'office'],
     },
   ],
@@ -187,25 +254,31 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'prod-organized-desk-morning',
       category: 'Small Business Productivity & Ops',
-      sceneTitle: 'Morning productivity routine of small business founder',
-      subjectDescription: 'small business owner seated at a Scandinavian oak desk in the morning, holding a ceramic coffee cup with one hand while writing notes in a paper planner',
-      compositionGuidance: 'candid peaceful morning scene, natural two-handed coordination, realistic skin texture on fingers, warm diagonal window sunlight',
+      sceneTitle: 'Business founder organizing weekly tasks with paper planner and coffee',
+      subjectDescription: 'a business founder seated at a Scandinavian oak desk, left hand holding a warm ceramic mug while right hand holds a pen writing in a linen-bound notebook, beside a closed slim laptop',
+      compositionGuidance: 'downward gaze toward the notebook, natural two-handed coordination, soft diagonal morning sunlight, tranquil productive atmosphere',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['founder', 'priorities', 'morning routine', 'planner', 'productivity'],
     },
     {
       id: 'prod-digital-invoice-tablet',
       category: 'Small Business Productivity & Ops',
-      sceneTitle: 'Trades professional generating instant digital quote on rugged tablet',
-      subjectDescription: 'skilled tradesperson in clean workwear resting an arm on a timber workbench while holding a rugged tablet showing a simple estimate sheet',
-      compositionGuidance: 'authentic grounded posture, realistic hardworking hands with natural skin texture, genuine calm focus, daylight in workshop setting',
+      sceneTitle: 'Tradesperson in workshop reviewing digital estimate on rugged tablet',
+      subjectDescription: 'a tradesperson in clean workshop clothing standing at a wooden bench, leaning on left elbow while holding a rugged tablet in right hand angled toward their face to check project dimensions',
+      compositionGuidance: 'tablet screen is angled toward the tradesperson face, authentic grounded stance, natural skin texture and dust-free tools neatly arranged on the background bench',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral', 'problem-aware'],
       keywords: ['contractor', 'estimate', 'invoice', 'tablet', 'workshop'],
     },
     {
       id: 'prod-paperless-office',
       category: 'Small Business Productivity & Ops',
-      sceneTitle: 'Minimalist paperless office desk with laptop and smartphone',
-      subjectDescription: 'tidy workspace featuring slim laptop, smartphone on wireless charging dock, small succulent plant and glass of water on matte grey surface',
-      compositionGuidance: 'overhead 45-degree angle, exceptional clean architectural symmetry, crisp textures and natural daylight, tranquil environment without people',
+      sceneTitle: 'Clutter-free paperless desk setup with laptop and smartphone',
+      subjectDescription: 'a minimalist workspace featuring an open silver laptop, a smartphone on a wooden charging stand, a small succulent, and a glass of water on a matte grey tabletop',
+      compositionGuidance: 'high-angle commercial still life without people, serene architectural balance, natural daylight with soft shadows, crisp clean materials',
+      primarySubject: 'device_only',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['paperless', 'minimalist desk', 'organization', 'laptop', 'clarity'],
     },
   ],
@@ -213,25 +286,31 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'cx-warm-greeting-shop',
       category: 'Customer Experience & Trust',
-      sceneTitle: 'Welcoming customer greeting at modern local business counter',
-      subjectDescription: 'friendly local business owner standing behind a modern timber reception counter, welcoming an incoming client with an approachable, relaxed posture',
-      compositionGuidance: 'warm authentic expression, genuine crinkles around eyes, natural shoulder angle, realistic soft skin texture, inviting natural light',
+      sceneTitle: 'Small business owner welcoming client across service counter',
+      subjectDescription: 'a business owner standing behind a modern reception counter, looking toward an arriving visitor with a warm approachable expression and relaxed posture, hands resting on counter',
+      compositionGuidance: 'natural eye-level perspective, friendly welcoming gaze without exaggerated grin, genuine fine lines at eyes, soft ambient interior lighting',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'collaborative'],
       keywords: ['greeting', 'customer service', 'reception', 'smiling', 'welcome'],
     },
     {
       id: 'cx-client-review-phone',
       category: 'Customer Experience & Trust',
-      sceneTitle: 'Customer giving 5-star digital review on smartphone in storefront',
-      subjectDescription: 'customer seated in a bright boutique cafe, holding a modern phone with both hands showing a clean 5-star feedback confirmation',
-      compositionGuidance: 'authentic hand holding phone with natural fingers, shallow depth of field, warm pleasant bokeh in background, natural lighting',
+      sceneTitle: 'Customer holding smartphone showing five-star rating confirmation',
+      subjectDescription: 'a customer seated at a table holding a smartphone with both hands angled toward themselves, viewing a clean 5-star feedback rating confirmation card on screen',
+      compositionGuidance: 'screen is clearly tilted toward the user, authentic finger placement, shallow depth of field with softly blurred boutique background, natural daylight',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'neutral'],
       keywords: ['five star review', 'rating', 'feedback', 'trust', 'customer satisfaction'],
     },
     {
       id: 'cx-consultation-sofa',
       category: 'Customer Experience & Trust',
-      sceneTitle: 'Relaxed professional consultation in modern lounge area',
-      subjectDescription: 'business consultant and client seated comfortably in contemporary armchairs across a low coffee table, engaged in authentic discussion',
-      compositionGuidance: 'natural seated ergonomics with relaxed posture, candid conversational moment, warm Scandinavian interior with house plants, soft ambient lighting',
+      sceneTitle: 'Two professionals seated in lounge area in friendly consultation',
+      subjectDescription: 'a consultant and client seated in comfortable armchairs in an office lounge, with a coffee table between them holding two mugs, conversing with relaxed authentic body language',
+      compositionGuidance: 'candid conversational angle, natural seating postures with relaxed shoulders, warm ambient daylight, plants in background',
+      primarySubject: 'people',
+      intendedEmotions: ['collaborative', 'positive'],
       keywords: ['consultation', 'advisory', 'lounge', 'comfortable', 'client trust'],
     },
   ],
@@ -239,17 +318,21 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'local-storefront-morning',
       category: 'Local Business & Regional Context',
-      sceneTitle: 'Charming modern local business storefront on pedestrian street',
-      subjectDescription: 'contemporary local boutique or specialty cafe facade with clean glass display and subtle professional signage on a sunlit street',
-      compositionGuidance: 'architectural street photography, morning golden hour lighting, clean sidewalk, believable European or Nordic town feel, unpopulated',
+      sceneTitle: 'Contemporary local shop facade in morning golden hour',
+      subjectDescription: 'an attractive modern boutique storefront on a clean pedestrian street, with large clear glass windows and tasteful wooden signage under warm morning sunlight',
+      compositionGuidance: 'architectural street photography without people, morning golden-hour lighting, crisp building materials, authentic Nordic/European commercial street',
+      primarySubject: 'environment_only',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['storefront', 'facade', 'street', 'local shop', 'pedestrian'],
     },
     {
       id: 'local-owner-outside',
       category: 'Local Business & Regional Context',
-      sceneTitle: 'Local shop owner opening welcoming entrance for business day',
-      subjectDescription: 'independent shop owner standing beside the glass entrance door of a clean neighborhood shop, holding a small open sign with both hands',
-      compositionGuidance: 'proud natural posture, authentic documentary portrait, genuine gentle smile, realistic skin textures and clothing folds in bright morning light',
+      sceneTitle: 'Shop owner standing by entrance door holding open sign',
+      subjectDescription: 'an independent business owner standing on the pavement outside their shop entrance, holding a wooden open sign with both hands before hanging it on the glass door',
+      compositionGuidance: 'candid documentary portrait, proud natural posture, eyes focused on placing the sign, realistic morning daylight reflecting on glass',
+      primarySubject: 'person',
+      intendedEmotions: ['positive', 'neutral'],
       keywords: ['shop owner', 'entrance', 'neighborhood', 'local enterprise', 'open sign'],
     },
   ],
@@ -257,17 +340,21 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
     {
       id: 'gen-bright-co-working',
       category: 'General',
-      sceneTitle: 'Bright collaborative modern business workspace',
-      subjectDescription: 'two professionals working independently in a spacious Scandinavian-style co-working space with large windows and indoor plants',
-      compositionGuidance: 'wide environmental perspective, airy modern architecture, warm natural light, authentic workplace energy, realistic unposed figures',
+      sceneTitle: 'Two professionals working at individual desks in open co-working space',
+      subjectDescription: 'two professionals working focused at spaced wooden desks in a bright open-plan workspace with large industrial windows, each engaged with their own laptop',
+      compositionGuidance: 'wide environmental perspective, unposed workplace atmosphere, natural morning light, realistic uncoordinated activities without staged posing',
+      primarySubject: 'people',
+      intendedEmotions: ['neutral', 'collaborative'],
       keywords: ['co-working', 'workspace', 'modern office', 'daylight', 'business'],
     },
     {
       id: 'gen-executive-desk',
       category: 'General',
-      sceneTitle: 'Clutter-free executive desk with modern laptop and coffee cup',
-      subjectDescription: 'tasteful professional desk setup with laptop, notebook, fountain pen and ceramic coffee mug under natural window light',
-      compositionGuidance: 'elegant commercial photography, balanced composition, crisp textures of wood, ceramic and metal, serene setting without people',
+      sceneTitle: 'Tidy executive desk setup with laptop, notebook and coffee',
+      subjectDescription: 'an uncluttered professional desk featuring an open silver laptop, a closed fountain pen, a paper notebook and a ceramic coffee mug in natural window light',
+      compositionGuidance: 'balanced commercial composition without people, crisp natural material textures of oak wood, ceramic and metal',
+      primarySubject: 'device_only',
+      intendedEmotions: ['neutral', 'positive'],
       keywords: ['desk', 'laptop', 'coffee', 'notebook', 'professional setup'],
     },
   ],
@@ -276,8 +363,8 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
 /**
  * Selects a diverse, complementary scene archetype for a category by checking
  * existing image titles, descriptions, and prompt notes in the database.
- * If the library already has laptop screens, it prioritizes tablets, customer interactions,
- * storefronts, or team consultations.
+ * Matches post emotional intent (positive, neutral, problem-aware, collaborative)
+ * to avoid mismatched moods while rotating through underrepresented archetypes.
  * Supports cycleOffset to allow stepping through alternative scene suggestions deterministically.
  */
 export function selectComplementaryScene(
@@ -294,9 +381,13 @@ export function selectComplementaryScene(
       sceneTitle: 'Contemporary commercial business scene',
       subjectDescription: contextQuery || 'modern professional business setting',
       compositionGuidance: 'natural daylight, uncluttered workspace, clean photographic composition',
+      primarySubject: 'person',
+      intendedEmotions: ['neutral'],
       keywords: ['business', 'professional'],
     };
   }
+
+  const detectedEmotion = detectEmotionalIntent(contextQuery);
 
   // Count usage of each archetype's signature keywords among existing images
   const scores = archetypes.map((archetype) => {
@@ -327,6 +418,11 @@ export function selectComplementaryScene(
       }
     }
 
+    // Emotional alignment boost: reward archetypes matching detected post emotion
+    if (archetype.intendedEmotions.includes(detectedEmotion)) {
+      relevanceBoost += 3;
+    }
+
     return {
       archetype,
       // Lower score = less represented in the library (more diverse)
@@ -342,11 +438,21 @@ export function selectComplementaryScene(
 }
 
 /**
- * Builds a photographic, realistic business prompt tailored for NorthSoft.
- * Strictly avoids plastic AI skin, distorted hands, artificial expressions,
- * and garbled screen artifacts by specifying photographic properties:
- * natural skin pores, unposed relaxed postures, directional daylight,
- * and clean graphic screen compositions.
+ * Emotional posture guidance mapped to marketing intents.
+ * Translates intent into concrete physical actions and authentic expressions
+ * without exaggerated cartoon smiles or grimaces.
+ */
+const EMOTIONAL_EXPRESSION_DIRECTIONS: Record<EmotionalIntent, string> = {
+  positive: 'Expression: calm satisfaction, relaxed facial features, subtle natural crinkles around eyes, unhurried posture.',
+  neutral: 'Expression: focused concentration, neutral composed brow, quiet professionalism, eyes directed at the work.',
+  'problem-aware': 'Expression: analytical contemplation, attentive focus, hand touching chin or holding pen, inspecting data with serious diligence.',
+  collaborative: 'Expression: approachable engagement, receptive listening posture, natural head angle during conversational exchange.',
+};
+
+/**
+ * Builds an editorial, photographic business prompt tailored for NorthSoft and FLUX.1 Schnell.
+ * Separates scene action, emotional intent, and photographic composition into modular,
+ * non-overlapping sentences. Avoids contradictory device interactions and repetitive buzzwords.
  */
 export function buildBusinessImagePrompt(
   description: string,
@@ -357,25 +463,23 @@ export function buildBusinessImagePrompt(
   const cleanDesc = description.trim();
   const cleanCat = category.trim();
 
+  // 1. Scene Action & Subject (Unambiguous Physical Interaction)
   const sceneGuidance = sceneArchetype?.compositionGuidance
-    ? ` ${sceneArchetype.compositionGuidance}.`
+    ? ` Spatial arrangement: ${sceneArchetype.compositionGuidance}.`
     : '';
+  const actionSegment = `A 35mm candid commercial photograph of ${cleanDesc}. Category: ${cleanCat}.${sceneGuidance}`;
 
-  // Core photographic scene declaration with human realism guidance
-  let prompt = `A 35mm candid commercial photograph of ${cleanDesc}. Category: ${cleanCat}.${sceneGuidance}`;
+  // 2. Emotional Tone & Posture (Aligned with Post Marketing Intent)
+  const emotion = detectEmotionalIntent(postContext || cleanDesc);
+  const emotionalSegment = EMOTIONAL_EXPRESSION_DIRECTIONS[emotion];
 
-  if (postContext && postContext.trim().length > 0) {
-    const briefCtx = postContext.trim().slice(0, 150);
-    prompt += ` Context: ${briefCtx}.`;
-  }
+  // 3. Photographic Style & Environment (Single Concise Declaration)
+  const photoSegment = 'Style: 35mm lens, natural directional window daylight, f/4 aperture with gentle background separation, realistic skin texture with fine pores, believable fabric folds, neutral color grading.';
 
-  // Natural human anatomy, realistic skin texture, authentic posture, and environmental lighting
-  prompt += ' Photographed with natural window daylight, neutral balanced exposure, subtle depth of field with 50mm lens perspective.';
-  prompt += ' Authentic human subjects feature natural skin texture with visible fine pores and subtle tone variation, candid relaxed expressions, gentle crinkles around the eyes, realistic relaxed postures with natural weight distribution.';
-  prompt += ' Any hands in view are anatomically accurate with natural finger curvature, realistic knuckles, and physical contact with held objects.';
-  prompt += ' Device screens present clean minimalist graphic layouts, simple wireframe sections, or clean photography without cluttered dashboards or pseudo-lettering.';
+  // 4. Device Screen Composition (Clean & Minimalist, No Pseudo-Text)
+  const screenSegment = 'Screens: any visible monitor, tablet or phone displays clean minimalist geometric blocks and wireframe sections, without pseudo-text or cluttered charts.';
 
-  return prompt;
+  return `${actionSegment} ${emotionalSegment} ${photoSegment} ${screenSegment}`;
 }
 
 export class AiImageGeneratorService {
