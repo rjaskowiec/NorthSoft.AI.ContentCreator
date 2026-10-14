@@ -97,20 +97,20 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
   });
 
   describe('2. Business Prompt Builder & Scene Diversification', () => {
-    it('constructs an editorial commercial photograph prompt with strict anti-artifact screen guidelines', () => {
+    it('constructs an authentic commercial photograph prompt with natural human characteristics and clean screen guidelines', () => {
       const prompt = buildBusinessImagePrompt(
         'small business owner reviewing laptop analytics',
         'Small Business Productivity & Ops',
         'Tips for streamlining weekly business tracking',
       );
 
-      expect(prompt).toContain('Editorial commercial photograph');
+      expect(prompt).toContain('candid commercial photograph');
       expect(prompt).toContain('small business owner reviewing laptop analytics');
       expect(prompt).toContain('Small Business Productivity & Ops');
-      expect(prompt).toContain('No watermarks');
-      expect(prompt).toContain('CRITICAL SCREEN REQUIREMENTS');
-      expect(prompt).toContain('NO pseudo-text');
-      expect(prompt).toContain('NO garbled letters');
+      expect(prompt).toContain('Authentic human subjects feature natural skin texture with visible fine pores');
+      expect(prompt).toContain('candid relaxed expressions');
+      expect(prompt).toContain('anatomically accurate with natural finger curvature');
+      expect(prompt).toContain('Device screens present clean minimalist graphic layouts');
     });
 
     it('diversifies scenes away from repetitive laptop desk setups when selecting complementary scene', async () => {
