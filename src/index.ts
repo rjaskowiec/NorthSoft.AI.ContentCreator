@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 
-import { renderAdminHtml } from './admin/ui';
+import { renderAdminHtml } from './admin/ui.js';
 import { adminRoutes } from './api/admin';
 import { authRoutes } from './api/auth';
 import { healthRoutes } from './api/health';
@@ -31,14 +31,30 @@ const app = new Hono<AppEnv>();
 // Images are public by design so Facebook can fetch them when publishing.
 // Object keys are random and uploads remain protected by the admin API.
 app.get('/media/:key', async (c) => {
-  const key = c.req.param('key');
-  if (!/^(?:gen-)?[0-9a-f-]{36}\.(?:jpe?g|png|webp)$/i.test(key)) {
+  let key = c.req.param('key');
+  if (!/^(?:gen-)?[0-9a-f-]{36}(?:\.(?:jpe?g|png|webp))?$/i.test(key)) {
     return c.notFound();
   }
+
   let object = await c.env.IMAGE_BUCKET.get(`images/${key}`);
   if (!object) {
     object = await c.env.IMAGE_BUCKET.get(key);
   }
+
+  // If no extension was provided in the request, probe common extensions
+  if (!object && !/\.[a-z0-9]+$/i.test(key)) {
+    for (const ext of ['png', 'jpg', 'jpeg', 'webp']) {
+      object = await c.env.IMAGE_BUCKET.get(`images/${key}.${ext}`);
+      if (!object) {
+        object = await c.env.IMAGE_BUCKET.get(`${key}.${ext}`);
+      }
+      if (object) {
+        key = `${key}.${ext}`;
+        break;
+      }
+    }
+  }
+
   if (!object) return c.notFound();
   const headers = new Headers();
   object.writeHttpMetadata(headers);
