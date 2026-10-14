@@ -13,7 +13,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { META_API } from '../../core/constants.js';
 import { getEnvironment } from '../../core/environment.js';
 import { sanitizeSecretTokens, FacebookPublisher } from '../../publishing/facebook-publisher.js';

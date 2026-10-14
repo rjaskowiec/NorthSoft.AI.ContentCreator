@@ -149,7 +149,7 @@ export class AiImageGeneratorService {
 
     try {
       // 2. Call Cloudflare Workers AI text-to-image model
-      const aiResponse = await this.env.AI.run(AI_IMAGE_GENERATION_MODEL as any, {
+      const aiResponse = await this.env.AI.run(AI_IMAGE_GENERATION_MODEL as Parameters<Ai['run']>[0], {
         prompt,
       });
 
@@ -159,19 +159,22 @@ export class AiImageGeneratorService {
         imageBytes = await res.arrayBuffer();
       } else if (aiResponse instanceof ArrayBuffer) {
         imageBytes = aiResponse;
-      } else if (aiResponse && typeof (aiResponse as any).arrayBuffer === 'function') {
-        imageBytes = await (aiResponse as any).arrayBuffer();
-      } else if (aiResponse && (aiResponse as any).image && typeof (aiResponse as any).image === 'string') {
-        // Base64 encoded string response
-        const binaryString = atob((aiResponse as any).image);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        imageBytes = bytes.buffer;
       } else {
-        throw new Error('Unexpected binary format returned from Cloudflare text-to-image model');
+        const respObj = (typeof aiResponse === 'object' && aiResponse !== null) ? (aiResponse as Record<string, unknown>) : null;
+        if (respObj && typeof respObj.arrayBuffer === 'function') {
+          imageBytes = await (respObj.arrayBuffer as () => Promise<ArrayBuffer>)();
+        } else if (respObj && typeof respObj.image === 'string') {
+          // Base64 encoded string response
+          const binaryString = atob(respObj.image);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          imageBytes = bytes.buffer;
+        } else {
+          throw new Error('Unexpected binary format returned from Cloudflare text-to-image model');
+        }
       }
 
       if (!imageBytes || imageBytes.byteLength < 100) {
@@ -190,8 +193,9 @@ export class AiImageGeneratorService {
         durationMs,
         source: 'local_estimate',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       const durationMs = Date.now() - startTime;
+      const errorMsg = err instanceof Error ? err.message : String(err);
       await this.quotaManager.recordUsage(db, {
         provider: 'cloudflare-workers-ai',
         model: AI_IMAGE_GENERATION_MODEL,
@@ -199,10 +203,10 @@ export class AiImageGeneratorService {
         neuronsUsed: 0,
         success: false,
         durationMs,
-        errorMessage: err instanceof Error ? err.message : String(err),
+        errorMessage: errorMsg,
         source: 'local_estimate',
       });
-      throw new AppError(`Workers AI generation failed: ${err.message || String(err)}`, 502, 'GENERATION_FAILED');
+      throw new AppError(`Workers AI generation failed: ${errorMsg}`, 502, 'GENERATION_FAILED');
     }
 
     // 3. Store in Cloudflare R2

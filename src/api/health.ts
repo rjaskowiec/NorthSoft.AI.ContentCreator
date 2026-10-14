@@ -6,7 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../index';
+import type { AppEnv } from '../core/types';
 
 export const healthRoutes = new Hono<AppEnv>();
 

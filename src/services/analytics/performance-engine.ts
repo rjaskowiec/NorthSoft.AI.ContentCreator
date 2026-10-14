@@ -145,6 +145,12 @@ export class PerformanceEngineService {
   public async extractStyleHints(db: D1Database, limit = 30): Promise<string | null> {
     try {
       // Fetch up to `limit` active strong reference posts
+      interface StrongCharacteristicsRow {
+        post_content: string;
+        post_title: string;
+        extracted_chars: string | null;
+      }
+
       const rows = await db
         .prepare(
           `SELECT r.content as post_content, r.title as post_title, r.extracted_characteristics as extracted_chars`
@@ -153,7 +159,7 @@ export class PerformanceEngineService {
           + ` ORDER BY r.rank ASC LIMIT ?`,
         )
         .bind(limit)
-        .all<any>();
+        .all<StrongCharacteristicsRow>();
       const results = rows.results || [];
       if (results.length === 0) return null;
 
@@ -173,9 +179,9 @@ export class PerformanceEngineService {
       const fearWords = /\b(urgent|dying|crisis|panic)\b/i;
 
       for (const r of results) {
-        let chars: any;
+        let chars: ExtractedCharacteristics | null = null;
         try {
-          chars = r.extracted_chars ? JSON.parse(r.extracted_chars) : null;
+          chars = r.extracted_chars ? (JSON.parse(r.extracted_chars) as ExtractedCharacteristics) : null;
         } catch {
           chars = null;
         }
@@ -946,9 +952,19 @@ export class PerformanceEngineService {
    */
   public async getManualGuidelines(db: D1Database): Promise<GeneratorGuideline[]> {
     try {
+      interface ManualGuidelineRow {
+        id: string;
+        category?: GeneratorGuideline['category'];
+        guideline_text: string;
+        evidence_count?: number;
+        is_active: number;
+        created_by?: string;
+        created_at: string;
+        updated_at: string;
+      }
       const rows = await db
         .prepare("SELECT * FROM generator_guidelines WHERE tier = 'MANUAL' ORDER BY updated_at DESC")
-        .all<any>();
+        .all<ManualGuidelineRow>();
       return (rows.results || []).map((r) => ({
         id: r.id,
         tier: 'MANUAL',
@@ -1051,9 +1067,21 @@ export class PerformanceEngineService {
     const activeWeakExamples: ReferencePostRecord[] = [];
 
     try {
+      interface GeneratorGuidelineDbRow {
+        id: string;
+        tier: 'SYSTEM' | 'MANUAL' | 'LEARNED';
+        category: GeneratorGuideline['category'];
+        guideline_text: string;
+        evidence_count?: number;
+        is_active: number;
+        created_by?: string;
+        created_at: string;
+        updated_at: string;
+      }
+
       const gRows = await db
         .prepare('SELECT * FROM generator_guidelines WHERE is_active = 1 ORDER BY tier ASC, created_at DESC')
-        .all<any>();
+        .all<GeneratorGuidelineDbRow>();
 
       for (const r of gRows.results || []) {
         const item: GeneratorGuideline = {
@@ -1071,6 +1099,24 @@ export class PerformanceEngineService {
         else if (r.tier === 'LEARNED') learnedGuidelines.push(item);
       }
 
+      interface GeneratorRefDbRow {
+        id: string;
+        post_id: string;
+        classification: 'STRONG' | 'WEAK';
+        success_score: number;
+        percentile: number;
+        exposure_views: number;
+        weighted_engagement: number;
+        reason_for_inclusion: string;
+        extracted_characteristics?: string;
+        rank: number;
+        is_active: number;
+        evaluated_at: string;
+        created_at: string;
+        post_title?: string;
+        post_snippet?: string;
+      }
+
       const refRows = await db
         .prepare(
           `SELECT r.*, p.title as post_title, pv.content as post_snippet
@@ -1080,7 +1126,7 @@ export class PerformanceEngineService {
            WHERE r.is_active = 1
            ORDER BY r.classification ASC, r.rank ASC`,
         )
-        .all<any>();
+        .all<GeneratorRefDbRow>();
 
       for (const r of refRows.results || []) {
         let chars: ExtractedCharacteristics | undefined;

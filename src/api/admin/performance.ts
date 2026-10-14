@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { csrfProtection } from '../../core/auth/csrf';
 import { PerformanceEngineService, type PerformanceMetricInput, type GeneratorGuideline } from '../../services/analytics/performance-engine';
 
@@ -31,9 +31,69 @@ performanceRouter.get('/performance', async (c) => {
     )
     .all();
 
-  // Active Strong & Weak Reference Pools
-  let strongPosts: any[] = [];
-  let weakPosts: any[] = [];
+  interface GeneratorRefRow {
+    id: string;
+    post_id: string;
+    classification: string;
+    is_active: number;
+    rank: number;
+    post_title: string;
+    post_content: string;
+    latest_views?: number | null;
+    latest_unique_views?: number | null;
+    latest_reactions?: number | null;
+    latest_comments?: number | null;
+    latest_shares?: number | null;
+    latest_clicks?: number | null;
+    latest_engagement_rate?: number | null;
+    metrics_measured_at?: string | null;
+    [key: string]: unknown;
+  }
+
+  function mapRefRecord(r: GeneratorRefRow) {
+    const isMeasured = r.metrics_measured_at != null;
+    const exposure = isMeasured
+      ? ((r.latest_unique_views ?? 0) > 0 ? (r.latest_unique_views ?? 0) : r.latest_views || 0)
+      : null;
+    const weightedEng = isMeasured
+      ? PerformanceEngineService.computeWeightedEngagement(
+          r.latest_reactions || 0,
+          r.latest_comments || 0,
+          r.latest_shares || 0,
+          r.latest_clicks || 0,
+        )
+      : null;
+
+    const snippet = PerformanceEngineService.formatSnippet(
+      r.post_content || '',
+      r.post_title || '',
+      160,
+    );
+
+    return {
+      id: r.id,
+      post_id: r.post_id,
+      classification: r.classification,
+      is_active: Boolean(r.is_active),
+      rank: r.rank,
+      title: r.post_title,
+      content: r.post_content,
+      post_snippet: snippet,
+      exposure_views: exposure,
+      weighted_engagement: weightedEng,
+      is_measured: isMeasured,
+      reactions: isMeasured ? (r.latest_reactions || 0) : null,
+      comments: isMeasured ? (r.latest_comments || 0) : null,
+      shares: isMeasured ? (r.latest_shares || 0) : null,
+      clicks: isMeasured ? (r.latest_clicks || 0) : null,
+      engagement_rate: isMeasured ? (r.latest_engagement_rate || 0) : null,
+      metrics_measured_at: r.metrics_measured_at || null,
+    };
+  }
+
+  let strongPosts: ReturnType<typeof mapRefRecord>[] = [];
+  let weakPosts: ReturnType<typeof mapRefRecord>[] = [];
+
   try {
     const refQuery = `
       SELECT grp.*, p.title as post_title, pv.content as post_content,
@@ -51,50 +111,21 @@ performanceRouter.get('/performance', async (c) => {
       WHERE grp.classification = ? AND grp.is_active = 1
       ORDER BY grp.rank ASC`;
 
-    const mapRefRecord = (r: any) => {
-      const isMeasured = r.metrics_measured_at != null;
-      const exposure = isMeasured
-        ? (r.latest_unique_views > 0 ? r.latest_unique_views : r.latest_views || 0)
-        : null;
-      const weightedEng = isMeasured
-        ? PerformanceEngineService.computeWeightedEngagement(
-            r.latest_reactions || 0,
-            r.latest_comments || 0,
-            r.latest_shares || 0,
-            r.latest_clicks || 0,
-          )
-        : null;
+    const strongRes = await db.prepare(refQuery).bind('STRONG').all<GeneratorRefRow>();
+    strongPosts = ((strongRes.results || []) as GeneratorRefRow[]).map(mapRefRecord);
 
-      const snippet = PerformanceEngineService.formatSnippet(
-        r.post_content || r.content,
-        r.post_title || r.title,
-        160,
-      );
-
-      return {
-        ...r,
-        post_snippet: snippet,
-        exposure_views: exposure,
-        weighted_engagement: weightedEng,
-        is_measured: isMeasured,
-      };
-    };
-
-    const strongRes = await db.prepare(refQuery).bind('STRONG').all();
-    strongPosts = (strongRes.results || []).map(mapRefRecord);
-
-    const weakRes = await db.prepare(refQuery).bind('WEAK').all();
-    weakPosts = (weakRes.results || []).map(mapRefRecord);
+    const weakRes = await db.prepare(refQuery).bind('WEAK').all<GeneratorRefRow>();
+    weakPosts = ((weakRes.results || []) as GeneratorRefRow[]).map(mapRefRecord);
 
     // If published posts exist but either active reference pool is unpopulated, evaluate now
     const pubCnt = (await db.prepare("SELECT COUNT(*) as cnt FROM publications WHERE status = 'published'").first<{ cnt: number }>())?.cnt || 0;
     if (pubCnt > 0 && (strongPosts.length === 0 || weakPosts.length === 0 || profile.diagnostics?.evaluatedPostsCount !== pubCnt)) {
       profile = await engine.evaluateAndGenerateProfile(db);
-      const refetchedStrong = await db.prepare(refQuery).bind('STRONG').all();
-      strongPosts = (refetchedStrong.results || []).map(mapRefRecord);
+      const refetchedStrong = await db.prepare(refQuery).bind('STRONG').all<GeneratorRefRow>();
+      strongPosts = ((refetchedStrong.results || []) as GeneratorRefRow[]).map(mapRefRecord);
 
-      const refetchedWeak = await db.prepare(refQuery).bind('WEAK').all();
-      weakPosts = (refetchedWeak.results || []).map(mapRefRecord);
+      const refetchedWeak = await db.prepare(refQuery).bind('WEAK').all<GeneratorRefRow>();
+      weakPosts = ((refetchedWeak.results || []) as GeneratorRefRow[]).map(mapRefRecord);
     }
   } catch (err) {
     console.warn('Warning fetching generator_reference_posts:', err);

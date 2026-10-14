@@ -249,18 +249,36 @@ export class OpenverseImageService implements ImageService {
       return [];
     }
 
-    const data = (await response.json()) as any;
+    interface OpenverseItem {
+      id: string;
+      url: string;
+      thumbnail?: string;
+      title?: string;
+      license?: string;
+      creator?: string;
+      creator_url?: string;
+      license_url?: string;
+      foreign_landing_url?: string;
+      detail_url?: string;
+      tags?: Array<string | { name?: string }>;
+    }
+
+    interface OpenverseApiResponse {
+      results?: OpenverseItem[];
+    }
+
+    const data = (await response.json()) as OpenverseApiResponse;
     const candidates: ImageCandidate[] = [];
 
     if (data.results && Array.isArray(data.results)) {
       for (const item of data.results) {
         const validLicenses = ['cc0', 'pdm', 'by', 'by-sa'];
-        if (!validLicenses.includes(item.license?.toLowerCase())) {
+        if (!validLicenses.includes(item.license?.toLowerCase() || '')) {
           continue;
         }
 
         const tags = Array.isArray(item.tags)
-          ? item.tags.map((t: any) => (typeof t === 'string' ? t : t.name || '')).filter(Boolean)
+          ? item.tags.map((t) => (typeof t === 'string' ? t : t.name || '')).filter(Boolean)
           : [];
 
         candidates.push({
@@ -406,12 +424,13 @@ Respond ONLY with a valid JSON object adhering to this schema:
       const result = JSON.parse(jsonStr) as ImageVerificationResult;
 
       return result;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       return {
         decision: 'accept',
         confidence: 0.8,
         matches_content: true,
-        reason: `Fallback metadata match (Vision skipped: ${err.message})`,
+        reason: `Fallback metadata match (Vision skipped: ${errorMsg})`,
       };
     }
   }

@@ -454,6 +454,22 @@ Open Admin Console: https://ai.northsoft.is/admin`;
    */
   private static async queryPeriodMetrics(db: D1Database, startIso: string, endIso: string) {
     try {
+      interface NotificationPeriodPubRow {
+        pub_id: string;
+        post_id: string;
+        facebook_post_id: string | null;
+        published_at: string;
+        title: string;
+        views: number | null;
+        unique_views: number | null;
+        reactions: number | null;
+        comments: number | null;
+        shares: number | null;
+        clicks: number | null;
+        engagement_rate: number | null;
+        relative_performance: string | null;
+      }
+
       const pubRows = await db
         .prepare(
           `SELECT pub.id as pub_id, pub.post_id, pub.facebook_post_id, pub.published_at, p.title,
@@ -469,7 +485,7 @@ Open Admin Console: https://ai.northsoft.is/admin`;
            ORDER BY pub.published_at DESC`,
         )
         .bind(startIso, endIso)
-        .all<any>();
+        .all<NotificationPeriodPubRow>();
 
       const items = pubRows.results || [];
       let totalReach = 0;
@@ -486,7 +502,8 @@ Open Admin Console: https://ai.northsoft.is/admin`;
         const comments = Math.max(item.comments || 0, 0);
         const shares = Math.max(item.shares || 0, 0);
         const engRate = item.engagement_rate || 0;
-        const score = item.relative_performance || 1.0;
+        const rawPerf = item.relative_performance;
+        const score = typeof rawPerf === 'number' ? rawPerf : typeof rawPerf === 'string' ? parseFloat(rawPerf) || 1.0 : 1.0;
 
         totalReach += reach;
         totalReactions += reactions;
@@ -502,7 +519,7 @@ Open Admin Console: https://ai.northsoft.is/admin`;
           shares,
           engagementRate: engRate,
           score,
-          facebookPostId: item.facebook_post_id,
+          facebookPostId: item.facebook_post_id || undefined,
         });
       }
 

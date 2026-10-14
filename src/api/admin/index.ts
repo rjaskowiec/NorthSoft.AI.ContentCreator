@@ -6,7 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { requireAdmin } from '../../core/middleware/auth';
 import { auditRouter } from './audit';
 import { contentRouter } from './content';

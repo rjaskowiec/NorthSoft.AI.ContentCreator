@@ -13,7 +13,6 @@ import { renderAdminHtml } from './admin/ui';
 import { adminRoutes } from './api/admin';
 import { authRoutes } from './api/auth';
 import { healthRoutes } from './api/health';
-import type { AdminSession, AdminUser } from './core/auth/session';
 import { D1AuditLogger } from './core/audit';
 import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
@@ -23,14 +22,9 @@ import { PipelineOrchestratorService } from './services/content/pipeline-orchest
 import { NorthSoftMailGatewayClient } from './services/mail/mail-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { PublicationService } from './services/publishing/publication-service';
+import type { AppEnv } from './core/types';
 
-export type AppEnv = {
-  Bindings: Env;
-  Variables: {
-    adminUser: AdminUser;
-    session: AdminSession;
-  };
-};
+export type { AppEnv };
 
 const app = new Hono<AppEnv>();
 

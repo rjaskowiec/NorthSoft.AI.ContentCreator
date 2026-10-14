@@ -6,7 +6,7 @@
  */
 
 import type { ErrorHandler } from 'hono';
-import type { AppEnv } from '../index';
+import type { AppEnv } from './types';
 
 /**
  * Application-specific error base class.

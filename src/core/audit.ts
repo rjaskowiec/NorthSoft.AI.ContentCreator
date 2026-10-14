@@ -277,8 +277,9 @@ export class D1AuditLogger implements IAuditLogger {
     try {
       const id = crypto.randomUUID();
       const timestamp = new Date().toISOString();
+      const eventType = entry.eventType || ((entry as unknown as { action?: string }).action || 'system_event');
       const level =
-        entry.level || inferAuditLevel(entry.eventType || (entry as any).action, entry.status);
+        entry.level || inferAuditLevel(eventType, entry.status);
       const sanitizedDetails = sanitizeDetails(entry.details || {});
 
       const errCode = entry.error?.code || null;

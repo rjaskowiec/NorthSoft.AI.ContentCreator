@@ -6,7 +6,7 @@
  */
 
 import type { MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../types';
 
 /**
  * Sensitive headers that must NEVER appear in logs.

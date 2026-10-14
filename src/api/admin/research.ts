@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { getAIProvider } from '../../ai/factory';
 import { csrfProtection } from '../../core/auth/csrf';
 import { QuotaManager } from '../../services/ai/quota-manager';

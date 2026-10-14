@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../../index';
+import type { AppEnv } from '../../core/types';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ContentOrchestrator } from '../../services/content/content-orchestrator';
 import { PipelineOrchestratorService } from '../../services/content/pipeline-orchestrator-service';
@@ -27,7 +27,7 @@ pipelineRouter.get('/pipeline/status', async (c) => {
  */
 pipelineRouter.post('/pipeline/stage/:name', csrfProtection, async (c) => {
   const db = c.env.DB;
-  const stageName = c.req.param('name') as any;
+  const stageName = c.req.param('name') as 'topics' | 'posts' | 'images' | 'scheduling';
   const validStages = ['topics', 'posts', 'images', 'scheduling'];
   if (!validStages.includes(stageName)) {
     return c.json({ success: false, error: `Invalid stage: ${stageName}. Allowed: ${validStages.join(', ')}` }, 400);
