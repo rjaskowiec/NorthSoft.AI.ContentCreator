@@ -96,19 +96,53 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
     });
   });
 
-  describe('2. Business Prompt Builder for Cloudflare Workers AI', () => {
-    it('constructs a photorealistic commercial scene without artificial watermarks', () => {
+  describe('2. Business Prompt Builder & Scene Diversification', () => {
+    it('constructs an editorial commercial photograph prompt with strict anti-artifact screen guidelines', () => {
       const prompt = buildBusinessImagePrompt(
         'small business owner reviewing laptop analytics',
         'Small Business Productivity & Ops',
         'Tips for streamlining weekly business tracking',
       );
 
-      expect(prompt).toContain('Photorealistic modern commercial scene');
+      expect(prompt).toContain('Editorial commercial photograph');
       expect(prompt).toContain('small business owner reviewing laptop analytics');
       expect(prompt).toContain('Small Business Productivity & Ops');
-      expect(prompt).toContain('no watermarks');
-      expect(prompt).toContain('Contemporary small business setting');
+      expect(prompt).toContain('No watermarks');
+      expect(prompt).toContain('CRITICAL SCREEN REQUIREMENTS');
+      expect(prompt).toContain('NO pseudo-text');
+      expect(prompt).toContain('NO garbled letters');
+    });
+
+    it('diversifies scenes away from repetitive laptop desk setups when selecting complementary scene', async () => {
+      const { selectComplementaryScene } = await import('../../src/services/content/ai-image-generator');
+
+      // Given a library that already contains repetitive laptop desk setups
+      const existingLaptopScenes = [
+        {
+          title: 'contemporary business website layout on laptop screen modern desk',
+          description: 'contemporary business website layout on laptop screen modern desk',
+          notes: 'laptop screen modern desk',
+        },
+        {
+          title: 'Website mockup on laptop',
+          description: 'laptop on office desk with modern screen',
+          notes: 'laptop screen',
+        },
+      ];
+
+      const chosenArchetype = selectComplementaryScene('Websites & Landing Pages', existingLaptopScenes);
+
+      // Should choose a non-laptop archetype (e.g. tablet consultation, mobile checkout, or large monitor)
+      expect(chosenArchetype.id).not.toBe('web-laptop-minimal');
+      expect(['web-tablet-consultation', 'web-designer-desktop', 'web-mobile-checkout', 'web-team-review']).toContain(chosenArchetype.id);
+    });
+
+    it('gracefully handles empty library by returning a valid category scene archetype', async () => {
+      const { selectComplementaryScene } = await import('../../src/services/content/ai-image-generator');
+      const chosenArchetype = selectComplementaryScene('Sales & Conversion Process', []);
+      expect(chosenArchetype).toBeDefined();
+      expect(chosenArchetype.category).toBe('Sales & Conversion Process');
+      expect(chosenArchetype.compositionGuidance).toBeTruthy();
     });
   });
 

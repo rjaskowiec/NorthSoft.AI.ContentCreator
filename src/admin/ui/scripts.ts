@@ -5368,6 +5368,30 @@ export function getAdminScripts(): string {
             selectedPostIds.clear();
             loadContentData();
           }
+        } else if (type === 'image' && id) {
+          const res = await guardedFetch('/api/admin/images/' + encodeURIComponent(id), {
+            method: 'DELETE',
+            headers: { 'x-csrf-token': csrfToken },
+          });
+          if (res.ok) {
+            loadImagesData();
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.error || 'Failed to delete image.');
+          }
+        } else if (type === 'images_bulk' && selectedImageIds.size > 0) {
+          const res = await guardedFetch('/api/admin/images/bulk-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify({ ids: Array.from(selectedImageIds), action: 'delete' }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (data.success) {
+            selectedImageIds.clear();
+            loadImagesData();
+          } else {
+            alert(safeStr(data.error, 'Bulk delete failed.'));
+          }
         }
       } catch (err) {
         console.error('Failed executing delete operation:', err);
@@ -5630,8 +5654,8 @@ export function getAdminScripts(): string {
 
         const isAiGenerated = (img.notes && img.notes.includes('Cloudflare Workers AI')) || img.author === 'NorthSoft';
         const sourceLabel = isAiGenerated
-          ? '✨ AI Generated'
-          : (img.source_type === 'DISCOVERED' ? '🌐 Web (Openverse)' : '📁 Upload');
+          ? 'AI Generated'
+          : (img.source_type === 'DISCOVERED' ? 'Web (Openverse)' : 'Upload');
 
         return '<div class="image-card" id="img-card-' + imgId + '">' +
             '<div style="position:relative;">' +
@@ -5669,7 +5693,7 @@ export function getAdminScripts(): string {
                   const label = daysRemaining === 0 ? 'Purging soon' : 'Purge in ' + daysRemaining + 'd';
                   return '<span style="font-size:0.7rem; color:var(--accent-rose); background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); border-radius:4px; padding:0.15rem 0.4rem; white-space:nowrap; align-self:center;" title="This rejected image will be permanently purged in ' + daysRemaining + ' day(s)">' + label + '</span>';
                 })() : '') +
-                '<button class="btn-logout" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="deleteImage(&quot;' + imgId + '&quot;)">Delete</button>' +
+                '<button class="btn-logout" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="confirmDeleteImage(&quot;' + imgId + '&quot;)">Delete</button>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -5679,15 +5703,75 @@ export function getAdminScripts(): string {
     let isCandidateDiscoveryRunning = false;
 
     const CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS = {
-      'Websites & Landing Pages': 'contemporary business website layout on laptop screen modern desk',
-      'Marketing & Customer Acquisition': 'small business team reviewing digital marketing growth charts in modern office',
-      'Sales & Conversion Process': 'retail store counter checkout customer card payment pos terminal',
-      'AI & Business Automation': 'software developer laptop code modern workspace office',
-      'Small Business Productivity & Ops': 'small business owner working at laptop desk organized workspace',
-      'Customer Experience & Trust': 'smiling small business owner welcoming customer in local shop',
-      'Local Business & Regional Context': 'local store storefront entrance small business commercial street',
-      'General': 'professional business workspace laptop coffee desk',
+      'Websites & Landing Pages': [
+        'client viewing clean booking portal on modern tablet',
+        'designer at wooden desk looking at minimalist website layout on external monitor',
+        'hands holding modern smartphone displaying clean mobile website checkout',
+        'contemporary business website layout on laptop screen modern desk',
+        'small business colleagues reviewing responsive company website around meeting table',
+      ],
+      'Marketing & Customer Acquisition': [
+        'marketing team analyzing digital growth metrics on presentation display',
+        'digital strategist planning visual campaign cards on tablet surface',
+        'entrepreneur analyzing online customer acquisition funnel on laptop',
+        'small business team reviewing digital marketing growth charts in modern office',
+      ],
+      'Sales & Conversion Process': [
+        'customer completing fast contactless payment at boutique retail counter',
+        'consultant and business client concluding service agreement at tidy desk',
+        'store owner scanning barcode on neat packaging box in modern workshop',
+        'retail store counter checkout customer card payment pos terminal',
+      ],
+      'AI & Business Automation': [
+        'engineer configuring visual automated workflow pipeline on dual monitors',
+        'operations manager verifying automated inventory syncing on tablet',
+        'support lead smiling at laptop reviewing conversational automation workflows',
+        'software developer laptop code modern workspace office',
+      ],
+      'Small Business Productivity & Ops': [
+        'focused business founder organizing weekly priorities with laptop and paper planner',
+        'contractor in clean workshop reviewing digital estimate on rugged tablet',
+        'minimalist paperless office desk with slim laptop and smartphone',
+        'small business owner working at laptop desk organized workspace',
+      ],
+      'Customer Experience & Trust': [
+        'smiling business owner welcoming customer at reception desk in bright local enterprise',
+        'customer holding smartphone showing 5-star rating confirmation card in boutique shop',
+        'professional advisor and client in comfortable armchairs discussing project details',
+        'smiling small business owner welcoming customer in local shop',
+      ],
+      'Local Business & Regional Context': [
+        'charming modern local business storefront on pedestrian street',
+        'local shop owner placing open sign by glass entrance of clean neighborhood store',
+        'local store storefront entrance small business commercial street',
+      ],
+      'General': [
+        'bright collaborative modern business workspace with large windows and plants',
+        'clutter-free executive desk with modern laptop and ceramic coffee cup',
+        'professional business workspace laptop coffee desk',
+      ],
     };
+
+    function getDiverseCategoryDescription(category) {
+      const list = CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS[category] || CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS['General'] || [];
+      if (!list.length) return '';
+
+      // Check existing cached images in library to avoid offering a scene that already dominates
+      const existingText = (cachedImages || [])
+        .filter(img => (img.category || '').toLowerCase() === (category || '').toLowerCase())
+        .map(img => \`\${img.title || ''} \${img.description || ''} \${img.notes || ''}\`.toLowerCase())
+        .join(' ');
+
+      // Pick the first description in list that isn't already heavily represented
+      for (const desc of list) {
+        const tokens = desc.toLowerCase().split(' ').filter(w => w.length > 4);
+        const matches = tokens.filter(t => existingText.includes(t)).length;
+        if (matches < 2) {
+          return desc;
+        }
+      }
+      return list[0];
+    }
 
     function openDiscoverImageModal() {
       if (isCandidateDiscoveryRunning) return;
@@ -5707,8 +5791,7 @@ export function getAdminScripts(): string {
       if (!categorySelect || !descInput) return;
 
       const cat = categorySelect.value || 'Websites & Landing Pages';
-      const defaultDesc = CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS[cat] || CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS['General'];
-      descInput.value = defaultDesc;
+      descInput.value = getDiverseCategoryDescription(cat);
       validateDiscoverForm();
     }
 
@@ -6297,17 +6380,28 @@ export function getAdminScripts(): string {
       }
     }
 
-    async function deleteImage(imageId) {
-      if (!confirm('Are you sure you want to delete this image from the library?')) return;
-      try {
-        const res = await guardedFetch('/api/admin/images/' + encodeURIComponent(imageId), {
-          method: 'DELETE',
-          headers: { 'x-csrf-token': csrfToken },
-        });
-        if (res.ok) loadImagesData();
-      } catch (err) {
-        console.error('Failed to delete image:', err);
-      }
+    function confirmDeleteImage(imageId) {
+      const img = cachedImages.find(i => i && i.id === imageId);
+      pendingDeleteType = 'image';
+      pendingDeleteId = imageId;
+      const title = document.getElementById('delete-confirm-title');
+      const msg = document.getElementById('delete-confirm-message');
+      const itemLabel = safeStr(img?.title, imageId);
+      const shortLabel = itemLabel.length > 50 ? itemLabel.slice(0, 47) + '...' : itemLabel;
+      if (title) title.textContent = 'Delete Image';
+      if (msg) msg.textContent = 'Delete image "' + shortLabel + '" from library? This action cannot be undone.';
+      openModal('delete-confirm-modal');
+    }
+
+    function confirmDeleteSelectedImages() {
+      if (selectedImageIds.size === 0) return;
+      pendingDeleteType = 'images_bulk';
+      pendingDeleteId = null;
+      const title = document.getElementById('delete-confirm-title');
+      const msg = document.getElementById('delete-confirm-message');
+      if (title) title.textContent = 'Delete Selected Images';
+      if (msg) msg.textContent = 'Delete ' + selectedImageIds.size + ' selected images from library? This action cannot be undone.';
+      openModal('delete-confirm-modal');
     }
 
     function toggleSelectAllImages(chk) {
@@ -6334,7 +6428,10 @@ export function getAdminScripts(): string {
 
     async function executeImageBulkAction(action) {
       if (selectedImageIds.size === 0) return;
-      if (action === 'delete' && !confirm('Delete ' + selectedImageIds.size + ' selected images?')) return;
+      if (action === 'delete') {
+        confirmDeleteSelectedImages();
+        return;
+      }
 
       try {
         const res = await guardedFetch('/api/admin/images/bulk-action', {
@@ -6709,7 +6806,9 @@ export function getAdminScripts(): string {
     window.submitEditImageForm = submitEditImageForm;
     window.quickApproveImage = quickApproveImage;
     window.quickRejectImage = quickRejectImage;
-    window.deleteImage = deleteImage;
+    window.deleteImage = confirmDeleteImage;
+    window.confirmDeleteImage = confirmDeleteImage;
+    window.confirmDeleteSelectedImages = confirmDeleteSelectedImages;
     window.toggleSelectAllImages = toggleSelectAllImages;
     window.updateImageSelectionState = updateImageSelectionState;
     window.executeImageBulkAction = executeImageBulkAction;

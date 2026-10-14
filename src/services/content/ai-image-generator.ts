@@ -44,25 +44,327 @@ export interface GeneratedImageResult {
 }
 
 /**
+ * Structured scene composition archetype for realistic business imagery.
+ */
+export interface SceneCompositionArchetype {
+  id: string;
+  category: string;
+  sceneTitle: string;
+  subjectDescription: string;
+  compositionGuidance: string;
+  keywords: string[];
+}
+
+/**
+ * Curated archetypes per category that vary device, setting, subject, and perspective.
+ * Prevents the single static 'contemporary business website layout on laptop screen modern desk' trap.
+ */
+export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype[]> = {
+  'Websites & Landing Pages': [
+    {
+      id: 'web-tablet-consultation',
+      category: 'Websites & Landing Pages',
+      sceneTitle: 'Client viewing clean booking portal on modern tablet',
+      subjectDescription: 'small business owner and customer reviewing an elegant appointment scheduling interface on a sleek tablet screen',
+      compositionGuidance: 'natural desk lighting, minimal clean graphic blocks on screen without pseudo-text or illegible letters, comfortable daylight workplace',
+      keywords: ['tablet', 'booking', 'clean interface', 'scheduling', 'customer'],
+    },
+    {
+      id: 'web-designer-desktop',
+      category: 'Websites & Landing Pages',
+      sceneTitle: 'Creative professional evaluating modern web typography and wireframe on large monitor',
+      subjectDescription: 'designer at wooden desk looking at a minimalist responsive website layout with clean abstract geometric color sections on an external display',
+      compositionGuidance: 'angle shot from behind shoulder, crisp monitor displaying clean whitespace and photographic banners, no cluttered dashboards or fake text',
+      keywords: ['monitor', 'minimalist website', 'desktop', 'clean layout', 'designer'],
+    },
+    {
+      id: 'web-mobile-checkout',
+      category: 'Websites & Landing Pages',
+      sceneTitle: 'Customer using modern mobile website checkout on smartphone',
+      subjectDescription: 'hands holding modern smartphone displaying a clean one-click payment mobile web page in a contemporary cafe setting',
+      compositionGuidance: 'close-up on natural hands holding device, clear bold payment confirmation card on phone screen, softly blurred cafe background',
+      keywords: ['smartphone', 'mobile web', 'checkout', 'ecommerce', 'hands'],
+    },
+    {
+      id: 'web-laptop-minimal',
+      category: 'Websites & Landing Pages',
+      sceneTitle: 'Laptop displaying modern minimalist company homepage on bright oak desk',
+      subjectDescription: 'sleek ultra-thin laptop showing a contemporary corporate landing page with clean hero image and minimalist navigation bar',
+      compositionGuidance: 'eye-level architectural perspective, bright natural side window illumination, potted plant and notebook beside laptop, no fake text on screen',
+      keywords: ['laptop', 'landing page', 'minimalist', 'oak desk', 'workspace'],
+    },
+    {
+      id: 'web-team-review',
+      category: 'Websites & Landing Pages',
+      sceneTitle: 'Small business team discussing website launch around meeting table',
+      subjectDescription: 'two business colleagues reviewing a new responsive company website on a central laptop in a modern collaborative studio',
+      compositionGuidance: 'authentic documentary business photography, natural candid smiles, warm natural office atmosphere',
+      keywords: ['team', 'discussion', 'launch', 'studio', 'colleagues'],
+    },
+  ],
+  'Marketing & Customer Acquisition': [
+    {
+      id: 'mkt-team-growth-board',
+      category: 'Marketing & Customer Acquisition',
+      sceneTitle: 'Marketing team analyzing digital growth metrics on presentation display',
+      subjectDescription: 'marketing specialists in light-filled office discussing digital campaign results displayed as clean high-contrast upward trend charts',
+      compositionGuidance: 'candid collaborative atmosphere, clear visual graphs without chaotic micro-numbers, modern corporate interior',
+      keywords: ['growth', 'marketing', 'team', 'charts', 'presentation'],
+    },
+    {
+      id: 'mkt-social-strategy-tablet',
+      category: 'Marketing & Customer Acquisition',
+      sceneTitle: 'Digital strategist planning content campaign on digital tablet',
+      subjectDescription: 'creative strategist holding a digital stylus organizing visual marketing calendar cards on a tablet surface',
+      compositionGuidance: 'top-down flat lay perspective with coffee cup, clean organized wooden desk, warm natural illumination',
+      keywords: ['strategist', 'campaign', 'tablet', 'calendar', 'planning'],
+    },
+    {
+      id: 'mkt-ad-performance-laptop',
+      category: 'Marketing & Customer Acquisition',
+      sceneTitle: 'Entrepreneur analyzing online advertising reach on laptop',
+      subjectDescription: 'focused professional at a bright workspace reviewing clean high-level customer acquisition funnel statistics on modern laptop',
+      compositionGuidance: 'side profile shot, shallow depth of field, authentic daylight, uncluttered workspace',
+      keywords: ['entrepreneur', 'acquisition', 'funnel', 'laptop', 'analytics'],
+    },
+  ],
+  'Sales & Conversion Process': [
+    {
+      id: 'sales-pos-contactless',
+      category: 'Sales & Conversion Process',
+      sceneTitle: 'Customer completing fast contactless payment at boutique counter',
+      subjectDescription: 'customer tapping smartphone or card against a modern minimalist POS payment terminal on wooden retail counter',
+      compositionGuidance: 'close-up on seamless contactless transaction, warm boutique store lighting, genuine small business commerce',
+      keywords: ['pos', 'contactless payment', 'checkout', 'retail', 'counter'],
+    },
+    {
+      id: 'sales-client-agreement',
+      category: 'Sales & Conversion Process',
+      sceneTitle: 'Consultant and business client concluding successful service agreement',
+      subjectDescription: 'two professionals in casual business attire shaking hands across an uncluttered meeting desk with tablet and coffee cups',
+      compositionGuidance: 'cinematic lighting, authentic professional rapport, natural daylight, sharp focus on mutual agreement',
+      keywords: ['agreement', 'consultation', 'client', 'handshake', 'partnership'],
+    },
+    {
+      id: 'sales-ecommerce-dispatch',
+      category: 'Sales & Conversion Process',
+      sceneTitle: 'Store owner preparing packaged online orders in workshop',
+      subjectDescription: 'entrepreneur in modern artisan studio scanning barcode on neat eco-friendly packaging box with smartphone scanner',
+      compositionGuidance: 'authentic craft business environment, tidy organized shipping station, daylight from industrial window',
+      keywords: ['orders', 'shipping', 'packaging', 'ecommerce', 'dispatch'],
+    },
+  ],
+  'AI & Business Automation': [
+    {
+      id: 'ai-automated-workflow-screen',
+      category: 'AI & Business Automation',
+      sceneTitle: 'Engineer configuring visual automated workflow pipeline on dual monitors',
+      subjectDescription: 'developer at modern standing desk with dual monitors showcasing clean node-based automation diagram blocks and flowchart structure',
+      compositionGuidance: 'high-contrast clean flowchart visuals without pseudo-code or messy text, modern ergonomic workspace, subtle ambient glow',
+      keywords: ['workflow', 'automation', 'diagram', 'dual monitor', 'standing desk'],
+    },
+    {
+      id: 'ai-smart-ops-tablet',
+      category: 'AI & Business Automation',
+      sceneTitle: 'Operations manager verifying automated inventory syncing on tablet',
+      subjectDescription: 'business manager walking through modern fulfillment center holding tablet showing simple color-coded status cards',
+      compositionGuidance: 'documentary commercial photography, authentic light industrial background, clear device visibility',
+      keywords: ['operations', 'automation', 'tablet', 'syncing', 'manager'],
+    },
+    {
+      id: 'ai-customer-bot-review',
+      category: 'AI & Business Automation',
+      sceneTitle: 'Support lead reviewing automated customer service workflows on laptop',
+      subjectDescription: 'support lead smiling at laptop in bright open-plan office showing simplified conversational flow diagrams',
+      compositionGuidance: 'natural daylight, genuine workplace expressions, clean visual presentation of automated logic',
+      keywords: ['support', 'assistant', 'conversational', 'laptop', 'office'],
+    },
+  ],
+  'Small Business Productivity & Ops': [
+    {
+      id: 'prod-organized-desk-morning',
+      category: 'Small Business Productivity & Ops',
+      sceneTitle: 'Morning productivity routine of small business founder',
+      subjectDescription: 'focused business founder organizing weekly priorities with laptop, paper planner and espresso on warm Scandinavian desk',
+      compositionGuidance: 'soft morning sunlight streaming through window, tranquil productive workplace, natural wood textures',
+      keywords: ['founder', 'priorities', 'morning routine', 'planner', 'productivity'],
+    },
+    {
+      id: 'prod-digital-invoice-tablet',
+      category: 'Small Business Productivity & Ops',
+      sceneTitle: 'Trades professional generating instant digital quote on rugged tablet',
+      subjectDescription: 'contractor in clean modern workshop reviewing a simple digital estimate on tablet beside neat tools',
+      compositionGuidance: 'authentic practical business scene, believable craftsmanship, clean interface layout on tablet',
+      keywords: ['contractor', 'estimate', 'invoice', 'tablet', 'workshop'],
+    },
+    {
+      id: 'prod-paperless-office',
+      category: 'Small Business Productivity & Ops',
+      sceneTitle: 'Minimalist paperless office desk with laptop and smartphone',
+      subjectDescription: 'tidy workspace featuring slim laptop, smartphone on wireless charging dock, small succulent plant and glass of water',
+      compositionGuidance: 'overhead 45-degree angle, exceptional clean architectural symmetry, crisp textures and natural daylight',
+      keywords: ['paperless', 'minimalist desk', 'organization', 'laptop', 'clarity'],
+    },
+  ],
+  'Customer Experience & Trust': [
+    {
+      id: 'cx-warm-greeting-shop',
+      category: 'Customer Experience & Trust',
+      sceneTitle: 'Welcoming customer greeting at modern local business counter',
+      subjectDescription: 'smiling business owner greeting a customer warmly across a modern reception or service desk in a bright local enterprise',
+      compositionGuidance: 'authentic warm expression, natural eye contact, inviting commercial atmosphere with soft ambient lighting',
+      keywords: ['greeting', 'customer service', 'reception', 'smiling', 'welcome'],
+    },
+    {
+      id: 'cx-client-review-phone',
+      category: 'Customer Experience & Trust',
+      sceneTitle: 'Customer giving 5-star digital review on smartphone in storefront',
+      subjectDescription: 'customer holding smartphone displaying a clear 5-star rating confirmation card inside an attractive local shop',
+      compositionGuidance: 'crisp focus on device screen with star rating, softly blurred pleasant retail background, natural light',
+      keywords: ['five star review', 'rating', 'feedback', 'trust', 'customer satisfaction'],
+    },
+    {
+      id: 'cx-consultation-sofa',
+      category: 'Customer Experience & Trust',
+      sceneTitle: 'Relaxed professional consultation in modern lounge area',
+      subjectDescription: 'advisor and client sitting in modern comfortable armchairs discussing project details with tablet on low coffee table',
+      compositionGuidance: 'approachable hospitality vibe, calm interior design, warm natural textures and plants',
+      keywords: ['consultation', 'advisory', 'lounge', 'comfortable', 'client trust'],
+    },
+  ],
+  'Local Business & Regional Context': [
+    {
+      id: 'local-storefront-morning',
+      category: 'Local Business & Regional Context',
+      sceneTitle: 'Charming modern local business storefront on pedestrian street',
+      subjectDescription: 'contemporary local boutique or specialty cafe facade with clean glass display and subtle professional signage on a sunlit street',
+      compositionGuidance: 'architectural street photography, morning golden hour lighting, clean sidewalk, believable European or Nordic town feel',
+      keywords: ['storefront', 'facade', 'street', 'local shop', 'pedestrian'],
+    },
+    {
+      id: 'local-owner-outside',
+      category: 'Local Business & Regional Context',
+      sceneTitle: 'Local shop owner opening welcoming entrance for business day',
+      subjectDescription: 'proud independent shop owner placing an open sign by glass entrance of clean contemporary neighborhood store',
+      compositionGuidance: 'authentic small business pride, natural documentary photography, bright morning light',
+      keywords: ['shop owner', 'entrance', 'neighborhood', 'local enterprise', 'open sign'],
+    },
+  ],
+  'General': [
+    {
+      id: 'gen-bright-co-working',
+      category: 'General',
+      sceneTitle: 'Bright collaborative modern business workspace',
+      subjectDescription: 'professionals working independently in a spacious Scandinavian-style co-working space with large windows and indoor plants',
+      compositionGuidance: 'wide environmental perspective, airy modern architecture, warm natural light, authentic workplace energy',
+      keywords: ['co-working', 'workspace', 'modern office', 'daylight', 'business'],
+    },
+    {
+      id: 'gen-executive-desk',
+      category: 'General',
+      sceneTitle: 'Clutter-free executive desk with modern laptop and coffee cup',
+      subjectDescription: 'tasteful professional desk setup with laptop, notebook, fountain pen and ceramic coffee mug under natural window light',
+      compositionGuidance: 'elegant commercial photography, balanced composition, crisp textures of wood, ceramic and metal',
+      keywords: ['desk', 'laptop', 'coffee', 'notebook', 'professional setup'],
+    },
+  ],
+};
+
+/**
+ * Selects a diverse, complementary scene archetype for a category by checking
+ * existing image titles, descriptions, and prompt notes in the database.
+ * If the library already has laptop screens, it prioritizes tablets, customer interactions,
+ * storefronts, or team consultations.
+ */
+export function selectComplementaryScene(
+  category: string,
+  existingImageMetadata: Array<{ title?: string; description?: string; notes?: string }> = [],
+  contextQuery?: string,
+): SceneCompositionArchetype {
+  const archetypes = CATEGORY_SCENE_ARCHETYPES[category] || CATEGORY_SCENE_ARCHETYPES['General'] || [];
+  if (archetypes.length === 0) {
+    return {
+      id: 'fallback-business-scene',
+      category,
+      sceneTitle: 'Contemporary commercial business scene',
+      subjectDescription: contextQuery || 'modern professional business setting',
+      compositionGuidance: 'natural daylight, uncluttered workspace, clean photographic composition',
+      keywords: ['business', 'professional'],
+    };
+  }
+
+  // Count usage of each archetype's signature keywords among existing images
+  const scores = archetypes.map((archetype) => {
+    let penalty = 0;
+    const archTokens = archetype.keywords.map((k) => k.toLowerCase());
+
+    for (const img of existingImageMetadata) {
+      const corpus = `${img.title || ''} ${img.description || ''} ${img.notes || ''}`.toLowerCase();
+      for (const tok of archTokens) {
+        if (corpus.includes(tok)) {
+          penalty += 1;
+        }
+      }
+      // Specific check for repetitious laptop desks
+      if (archTokens.includes('laptop') && corpus.includes('laptop screen modern desk')) {
+        penalty += 3;
+      }
+    }
+
+    // Boost if the user specifically asked for something relevant to this archetype
+    let relevanceBoost = 0;
+    if (contextQuery) {
+      const qLower = contextQuery.toLowerCase();
+      for (const tok of archTokens) {
+        if (qLower.includes(tok)) {
+          relevanceBoost += 2;
+        }
+      }
+    }
+
+    return {
+      archetype,
+      // Lower score = less represented in the library (more diverse)
+      diversityScore: penalty - relevanceBoost,
+    };
+  });
+
+  // Sort ascending by diversityScore to pick the least used / most complementary archetype
+  scores.sort((a, b) => a.diversityScore - b.diversityScore);
+  const bestChoice = scores[0];
+  return bestChoice ? bestChoice.archetype : archetypes[0]!;
+}
+
+/**
  * Builds a photographic, realistic business prompt tailored for NorthSoft.
+ * Strictly avoids screen artifacts: forbids garbled pseudo-text, chaotic dashboards,
+ * unreadable microscopic icons, and distorted hands.
  */
 export function buildBusinessImagePrompt(
   description: string,
   category: string,
   postContext?: string,
+  sceneArchetype?: SceneCompositionArchetype,
 ): string {
   const cleanDesc = description.trim();
   const cleanCat = category.trim();
 
-  // Combine user description with realism and contemporary business quality modifiers
-  let prompt = `Photorealistic modern commercial scene: ${cleanDesc}. Category: ${cleanCat}.`;
+  const sceneGuidance = sceneArchetype?.compositionGuidance
+    ? ` Visual direction: ${sceneArchetype.compositionGuidance}.`
+    : '';
+
+  // Core photographic scene declaration
+  let prompt = `Editorial commercial photograph: ${cleanDesc}. Category: ${cleanCat}.${sceneGuidance}`;
 
   if (postContext && postContext.trim().length > 0) {
     const briefCtx = postContext.trim().slice(0, 150);
     prompt += ` Context: ${briefCtx}.`;
   }
 
-  prompt += ' Contemporary small business setting, natural daylight, high resolution, cinematic professional commercial photography, authentic workplace, sharp focus, 8k, no watermarks, no distorted faces or extra limbs.';
+  // Quality, lighting, materials and strict screen anti-artifact guidelines
+  prompt += ' Authentic modern workplace, natural daylight illumination, realistic textures and proportions, 35mm lens commercial photography, sharp focus, neutral balanced color grading.';
+  prompt += ' CRITICAL SCREEN REQUIREMENTS: Any computer, monitor, phone or tablet screen MUST show only simple minimalist visual color blocks, clean graphic wireframes, or clean photographs; NO pseudo-text, NO garbled letters, NO illegible fake words, NO chaotic cluttered dashboards, NO microscopic random icons.';
+  prompt += ' No watermarks, no artificial stock photo cheese, no distorted hands, anatomically correct fingers.';
 
   return prompt;
 }
@@ -143,7 +445,29 @@ export class AiImageGeneratorService {
       throw new AppError(quota.reason || 'Daily image generation quota reached.', 429, 'QUOTA_EXCEEDED');
     }
 
-    const prompt = buildBusinessImagePrompt(options.description, options.category, options.postContext);
+    // 2. Scene Diversification & Repetition Guard:
+    // Query recent image titles, descriptions, and notes in this category to detect dominantly repeated setups
+    let existingImages: Array<{ title: string; description: string; notes: string }>;
+    try {
+      const existingRes = await db
+        .prepare(
+          `SELECT title, description, notes FROM curated_images
+           WHERE category = ? OR category = 'General'
+           ORDER BY created_at DESC LIMIT 20`,
+        )
+        .bind(options.category || 'General')
+        .all<{ title: string | null; description: string | null; notes: string | null }>();
+      existingImages = (existingRes.results || []).map((r) => ({
+        title: r.title || '',
+        description: r.description || '',
+        notes: r.notes || '',
+      }));
+    } catch {
+      existingImages = [];
+    }
+
+    const sceneArchetype = selectComplementaryScene(options.category || 'General', existingImages, options.description);
+    const prompt = buildBusinessImagePrompt(options.description, options.category, options.postContext, sceneArchetype);
     const startTime = Date.now();
     let imageBytes: ArrayBuffer;
 
@@ -228,6 +552,8 @@ export class AiImageGeneratorService {
       model: AI_IMAGE_GENERATION_MODEL,
       generationDate: nowIso,
       originalPrompt: prompt,
+      sceneArchetypeId: sceneArchetype.id,
+      sceneArchetypeTitle: sceneArchetype.sceneTitle,
       neuronsEstimated: AI_IMAGE_ESTIMATED_NEURONS,
       internalBrand: 'NorthSoft',
       usagePolicy: 'NorthSoft internal use',

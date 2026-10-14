@@ -1847,10 +1847,6 @@ export function renderAdminHtml(): string {
 
       <!-- VIEW 1: Category & Description Form -->
       <div id="discover-view-form" class="modal-body">
-        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
-          Select a category and adjust the visual search description. The unified pipeline automatically searches verified web sources and intelligently supplements with Cloudflare Workers AI when candidates are scarce.
-        </p>
-
         <div class="form-group" style="margin-bottom:1rem;">
           <label class="form-label" for="discover-category-select" style="font-weight:600;">Image Library Category</label>
           <select id="discover-category-select" class="form-input" onchange="handleDiscoverCategoryChange()">
@@ -1867,25 +1863,17 @@ export function renderAdminHtml(): string {
 
         <div class="form-group" style="margin-bottom:1.25rem;">
           <label class="form-label" for="discover-description-input" style="font-weight:600;">Image search description</label>
-          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene (e.g. contemporary business website layout on laptop screen modern desk)..." oninput="validateDiscoverForm()"></textarea>
-          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">
-            Edit this description to fine-tune image matching. Discovered &amp; generated images are saved as <strong>PENDING</strong> for manual review.
-          </div>
-        </div>
-
-        <div id="discover-ai-notice-box" style="display:flex; align-items:center; gap:0.5rem; background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:0.75rem 1rem; margin-bottom:0.5rem; font-size:0.78rem; color:var(--accent-blue);">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-          <span>Unified acquisition: Searches Openverse first, automatically supplements via Workers AI (max 1/day). Author: <em>NorthSoft</em>, License: <em>NorthSoft internal use</em>.</span>
+          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene..." oninput="validateDiscoverForm()"></textarea>
         </div>
       </div>
       <div id="discover-footer-form" class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
         <button type="button" class="btn-secondary" onclick="closeModal('discover-image-modal')">Cancel</button>
         <div style="display:flex; gap:0.5rem;">
-          <button type="button" id="start-ai-generate-btn" class="btn-secondary" style="border-color:rgba(96,165,250,0.4); color:var(--accent-blue);" onclick="startAiImageGeneration()" title="Force explicit Cloudflare AI generation immediately">
-            ✨ Generate AI Only
+          <button type="button" id="start-ai-generate-btn" class="btn-secondary" style="border-color:rgba(96,165,250,0.4); color:var(--accent-blue);" onclick="startAiImageGeneration()">
+            Generate AI Images
           </button>
           <button type="button" id="start-discovery-btn" class="btn-primary" onclick="startCandidateDiscovery()">
-            🔍 Discover &amp; Acquire
+            Discover Images
           </button>
         </div>
       </div>
