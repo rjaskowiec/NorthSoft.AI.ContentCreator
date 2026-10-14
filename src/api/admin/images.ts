@@ -234,7 +234,7 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
         step: 'ai_supplement',
         label: 'Automatic Cloudflare Workers AI supplement',
         status: 'completed',
-        details: '1 photorealistic business image generated via SDXL-Lightning & saved as PENDING',
+        details: '1 photorealistic business image generated via FLUX.1 Schnell & saved as PENDING',
       });
     }
 
@@ -261,6 +261,48 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: `Candidate discovery failed: ${message}` }, 500);
   }
+});
+
+/**
+ * GET /api/admin/images/suggest-prompt
+ * Dynamically prepares a photographic scene proposal tailored to the current library
+ * content and recent generations without incurring AI text generation costs.
+ * Avoids repeating recently approved or proposed setups, and supports cycleOffset.
+ */
+imagesRouter.get('/images/suggest-prompt', async (c) => {
+  const db = c.env.DB;
+  const category = (c.req.query('category') || 'Websites & Landing Pages').trim();
+  const cycleOffset = parseInt(c.req.query('cycleOffset') || '0', 10);
+  const contextQuery = (c.req.query('context') || '').trim();
+
+  const existingImages: Array<{ title: string; description: string; notes: string }> = await db
+    .prepare(
+      `SELECT title, description, notes FROM curated_images
+       WHERE category = ? OR category = 'General'
+       ORDER BY created_at DESC LIMIT 25`,
+    )
+    .bind(category)
+    .all<{ title: string | null; description: string | null; notes: string | null }>()
+    .then((res) =>
+      (res.results || []).map((r) => ({
+        title: r.title || '',
+        description: r.description || '',
+        notes: r.notes || '',
+      })),
+    )
+    .catch(() => []);
+
+  const { selectComplementaryScene } = await import('../../services/content/ai-image-generator');
+  const archetype = selectComplementaryScene(category, existingImages, contextQuery, cycleOffset);
+
+  return c.json({
+    success: true,
+    category,
+    prompt: archetype.subjectDescription,
+    archetypeId: archetype.id,
+    sceneTitle: archetype.sceneTitle,
+    compositionGuidance: archetype.compositionGuidance,
+  });
 });
 
 /**

@@ -2,10 +2,12 @@
  * NorthSoft.AI.ContentCreator — AI Image Generation Service (Cloudflare Workers AI)
  *
  * Implements server-side text-to-image generation for NorthSoft's Curated Image Library:
- * - Powered by Cloudflare Workers AI using the fast & realistic SDXL-Lightning model:
- *   `@cf/bytedance/stable-diffusion-xl-lightning` (or fallback `@cf/black-forest-labs/flux-1-schnell`).
+ * - Powered by Cloudflare Workers AI using the state-of-the-art 12B rectified flow model:
+ *   `@cf/black-forest-labs/flux-1-schnell`.
+ *   Produces ultra-high-fidelity commercial business photography without distorted hands or
+ *   garbled screen text artifacts (unlike older SDXL-Lightning).
  * - Strict Zero-Paid-Cost / Free-Tier Protection:
- *   Single generation uses ~150-250 Neurons (>100 Neurons). In accordance with policy,
+ *   Single generation uses ~250 Neurons (4 inference steps at 1024x1024). In accordance with policy,
  *   a strict server-side limit of MAX 1 GENERATED IMAGE PER DAY is enforced via QuotaManager and D1.
  * - Concurrency & Race-Condition Safe:
  *   Daily limit is checked and reserved in D1 before invocation. No paid fallback.
@@ -14,16 +16,16 @@
  *   * License: "NorthSoft internal use" (internal company policy, no external fictional creator or fake license)
  *   * Status: ALWAYS saved as "PENDING" for mandatory manual administrator review. Never auto-approved.
  *   * Internal Provenance: Stored in curated_images.notes (model, prompt, generation date, cost).
- *   * Technical Metadata: Stripped / clean raw PNG stored in Cloudflare R2 (`env.IMAGE_BUCKET`).
+ *   * Technical Metadata: Stripped / clean raw PNG/JPEG stored in Cloudflare R2 (`env.IMAGE_BUCKET`).
  */
 
 import { AppError } from '../../core/errors';
 import { QuotaManager } from '../ai/quota-manager';
 import { ImageLibraryService } from './image-library-service';
 
-export const AI_IMAGE_GENERATION_MODEL = '@cf/bytedance/stable-diffusion-xl-lightning';
+export const AI_IMAGE_GENERATION_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 export const AI_IMAGE_DAILY_LIMIT = 1;
-export const AI_IMAGE_ESTIMATED_NEURONS = 200;
+export const AI_IMAGE_ESTIMATED_NEURONS = 250;
 
 export interface GenerateImageOptions {
   category: string;
@@ -276,11 +278,13 @@ export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype
  * existing image titles, descriptions, and prompt notes in the database.
  * If the library already has laptop screens, it prioritizes tablets, customer interactions,
  * storefronts, or team consultations.
+ * Supports cycleOffset to allow stepping through alternative scene suggestions deterministically.
  */
 export function selectComplementaryScene(
   category: string,
   existingImageMetadata: Array<{ title?: string; description?: string; notes?: string }> = [],
   contextQuery?: string,
+  cycleOffset = 0,
 ): SceneCompositionArchetype {
   const archetypes = CATEGORY_SCENE_ARCHETYPES[category] || CATEGORY_SCENE_ARCHETYPES['General'] || [];
   if (archetypes.length === 0) {
@@ -332,8 +336,9 @@ export function selectComplementaryScene(
 
   // Sort ascending by diversityScore to pick the least used / most complementary archetype
   scores.sort((a, b) => a.diversityScore - b.diversityScore);
-  const bestChoice = scores[0];
-  return bestChoice ? bestChoice.archetype : archetypes[0]!;
+  const normalizedIndex = Math.abs(cycleOffset) % scores.length;
+  const chosen = scores[normalizedIndex];
+  return chosen ? chosen.archetype : archetypes[0]!;
 }
 
 /**

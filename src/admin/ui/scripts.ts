@@ -5752,28 +5752,59 @@ export function getAdminScripts(): string {
       ],
     };
 
-    function getDiverseCategoryDescription(category) {
-      const list = CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS[category] || CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS['General'] || [];
-      if (!list.length) return '';
+    let discoverSceneCycleOffset = 0;
+    let discoverDescriptionUserEdited = false;
 
-      // Check existing cached images in library to avoid offering a scene that already dominates
-      const existingText = (cachedImages || [])
-        .filter(img => (img.category || '').toLowerCase() === (category || '').toLowerCase())
-        .map(img => \`\${img.title || ''} \${img.description || ''} \${img.notes || ''}\`.toLowerCase())
-        .join(' ');
-
-      // Pick the first description in list that isn't already heavily represented
-      for (const desc of list) {
-        const tokens = desc.toLowerCase().split(' ').filter(w => w.length > 4);
-        const matches = tokens.filter(t => existingText.includes(t)).length;
-        if (matches < 2) {
-          return desc;
-        }
-      }
-      return list[0];
+    function handleDiscoverDescriptionInput() {
+      discoverDescriptionUserEdited = true;
+      validateDiscoverForm();
     }
 
-    function openDiscoverImageModal() {
+    async function fetchDynamicPromptProposal(category, forceCycle) {
+      if (forceCycle) {
+        discoverSceneCycleOffset++;
+      }
+      try {
+        const queryParams = new URLSearchParams({
+          category: category || 'Websites & Landing Pages',
+          cycleOffset: String(discoverSceneCycleOffset),
+        });
+        const res = await guardedFetch('/api/admin/images/suggest-prompt?' + queryParams.toString());
+        const data = await res.json();
+        if (data && data.success && data.prompt) {
+          return data.prompt;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch dynamic prompt proposal:', err);
+      }
+      const list = CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS[category] || CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS['General'] || [];
+      if (!list.length) return '';
+      const idx = Math.abs(discoverSceneCycleOffset) % list.length;
+      return list[idx] || list[0] || '';
+    }
+
+    async function suggestAlternativeScene() {
+      const categorySelect = document.getElementById('discover-category-select');
+      const descInput = document.getElementById('discover-description-input');
+      const altBtn = document.getElementById('discover-suggest-alt-btn');
+      if (!descInput) return;
+
+      const cat = categorySelect ? categorySelect.value : 'Websites & Landing Pages';
+      if (altBtn) altBtn.disabled = true;
+
+      try {
+        const newPrompt = await fetchDynamicPromptProposal(cat, true);
+        if (newPrompt) {
+          descInput.value = newPrompt;
+          discoverDescriptionUserEdited = false;
+          validateDiscoverForm();
+        }
+      } finally {
+        if (altBtn) altBtn.disabled = false;
+      }
+    }
+
+    async function openDiscoverImageModal() {
       if (isCandidateDiscoveryRunning) return;
       resetDiscoverModalForm();
       openModal('discover-image-modal');
@@ -5782,16 +5813,25 @@ export function getAdminScripts(): string {
       if (categorySelect && !categorySelect.value) {
         categorySelect.value = 'Websites & Landing Pages';
       }
-      handleDiscoverCategoryChange();
+      await handleDiscoverCategoryChange(false);
     }
 
-    function handleDiscoverCategoryChange() {
+    async function handleDiscoverCategoryChange(isCategoryDropdownEvent) {
       const categorySelect = document.getElementById('discover-category-select');
       const descInput = document.getElementById('discover-description-input');
       if (!categorySelect || !descInput) return;
 
+      if (isCategoryDropdownEvent && discoverDescriptionUserEdited && descInput.value.trim().length > 0) {
+        validateDiscoverForm();
+        return;
+      }
+
       const cat = categorySelect.value || 'Websites & Landing Pages';
-      descInput.value = getDiverseCategoryDescription(cat);
+      const prompt = await fetchDynamicPromptProposal(cat, false);
+      if (prompt) {
+        descInput.value = prompt;
+        discoverDescriptionUserEdited = false;
+      }
       validateDiscoverForm();
     }
 
@@ -5808,9 +5848,10 @@ export function getAdminScripts(): string {
 
     function resetDiscoverModalForm() {
       setDiscoverModalView('form');
+      discoverDescriptionUserEdited = false;
+      discoverSceneCycleOffset = Math.floor(Math.random() * 5);
       const categorySelect = document.getElementById('discover-category-select');
       if (categorySelect) categorySelect.value = 'Websites & Landing Pages';
-      handleDiscoverCategoryChange();
     }
 
     function setDiscoverModalView(viewName) {
@@ -6074,6 +6115,9 @@ export function getAdminScripts(): string {
         if (totalEl) totalEl.textContent = '1';
         if (addedEl) addedEl.textContent = '1';
         if (skippedEl) skippedEl.textContent = '0';
+
+        discoverSceneCycleOffset++;
+        discoverDescriptionUserEdited = false;
 
         setDiscoverModalView('result');
       } catch (err) {

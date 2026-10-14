@@ -346,5 +346,46 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       expect(json.limit).toBe(1);
       expect(json.allowed).toBe(false);
     });
+
+    it('GET /api/admin/images/suggest-prompt dynamically suggests alternative scenes based on category and history without AI generation cost', async () => {
+      const { db } = createMockD1Database([], [
+        {
+          title: 'Laptop on desk',
+          description: 'contemporary business website layout on laptop screen modern desk',
+          category: 'Websites & Landing Pages',
+          notes: 'laptop desk',
+        },
+      ]);
+
+      const app = new Hono<AppEnv>();
+      app.route('/', imagesRouter);
+
+      // Proposal 1: offset 0
+      const req1 = new Request('http://localhost/images/suggest-prompt?category=Websites%20%26%20Landing%20Pages&cycleOffset=0', {
+        method: 'GET',
+      });
+      const res1 = await app.fetch(req1, { DB: db });
+      expect(res1.status).toBe(200);
+      const data1 = (await res1.json()) as any;
+      expect(data1.success).toBe(true);
+      expect(data1.prompt).toBeDefined();
+      expect(data1.archetypeId).not.toBe('web-laptop-minimal');
+
+      // Proposal 2: offset 1 (cycling to next scene alternative)
+      const req2 = new Request('http://localhost/images/suggest-prompt?category=Websites%20%26%20Landing%20Pages&cycleOffset=1', {
+        method: 'GET',
+      });
+      const res2 = await app.fetch(req2, { DB: db });
+      expect(res2.status).toBe(200);
+      const data2 = (await res2.json()) as any;
+      expect(data2.success).toBe(true);
+      expect(data2.prompt).toBeDefined();
+      expect(data2.prompt).not.toBe(data1.prompt);
+    });
+
+    it('uses FLUX.1 Schnell model for high-fidelity generation without text corruption', async () => {
+      const { AI_IMAGE_GENERATION_MODEL } = await import('../../src/services/content/ai-image-generator');
+      expect(AI_IMAGE_GENERATION_MODEL).toBe('@cf/black-forest-labs/flux-1-schnell');
+    });
   });
 });

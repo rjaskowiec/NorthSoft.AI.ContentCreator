@@ -1862,8 +1862,11 @@ export function renderAdminHtml(): string {
         </div>
 
         <div class="form-group" style="margin-bottom:1.25rem;">
-          <label class="form-label" for="discover-description-input" style="font-weight:600;">Image search description</label>
-          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene..." oninput="validateDiscoverForm()"></textarea>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+            <label class="form-label" for="discover-description-input" style="font-weight:600; margin-bottom:0;">Image search description</label>
+            <button type="button" id="discover-suggest-alt-btn" class="btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.55rem; line-height:1.2;" onclick="suggestAlternativeScene()">Suggest Alternative</button>
+          </div>
+          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene..." oninput="handleDiscoverDescriptionInput()"></textarea>
         </div>
       </div>
       <div id="discover-footer-form" class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
