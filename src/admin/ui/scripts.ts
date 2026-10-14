@@ -6087,7 +6087,7 @@ export function getAdminScripts(): string {
     function closeDiscoverModalAndViewPending() {
       closeModal('discover-image-modal');
       setImageStatusTab('PENDING');
-      refreshImageLibrary();
+      loadImagesData();
     }
 
     let imageUrlDebounceTimer = null;
@@ -6798,6 +6798,7 @@ export function getAdminScripts(): string {
     window.syncFacebook = syncFacebook;
     window.setImageStatusTab = setImageStatusTab;
     window.loadImagesData = loadImagesData;
+    window.refreshImageLibrary = loadImagesData;
     window.debounceImageSearch = debounceImageSearch;
     window.openDiscoverImageModal = openDiscoverImageModal;
     window.handleDiscoverCategoryChange = handleDiscoverCategoryChange;
