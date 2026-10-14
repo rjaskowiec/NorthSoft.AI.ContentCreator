@@ -79,14 +79,24 @@ export function validateImageLicense(
     };
   }
 
-  // Manual uploads or verified commercial assets
-  if (lic === 'manual upload' || lic === 'manual' || lic === 'commercial' || lic === 'purchased' || lic === 'licensed') {
+  // Manual uploads, NorthSoft internal AI creations, or verified commercial assets
+  if (
+    lic === 'manual upload' ||
+    lic === 'manual' ||
+    lic === 'commercial' ||
+    lic === 'purchased' ||
+    lic === 'licensed' ||
+    lic.includes('northsoft') ||
+    lic.includes('internal use') ||
+    lic === 'ai generated' ||
+    lic.includes('flux')
+  ) {
     return {
       allowedForCommercialUse: true,
       requiresAttribution: false,
       allowsModifications: true,
       attributionText: null,
-      normalizedLicense: 'COMMERCIAL_VERIFIED',
+      normalizedLicense: 'NorthSoft internal use',
     };
   }
 

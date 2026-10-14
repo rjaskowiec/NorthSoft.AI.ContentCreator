@@ -23,6 +23,10 @@ function createMockD1Database(existingRuns: any[] = [], existingCurated: any[] =
         if (sql.includes('SELECT SUM(request_count)')) {
           return { req_total: 5, neuron_total: 100, total: 5 };
         }
+        if (sql.includes('SELECT author, source_url, license FROM curated_images')) {
+          const target = curated.find((c) => c.id === args[0]);
+          return target ? { author: target.author, source_url: target.source_url, license: target.license } : null;
+        }
         return null;
       },
       all: async () => ({ results: [] }),
@@ -50,6 +54,17 @@ function createMockD1Database(existingRuns: any[] = [], existingCurated: any[] =
             status: args[13],
           });
           return { meta: { changes: 1 } };
+        }
+        if (sql.includes('UPDATE curated_images')) {
+          const targetId = args[args.length - 1];
+          const target = curated.find((c) => c.id === targetId);
+          if (target) {
+            if (sql.includes('status = ?')) {
+              target.status = args.find((a: any) => ['PENDING', 'APPROVED', 'REJECTED', 'DELETED'].includes(a));
+            }
+            return { meta: { changes: 1 } };
+          }
+          return { meta: { changes: 0 } };
         }
         return { meta: { changes: 0 } };
       },
@@ -322,6 +337,10 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       expect(runs.length).toBe(1);
       expect(runs[0].role).toBe('image_generator');
       expect(runs[0].status).toBe('completed');
+
+      // Check approving the generated image via ImageLibraryService / PATCH /images/:id succeeds
+      const updateResult = await service.generateAndPersistImage ? await new (await import('../../src/services/content/image-library-service')).ImageLibraryService(db).updateMetadata(result.id, { status: 'APPROVED' }) : false;
+      expect(updateResult).toBe(true);
     });
   });
 

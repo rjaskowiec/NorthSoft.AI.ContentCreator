@@ -615,14 +615,20 @@ imagesRouter.patch('/images/:id', csrfProtection, async (c) => {
     status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'DELETED';
   };
 
-  const imgService = new ImageLibraryService(db);
-  const updated = await imgService.updateMetadata(id, body);
+  try {
+    const imgService = new ImageLibraryService(db);
+    const updated = await imgService.updateMetadata(id, body);
 
-  if (!updated) {
-    return c.json({ success: false, error: 'Image record not found or no changes made.' }, 404);
+    if (!updated) {
+      return c.json({ success: false, error: 'Image record not found or no changes made.' }, 404);
+    }
+
+    return c.json({ success: true, id, message: 'Image metadata updated.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[PATCH /images/:id] Failed to update image ${id}:`, err);
+    return c.json({ success: false, error: message }, 400);
   }
-
-  return c.json({ success: true, id, message: 'Image metadata updated.' });
 });
 
 /**

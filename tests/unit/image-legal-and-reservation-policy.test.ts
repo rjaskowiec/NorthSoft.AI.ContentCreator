@@ -55,6 +55,14 @@ describe('Image License Validation Policy', () => {
     expect(unverified.allowedForCommercialUse).toBe(false);
     expect(unverified.rejectionReason).toContain('Unverifiable license terms');
   });
+
+  it('allows NorthSoft internal use license for commercial publication without attribution', () => {
+    const res = validateImageLicense('NorthSoft internal use', 'NorthSoft', null);
+    expect(res.allowedForCommercialUse).toBe(true);
+    expect(res.requiresAttribution).toBe(false);
+    expect(res.allowsModifications).toBe(true);
+    expect(res.normalizedLicense).toBe('NorthSoft internal use');
+  });
 });
 
 describe('Image Library Service — Safe Reservations and 90-day Policy', () => {
