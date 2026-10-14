@@ -5709,16 +5709,38 @@ export function getAdminScripts(): string {
       validateDiscoverForm();
     }
 
+    let currentPromptAbortController = null;
+
     async function fetchDynamicPromptProposal(category, forceCycle) {
       if (forceCycle) {
         discoverSceneCycleOffset++;
       }
+
+      if (currentPromptAbortController) {
+        currentPromptAbortController.abort();
+      }
+      currentPromptAbortController = new AbortController();
+
+      const loadingEl = document.getElementById('discover-prompt-loading');
+      const descInput = document.getElementById('discover-description-input');
+      const altBtn = document.getElementById('discover-suggest-alt-btn');
+      const discBtn = document.getElementById('start-discovery-btn');
+      const aiBtn = document.getElementById('start-ai-generate-btn');
+
+      if (loadingEl) loadingEl.style.display = 'inline-flex';
+      if (altBtn) altBtn.disabled = true;
+      if (descInput && !discoverDescriptionUserEdited) {
+        descInput.placeholder = 'Conceiving unique scene concept based on library history...';
+      }
+
       try {
         const queryParams = new URLSearchParams({
           category: category || 'Websites & Landing Pages',
           cycleOffset: String(discoverSceneCycleOffset),
         });
-        const res = await guardedFetch('/api/admin/images/suggest-prompt?' + queryParams.toString());
+        const res = await guardedFetch('/api/admin/images/suggest-prompt?' + queryParams.toString(), {
+          signal: currentPromptAbortController.signal,
+        });
         const data = await res.json();
         if (data && data.success && data.prompt) {
           return data.prompt;
@@ -5727,7 +5749,17 @@ export function getAdminScripts(): string {
           console.warn('Concept proposal error from server:', data.error);
         }
       } catch (err) {
+        if (err && err.name === 'AbortError') {
+          return '';
+        }
         console.warn('Failed to fetch dynamic prompt proposal:', err);
+      } finally {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (altBtn) altBtn.disabled = false;
+        if (descInput) {
+          descInput.placeholder = 'Describe the scene...';
+        }
+        validateDiscoverForm();
       }
       return '';
     }
@@ -5801,6 +5833,13 @@ export function getAdminScripts(): string {
       discoverSceneCycleOffset = Math.floor(Math.random() * 5);
       const categorySelect = document.getElementById('discover-category-select');
       if (categorySelect) categorySelect.value = 'Websites & Landing Pages';
+      const descInput = document.getElementById('discover-description-input');
+      if (descInput) descInput.value = '';
+      if (currentPromptAbortController) {
+        currentPromptAbortController.abort();
+        currentPromptAbortController = null;
+      }
+      validateDiscoverForm();
     }
 
     function setDiscoverModalView(viewName) {

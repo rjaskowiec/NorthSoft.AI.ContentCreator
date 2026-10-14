@@ -1863,7 +1863,13 @@ export function renderAdminHtml(): string {
 
         <div class="form-group" style="margin-bottom:1.25rem;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
-            <label class="form-label" for="discover-description-input" style="font-weight:600; margin-bottom:0;">Image search description</label>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <label class="form-label" for="discover-description-input" style="font-weight:600; margin-bottom:0;">Image search description</label>
+              <span id="discover-prompt-loading" style="display:none; font-size:0.75rem; color:var(--accent-blue); align-items:center; gap:0.35rem;">
+                <span class="inline-spinner" style="display:inline-block; width:12px; height:12px; border:2px solid rgba(96,165,250,0.3); border-top-color:var(--accent-blue); border-radius:50%; animation:spin 0.8s linear infinite;"></span>
+                <span>Generating AI concept...</span>
+              </span>
+            </div>
             <button type="button" id="discover-suggest-alt-btn" class="btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.55rem; line-height:1.2;" onclick="suggestAlternativeScene()">Suggest Alternative</button>
           </div>
           <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene..." oninput="handleDiscoverDescriptionInput()"></textarea>
