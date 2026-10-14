@@ -32,7 +32,7 @@ const app = new Hono<AppEnv>();
 // Object keys are random and uploads remain protected by the admin API.
 app.get('/media/:key', async (c) => {
   const key = c.req.param('key');
-  if (!/^[0-9a-f-]{36}\.(?:jpe?g|png|webp)$/i.test(key)) {
+  if (!/^(?:gen-)?[0-9a-f-]{36}\.(?:jpe?g|png|webp)$/i.test(key)) {
     return c.notFound();
   }
   let object = await c.env.IMAGE_BUCKET.get(`images/${key}`);
