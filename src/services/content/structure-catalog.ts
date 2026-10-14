@@ -29,13 +29,22 @@ export interface ContentAngle {
 
 export const STRUCTURE_PATTERNS: StructurePattern[] = [
   {
+    id: 'hook_problem_solution_nextstep',
+    name: 'Hook → Problem → Solution → NorthSoft / Next Step',
+    description: 'Hook the reader with a recognizable operational moment, uncover why it costs customers or time, present a practical solution, and open a natural conversation with NorthSoft.',
+    pattern: 'Relatable operational hook → Business consequence / need → Practical solution → Contextual next step with NorthSoft',
+    bestFor: 'High-conversion business topics, mobile site friction, lost enquiries, automated scheduling',
+    openingCadence: 'A concrete moment the owner or their customer experiences today.',
+    transitionGuidance: 'Bridge from the practical fix into an unforced, low-pressure invitation to review or implement it with NorthSoft.',
+  },
+  {
     id: 'observation_implication_action',
     name: 'Observation → Implication → Action',
     description: 'Lead with an honest, grounded observation about small business reality. Walk through the practical implication. Offer a single, actionable first step.',
     pattern: 'Concrete observation → Direct practical consequence → One actionable step',
     bestFor: 'Practical operational topics, website hygiene, routine business habits',
     openingCadence: 'A calm, relatable statement of an everyday fact.',
-    transitionGuidance: 'Connect the observation to the owner’s time or customer loss before suggesting an action.',
+    transitionGuidance: 'Connect the observation to the owner’s time or customer loss before suggesting an action or quick sanity check.',
   },
   {
     id: 'scenario_problem_insight',

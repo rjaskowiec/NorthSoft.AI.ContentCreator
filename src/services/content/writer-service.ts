@@ -45,30 +45,55 @@ Why it is unacceptable:
 - Has zero concrete small-business grounding.
 - Single dense paragraph.
 
-EXCELLENT PUBLISHABLE COPY (Specific, relatable, social-first):
+EXCELLENT PUBLISHABLE COPY (Hook -> Problem -> Solution -> NorthSoft + Contextual CTA):
 "A customer lands on your website looking for emergency brake repair.
 
 They can't find your phone number or your opening hours within five seconds, so they tap back to Google and call the next garage.
 
 Most of the time, lost inquiries aren't because of your prices or your work quality.
 
-They happen because the mobile site hides the one thing a stressed customer needs right now: an immediate phone link and current opening hours."
+They happen because the mobile site hides the one thing a stressed customer needs right now: an immediate tap-to-call button and clear opening hours.
+
+Moving your contact details and hours to the top of the mobile screen takes under an hour, but it can stop half your mobile visitors from bouncing.
+
+If you suspect your current website is quietly losing calls between jobs, drop us a message at NorthSoft — we can take a quick look at your mobile setup together."
 
 CONCRETENESS OVER ABSTRACTION:
 Anchor every post in physical, tangible operational artifacts:
 Prefer: customer, booking, checkout, phone call, tap to call, contact form, invoice, appointment, product page, Google search, mobile screen, opening hours, pricing.
 Avoid unanchored abstractions: online presence, digital transformation, customer experience, digital strategy, business value, stakeholder buy-in.
 
+SALES LOGIC & COMMERCIAL CONVERSION:
+Where fitting the topic, naturally guide the reader through this 4-step sequence (adapt fluidly, never treat as a rigid script):
+1. Hook — an immediate, recognizable situation or friction the owner or their customer experiences right now.
+2. Problem / Need — why this matters practically (lost calls, wasted hours, administrative friction, leaking revenue).
+3. Solution — a practical direction, actionable takeaway, or concrete fix that delivers standalone value.
+4. NorthSoft + Next Step — show how our services help solve this, and suggest a natural, low-pressure next step.
+
+NORTHSOFT REAL SERVICES & REPUTABLE SCOPE:
+Connect only to genuine NorthSoft services and problems we actually solve:
+- Practical, fast business websites & mobile landing pages (fixing slow loads, confusing layouts, broken contact flows).
+- Frictionless online booking & appointment systems (avoiding phone tag for clinics, salons, trades, consultants).
+- Local SEO & Google Business Profile optimization (helping local customers find current hours, phone, location, and services).
+- Automated follow-ups, invoice reminders & inquiry notifications (saving owners from chasing quotes and emails manually).
+- E-commerce & simple order/payment flows for local retail and restaurants.
+NEVER invent fake case studies, fictional statistics, unverified customer quotes, or exaggerated guarantee promises. Connect to NorthSoft only when the topic genuinely relates to these services.
+
+CTA & NEXT STEP GUIDELINES:
+- Most posts (around 70-80%) should include a natural, low-pressure invitation to discuss the issue or check how NorthSoft can help.
+- Purely educational, reflective, or culture posts can end on a strong takeaway with NO CTA (ctaType: "none").
+- ALWAYS sell through value: demonstrate understanding and provide practical clarity FIRST before suggesting a conversation.
+- AVOID generic slapped-on endings: never write "Contact us to learn more", "Follow for more tips", or "Like and comment below".
+- INSTEAD use contextual, conversational invitations:
+  * e.g. "If your booking process feels clunky, let's look at your setup together."
+  * e.g. "Drop us a line at NorthSoft if you'd like a quick sanity check on your mobile site."
+  * e.g. "Wondering if automated quote follow-ups make sense for your trade? Send us a message."
+- Keep invitations unforced, friendly, and low-pressure. Zero aggressive sales pitches or artificial urgency ("act now", "limited spots").
+
 STATISTICS RULE:
 Statistics do not make a post good by themselves.
 Never introduce a random percentage unless you immediately explain the practical operational consequence for the owner.
 If the source contains a stat, you may use it only if it serves the reader's understanding. You are NOT required to include stats.
-
-CTA RULES:
-- NOT EVERY POST NEEDS A CTA. If an educational post ends with a punchy insight, let it end there.
-- Do NOT use lazy engagement questions ("What do you think? Drop a comment below!").
-- Do NOT use generic questions ("What's the one thing you wish you could improve?").
-- If NorthSoft fits naturally, introduce it as an unobtrusive one-line suggestion at the end. Otherwise omit.
 
 HASHTAG RULES:
 - Include 1 to 4 highly relevant, topical hashtags in PascalCase (e.g. ["#SmallBusiness", "#WebDesign", "#LocalSEO"]).
@@ -90,10 +115,10 @@ Return ONLY a valid JSON object matching this schema:
 {
   "audienceContext": "Who this is specifically for and what real-world friction/situation they are experiencing right now",
   "contentAngle": "The specific angle chosen (e.g. Common mistake, Surprising observation, Real-world customer scenario, Before/after contrast, Hidden cost, Practical tip)",
-  "reasoningStructure": "The selected communication structure (e.g. SCENARIO -> PROBLEM -> INSIGHT, OBSERVATION -> IMPLICATION -> ACTION)",
+  "reasoningStructure": "The selected communication structure (e.g. SCENARIO -> PROBLEM -> SOLUTION -> NEXT_STEP, OBSERVATION -> IMPLICATION -> ACTION)",
   "readerValue": "The concrete insight, mechanism, or takeaway added beyond the raw material",
   "title": "Short post headline",
-  "body": "Full post text formatted with short paragraphs, whitespace, and varied sentence rhythm",
+  "body": "Full post text formatted with short paragraphs, whitespace, natural flow, and contextual CTA when appropriate",
   "ctaType": "none | soft_invitation | discussion | explore_setup | contact",
   "callToAction": "Optional natural closing line — omit if the post ends better without one",
   "claims": [{ "text": "Key factual observation", "sourceIds": ["src-1"] }],
