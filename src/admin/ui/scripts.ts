@@ -5701,57 +5701,6 @@ export function getAdminScripts(): string {
     }
 
     let isCandidateDiscoveryRunning = false;
-
-    const CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS = {
-      'Websites & Landing Pages': [
-        'client seated at a tidy oak consultation desk viewing a clean booking calendar on a tablet placed flat on the tabletop',
-        'web professional seated at a desk evaluating a responsive website layout on a large desktop monitor',
-        'customer using one-click mobile checkout on smartphone in a contemporary cafe',
-        'modern laptop showing business homepage on quiet wooden desk with ceramic mug and notebook',
-        'two colleagues reviewing website launch around a studio table with centrally placed laptop',
-      ],
-      'Marketing & Customer Acquisition': [
-        'marketing specialists discussing acquisition metrics at glass board in bright studio',
-        'strategist mapping marketing campaign on tablet with digital stylus at sunlit desk',
-        'entrepreneur analyzing online funnel performance on laptop with clean bar charts',
-        'marketing team in thoughtful discussion around studio table with clean visual metrics',
-      ],
-      'Sales & Conversion Process': [
-        'customer tapping contactless payment card on boutique terminal fixed on timber counter',
-        'advisor and client seated at meeting table concluding agreement in comfortable armchairs',
-        'store owner preparing packaged customer order in studio with neat shipping label',
-        'small business sales counter with modern payment terminal and eco-friendly retail display',
-      ],
-      'AI & Business Automation': [
-        'developer at standing desk configuring automated workflow pipeline on monitor',
-        'operations specialist walking through fulfillment center reviewing inventory cards on tablet',
-        'support lead reviewing conversational assistant flow on laptop at office desk',
-        'developer workstation with dual monitors showcasing clean flowchart diagrams in bright ergonomic space',
-      ],
-      'Small Business Productivity & Ops': [
-        'business founder organizing weekly tasks with paper planner and coffee at oak desk',
-        'tradesperson in workshop reviewing digital estimate on rugged tablet resting on workbench',
-        'clutter-free paperless desk setup with laptop and smartphone on wireless charging dock',
-        'organized entrepreneur workspace with laptop notebook and indoor plants in natural morning light',
-      ],
-      'Customer Experience & Trust': [
-        'small business owner welcoming client across modern timber service counter',
-        'customer holding smartphone showing five-star rating confirmation card in boutique shop',
-        'two professionals seated in lounge area in friendly consultation across a coffee table',
-        'local enterprise reception desk with welcoming service staff in naturally lit modern interior',
-      ],
-      'Local Business & Regional Context': [
-        'contemporary local shop facade in morning golden hour with clean glass display',
-        'shop owner standing by entrance door holding wooden open sign before hanging it on glass',
-        'authentic neighborhood commercial street facade in morning golden hour sunlight',
-      ],
-      'General': [
-        'two professionals working at individual desks in open co-working space with large windows',
-        'tidy executive desk setup with laptop, notebook and coffee in natural window light',
-        'bright modern collaborative studio interior with natural light and architectural symmetry',
-      ],
-    };
-
     let discoverSceneCycleOffset = 0;
     let discoverDescriptionUserEdited = false;
 
@@ -5774,13 +5723,13 @@ export function getAdminScripts(): string {
         if (data && data.success && data.prompt) {
           return data.prompt;
         }
+        if (data && !data.success && data.error) {
+          console.warn('Concept proposal error from server:', data.error);
+        }
       } catch (err) {
         console.warn('Failed to fetch dynamic prompt proposal:', err);
       }
-      const list = CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS[category] || CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS['General'] || [];
-      if (!list.length) return '';
-      const idx = Math.abs(discoverSceneCycleOffset) % list.length;
-      return list[idx] || list[0] || '';
+      return '';
     }
 
     async function suggestAlternativeScene() {

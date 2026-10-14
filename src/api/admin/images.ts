@@ -265,44 +265,52 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 
 /**
  * GET /api/admin/images/suggest-prompt
- * Dynamically prepares a photographic scene proposal tailored to the current library
- * content and recent generations without incurring AI text generation costs.
- * Avoids repeating recently approved or proposed setups, and supports cycleOffset.
+ * Conceives an authentic, novel scene concept using Cloudflare Workers AI based on
+ * category history (published, approved, pending, rejected) and post context.
+ * Never uses hardcoded scene lists or templates.
  */
 imagesRouter.get('/images/suggest-prompt', async (c) => {
   const db = c.env.DB;
   const category = (c.req.query('category') || 'Websites & Landing Pages').trim();
-  const cycleOffset = parseInt(c.req.query('cycleOffset') || '0', 10);
   const contextQuery = (c.req.query('context') || '').trim();
 
-  const existingImages: Array<{ title: string; description: string; notes: string }> = await db
-    .prepare(
-      `SELECT title, description, notes FROM curated_images
-       WHERE category = ? OR category = 'General'
-       ORDER BY created_at DESC LIMIT 25`,
-    )
-    .bind(category)
-    .all<{ title: string | null; description: string | null; notes: string | null }>()
-    .then((res) =>
-      (res.results || []).map((r) => ({
-        title: r.title || '',
-        description: r.description || '',
-        notes: r.notes || '',
-      })),
-    )
-    .catch(() => []);
+  try {
+    const { getCategoryConceptHistory, generateNovelImageConcept } = await import('../../services/content/ai-image-generator');
+    const { getAIProvider } = await import('../../ai/factory');
 
-  const { selectComplementaryScene } = await import('../../services/content/ai-image-generator');
-  const archetype = selectComplementaryScene(category, existingImages, contextQuery, cycleOffset);
+    const history = await getCategoryConceptHistory(db, category, 20);
+    const aiProvider = getAIProvider(c.env, 'writer');
 
-  return c.json({
-    success: true,
-    category,
-    prompt: archetype.subjectDescription,
-    archetypeId: archetype.id,
-    sceneTitle: archetype.sceneTitle,
-    compositionGuidance: archetype.compositionGuidance,
-  });
+    const concept = await generateNovelImageConcept(
+      aiProvider,
+      category,
+      history,
+      contextQuery || undefined,
+    );
+
+    return c.json({
+      success: true,
+      category,
+      prompt: concept.promptDescription,
+      conceptId: concept.id,
+      situation: concept.situation,
+      action: concept.action,
+      relationship: concept.relationship,
+      businessNeed: concept.businessNeed,
+      visualMotif: concept.visualMotif,
+      emotionalTone: concept.emotionalTone,
+      compositionGuidance: concept.compositionGuidance,
+      rationale: concept.rationale,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[suggest-prompt] Concept generation failed:', err);
+    return c.json({
+      success: false,
+      error: `Concept generation failed: ${message}`,
+      category,
+    }, 503);
+  }
 });
 
 /**

@@ -20,6 +20,7 @@
  */
 
 import { AppError } from '../../core/errors';
+import type { IAIProvider } from '../../ai/provider';
 import { QuotaManager } from '../ai/quota-manager';
 import { ImageLibraryService } from './image-library-service';
 
@@ -97,380 +98,364 @@ export function detectEmotionalIntent(text?: string): EmotionalIntent {
   return 'neutral';
 }
 
-/**
- * Curated archetypes per category with unambiguous physical interactions,
- * clear gaze direction, explicit screen orientation, and emotional intents.
- */
-export const CATEGORY_SCENE_ARCHETYPES: Record<string, SceneCompositionArchetype[]> = {
-  'Websites & Landing Pages': [
-    {
-      id: 'web-client-booking-tablet',
-      category: 'Websites & Landing Pages',
-      sceneTitle: 'Client viewing clean booking calendar on tablet placed on desk',
-      subjectDescription: 'a client seated at a tidy oak consultation desk, looking down attentively at a slim tablet resting flat on the tabletop, with right index finger touching a calendar appointment slot while the left hand rests loosely beside a glass of water',
-      compositionGuidance: 'the tablet screen faces directly upward toward the seated person who is looking down at it, natural side daylight from window, authentic posture with elbows on desk, clean minimalist calendar blocks on screen without pseudo-text',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'neutral'],
-      keywords: ['tablet', 'booking', 'calendar', 'scheduling', 'client'],
-    },
-    {
-      id: 'web-designer-desktop',
-      category: 'Websites & Landing Pages',
-      sceneTitle: 'Web designer evaluating responsive layout on large desktop monitor',
-      subjectDescription: 'a web professional seated in an ergonomic office chair seen from a three-quarter back angle, right hand resting on a computer mouse on the desk while looking directly at a 27-inch matte desktop display showing a minimalist website mockup',
-      compositionGuidance: 'the monitor screen is positioned on the desk facing the designer, natural over-shoulder viewpoint, comfortable working posture, clean geometric wireframe sections without messy dashboard charts',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'problem-aware'],
-      keywords: ['monitor', 'minimalist website', 'desktop', 'clean layout', 'designer'],
-    },
-    {
-      id: 'web-mobile-checkout',
-      category: 'Websites & Landing Pages',
-      sceneTitle: 'Customer using one-click mobile checkout on smartphone',
-      subjectDescription: 'customer hands holding a modern smartphone at chest height in a warm cafe, looking down at the screen where a clean green confirmation card is displayed after completing an online purchase',
-      compositionGuidance: 'the phone screen is angled toward the user eyes, natural two-handed grip with realistic knuckles and skin texture, warm ambient cafe background softly out of focus',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'neutral'],
-      keywords: ['smartphone', 'mobile web', 'checkout', 'ecommerce', 'hands'],
-    },
-    {
-      id: 'web-laptop-minimal',
-      category: 'Websites & Landing Pages',
-      sceneTitle: 'Modern laptop showing business homepage on quiet wooden desk',
-      subjectDescription: 'an ultra-thin laptop open at a 105-degree angle on an oak desk beside a ceramic coffee cup and closed notebook, displaying a clean corporate homepage with simple photo banner and clean navigation',
-      compositionGuidance: 'architectural commercial still life without people, natural morning side lighting, tactile material textures of wood grain, glazed ceramic, and anodized aluminum',
-      primarySubject: 'device_only',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['laptop', 'landing page', 'minimalist', 'oak desk', 'workspace'],
-    },
-    {
-      id: 'web-team-review',
-      category: 'Websites & Landing Pages',
-      sceneTitle: 'Two colleagues reviewing website launch around a studio table',
-      subjectDescription: 'two business colleagues seated together at a timber studio table, looking at a shared laptop positioned centrally between them facing both persons, discussing the webpage structure with relaxed expressions',
-      compositionGuidance: 'unforced candid documentary capture, both people focused on the centrally placed laptop screen, natural posture leaning slightly forward with hands resting on the table',
-      primarySubject: 'people',
-      intendedEmotions: ['collaborative', 'positive'],
-      keywords: ['team', 'discussion', 'launch', 'studio', 'colleagues'],
-    },
-  ],
-  'Marketing & Customer Acquisition': [
-    {
-      id: 'mkt-team-growth-board',
-      category: 'Marketing & Customer Acquisition',
-      sceneTitle: 'Marketing specialists discussing acquisition metrics at glass board',
-      subjectDescription: 'two colleagues standing in a bright modern studio beside a glass marker board with simple upward trend diagrams, one holding a paper notepad while looking at the board in active conversation',
-      compositionGuidance: 'natural standing posture with believable weight shift, candid collaborative expressions, soft diffuse daylight, clear simple trend charts without micro-numbers',
-      primarySubject: 'people',
-      intendedEmotions: ['collaborative', 'positive'],
-      keywords: ['growth', 'marketing', 'team', 'charts', 'presentation'],
-    },
-    {
-      id: 'mkt-social-strategy-tablet',
-      category: 'Marketing & Customer Acquisition',
-      sceneTitle: 'Strategist mapping marketing campaign on tablet with stylus',
-      subjectDescription: 'a digital marketer seated at a sunlit desk with a tablet lying flat on the surface, holding a digital stylus in the right hand to reposition a card on screen, looking down with focused concentration',
-      compositionGuidance: 'the tablet lies flat on desk with screen facing up toward the user, authentic stylus grip with realistic skin folds at wrist, warm morning light, uncluttered workspace',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['strategist', 'campaign', 'tablet', 'calendar', 'planning'],
-    },
-    {
-      id: 'mkt-ad-performance-laptop',
-      category: 'Marketing & Customer Acquisition',
-      sceneTitle: 'Entrepreneur analyzing online funnel performance on laptop',
-      subjectDescription: 'a business founder seated at a clean co-working table with laptop open in front, chin resting thoughtfully in one hand while reading conversion statistics displayed as clean bar graphs',
-      compositionGuidance: 'the laptop screen faces the founder who is looking directly at it, natural analytical posture, side window daylight, shallow depth of field',
-      primarySubject: 'person',
-      intendedEmotions: ['problem-aware', 'neutral'],
-      keywords: ['entrepreneur', 'acquisition', 'funnel', 'laptop', 'analytics'],
-    },
-  ],
-  'Sales & Conversion Process': [
-    {
-      id: 'sales-pos-contactless',
-      category: 'Sales & Conversion Process',
-      sceneTitle: 'Customer tapping contactless payment card on boutique terminal',
-      subjectDescription: 'a customer hand holding a payment card tapping it against a minimalist payment terminal fixed on a solid timber retail counter, completing a swift checkout',
-      compositionGuidance: 'close-up on the physical interaction between card and terminal, believable hand posture and realistic skin texture, soft ambient boutique lighting',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'neutral'],
-      keywords: ['pos', 'contactless payment', 'checkout', 'retail', 'counter'],
-    },
-    {
-      id: 'sales-client-agreement',
-      category: 'Sales & Conversion Process',
-      sceneTitle: 'Advisor and client seated at meeting table concluding agreement',
-      subjectDescription: 'an advisor and client seated in comfortable armchairs across a low timber table with a tablet and two glasses of water, looking at each other during a cordial conversation',
-      compositionGuidance: 'natural eye contact between two seated people, relaxed posture, the tablet rests flat on the table between them, soft daylight through sheer curtains',
-      primarySubject: 'people',
-      intendedEmotions: ['collaborative', 'positive'],
-      keywords: ['agreement', 'consultation', 'client', 'meeting', 'partnership'],
-    },
-    {
-      id: 'sales-ecommerce-dispatch',
-      category: 'Sales & Conversion Process',
-      sceneTitle: 'Store owner preparing packaged customer order in studio',
-      subjectDescription: 'an independent business owner standing at a wooden packing workbench, holding a neat cardboard delivery box with both hands while smoothing down an address label',
-      compositionGuidance: 'authentic practical craftsmanship, hands actively engaged with the box, focused downcast gaze on the package, bright natural window light',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['orders', 'shipping', 'packaging', 'ecommerce', 'dispatch'],
-    },
-  ],
-  'AI & Business Automation': [
-    {
-      id: 'ai-automated-workflow-screen',
-      category: 'AI & Business Automation',
-      sceneTitle: 'Developer at standing desk configuring automated workflow',
-      subjectDescription: 'a software engineer seen from side profile at a standing desk, hands resting on a keyboard while looking attentively at a monitor displaying a clean node-based automation pipeline',
-      compositionGuidance: 'the screen faces the engineer, authentic standing posture, natural relaxed hand placement, clean flowchart blocks on display with balanced lighting',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'problem-aware'],
-      keywords: ['workflow', 'automation', 'diagram', 'dual monitor', 'standing desk'],
-    },
-    {
-      id: 'ai-smart-ops-tablet',
-      category: 'AI & Business Automation',
-      sceneTitle: 'Operations specialist walking through fulfillment center with tablet',
-      subjectDescription: 'an operations manager walking through an airy logistics facility, holding a rugged tablet with both hands angled toward their own eyes to review simple inventory status cards',
-      compositionGuidance: 'the tablet screen faces directly toward the walking person, natural mid-stride posture, realistic warehouse skylight illumination, documentary photography feel',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['operations', 'automation', 'tablet', 'syncing', 'manager'],
-    },
-    {
-      id: 'ai-customer-bot-review',
-      category: 'AI & Business Automation',
-      sceneTitle: 'Support lead reviewing conversational assistant flow on laptop',
-      subjectDescription: 'a customer support lead seated comfortably at an office desk with laptop open directly in front, looking at the screen with calm relief while reviewing an automated customer greeting diagram',
-      compositionGuidance: 'screen faces the seated person, relaxed shoulders and subtle natural smile, authentic indoor lighting, clean conversational flowchart on screen',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'neutral'],
-      keywords: ['support', 'assistant', 'conversational', 'laptop', 'office'],
-    },
-  ],
-  'Small Business Productivity & Ops': [
-    {
-      id: 'prod-organized-desk-morning',
-      category: 'Small Business Productivity & Ops',
-      sceneTitle: 'Business founder organizing weekly tasks with paper planner and coffee',
-      subjectDescription: 'a business founder seated at a Scandinavian oak desk, left hand holding a warm ceramic mug while right hand holds a pen writing in a linen-bound notebook, beside a closed slim laptop',
-      compositionGuidance: 'downward gaze toward the notebook, natural two-handed coordination, soft diagonal morning sunlight, tranquil productive atmosphere',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['founder', 'priorities', 'morning routine', 'planner', 'productivity'],
-    },
-    {
-      id: 'prod-digital-invoice-tablet',
-      category: 'Small Business Productivity & Ops',
-      sceneTitle: 'Tradesperson in workshop reviewing digital estimate on rugged tablet',
-      subjectDescription: 'a tradesperson in clean workshop clothing standing at a wooden bench, leaning on left elbow while holding a rugged tablet in right hand angled toward their face to check project dimensions',
-      compositionGuidance: 'tablet screen is angled toward the tradesperson face, authentic grounded stance, natural skin texture and dust-free tools neatly arranged on the background bench',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral', 'problem-aware'],
-      keywords: ['contractor', 'estimate', 'invoice', 'tablet', 'workshop'],
-    },
-    {
-      id: 'prod-paperless-office',
-      category: 'Small Business Productivity & Ops',
-      sceneTitle: 'Clutter-free paperless desk setup with laptop and smartphone',
-      subjectDescription: 'a minimalist workspace featuring an open silver laptop, a smartphone on a wooden charging stand, a small succulent, and a glass of water on a matte grey tabletop',
-      compositionGuidance: 'high-angle commercial still life without people, serene architectural balance, natural daylight with soft shadows, crisp clean materials',
-      primarySubject: 'device_only',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['paperless', 'minimalist desk', 'organization', 'laptop', 'clarity'],
-    },
-  ],
-  'Customer Experience & Trust': [
-    {
-      id: 'cx-warm-greeting-shop',
-      category: 'Customer Experience & Trust',
-      sceneTitle: 'Small business owner welcoming client across service counter',
-      subjectDescription: 'a business owner standing behind a modern reception counter, looking toward an arriving visitor with a warm approachable expression and relaxed posture, hands resting on counter',
-      compositionGuidance: 'natural eye-level perspective, friendly welcoming gaze without exaggerated grin, genuine fine lines at eyes, soft ambient interior lighting',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'collaborative'],
-      keywords: ['greeting', 'customer service', 'reception', 'smiling', 'welcome'],
-    },
-    {
-      id: 'cx-client-review-phone',
-      category: 'Customer Experience & Trust',
-      sceneTitle: 'Customer holding smartphone showing five-star rating confirmation',
-      subjectDescription: 'a customer seated at a table holding a smartphone with both hands angled toward themselves, viewing a clean 5-star feedback rating confirmation card on screen',
-      compositionGuidance: 'screen is clearly tilted toward the user, authentic finger placement, shallow depth of field with softly blurred boutique background, natural daylight',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'neutral'],
-      keywords: ['five star review', 'rating', 'feedback', 'trust', 'customer satisfaction'],
-    },
-    {
-      id: 'cx-consultation-sofa',
-      category: 'Customer Experience & Trust',
-      sceneTitle: 'Two professionals seated in lounge area in friendly consultation',
-      subjectDescription: 'a consultant and client seated in comfortable armchairs in an office lounge, with a coffee table between them holding two mugs, conversing with relaxed authentic body language',
-      compositionGuidance: 'candid conversational angle, natural seating postures with relaxed shoulders, warm ambient daylight, plants in background',
-      primarySubject: 'people',
-      intendedEmotions: ['collaborative', 'positive'],
-      keywords: ['consultation', 'advisory', 'lounge', 'comfortable', 'client trust'],
-    },
-  ],
-  'Local Business & Regional Context': [
-    {
-      id: 'local-storefront-morning',
-      category: 'Local Business & Regional Context',
-      sceneTitle: 'Contemporary local shop facade in morning golden hour',
-      subjectDescription: 'an attractive modern boutique storefront on a clean pedestrian street, with large clear glass windows and tasteful wooden signage under warm morning sunlight',
-      compositionGuidance: 'architectural street photography without people, morning golden-hour lighting, crisp building materials, authentic Nordic/European commercial street',
-      primarySubject: 'environment_only',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['storefront', 'facade', 'street', 'local shop', 'pedestrian'],
-    },
-    {
-      id: 'local-owner-outside',
-      category: 'Local Business & Regional Context',
-      sceneTitle: 'Shop owner standing by entrance door holding open sign',
-      subjectDescription: 'an independent business owner standing on the pavement outside their shop entrance, holding a wooden open sign with both hands before hanging it on the glass door',
-      compositionGuidance: 'candid documentary portrait, proud natural posture, eyes focused on placing the sign, realistic morning daylight reflecting on glass',
-      primarySubject: 'person',
-      intendedEmotions: ['positive', 'neutral'],
-      keywords: ['shop owner', 'entrance', 'neighborhood', 'local enterprise', 'open sign'],
-    },
-  ],
-  'General': [
-    {
-      id: 'gen-bright-co-working',
-      category: 'General',
-      sceneTitle: 'Two professionals working at individual desks in open co-working space',
-      subjectDescription: 'two professionals working focused at spaced wooden desks in a bright open-plan workspace with large industrial windows, each engaged with their own laptop',
-      compositionGuidance: 'wide environmental perspective, unposed workplace atmosphere, natural morning light, realistic uncoordinated activities without staged posing',
-      primarySubject: 'people',
-      intendedEmotions: ['neutral', 'collaborative'],
-      keywords: ['co-working', 'workspace', 'modern office', 'daylight', 'business'],
-    },
-    {
-      id: 'gen-executive-desk',
-      category: 'General',
-      sceneTitle: 'Tidy executive desk setup with laptop, notebook and coffee',
-      subjectDescription: 'an uncluttered professional desk featuring an open silver laptop, a closed fountain pen, a paper notebook and a ceramic coffee mug in natural window light',
-      compositionGuidance: 'balanced commercial composition without people, crisp natural material textures of oak wood, ceramic and metal',
-      primarySubject: 'device_only',
-      intendedEmotions: ['neutral', 'positive'],
-      keywords: ['desk', 'laptop', 'coffee', 'notebook', 'professional setup'],
-    },
-  ],
-};
+export interface CategoryHistoryItem {
+  id: string;
+  title: string;
+  description: string;
+  status: string; // 'PROPOSED' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PUBLISHED'
+  usageCount: number;
+  publishedCount: number;
+  notes?: string;
+  situation?: string;
+  action?: string;
+  visualMotif?: string;
+}
+
+export interface GeneratedSceneConcept {
+  id: string;
+  situation: string;
+  action: string;
+  relationship: string;
+  businessNeed: string;
+  emotionalTone: EmotionalIntent;
+  visualMotif: string;
+  promptDescription: string;
+  compositionGuidance: string;
+  rationale: string;
+}
+
+export const AI_CONCEPT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8';
 
 /**
- * Selects a diverse, complementary scene archetype for a category by checking
- * existing image titles, descriptions, and prompt notes in the database.
- * Matches post emotional intent (positive, neutral, problem-aware, collaborative)
- * to avoid mismatched moods while rotating through underrepresented archetypes.
- * Supports cycleOffset to allow stepping through alternative scene suggestions deterministically.
+ * Retrieves a bounded, representative set of history from D1 for concept generation.
+ * Distinguishes between published (most heavily weighted), approved, pending/generated, and rejected images.
  */
-export function selectComplementaryScene(
+export async function getCategoryConceptHistory(
+  db: D1Database,
   category: string,
-  existingImageMetadata: Array<{ title?: string; description?: string; notes?: string }> = [],
-  contextQuery?: string,
-  cycleOffset = 0,
-): SceneCompositionArchetype {
-  const archetypes = CATEGORY_SCENE_ARCHETYPES[category] || CATEGORY_SCENE_ARCHETYPES['General'] || [];
-  if (archetypes.length === 0) {
-    return {
-      id: 'fallback-business-scene',
-      category,
-      sceneTitle: 'Contemporary commercial business scene',
-      subjectDescription: contextQuery || 'modern professional business setting',
-      compositionGuidance: 'natural daylight, uncluttered workspace, clean photographic composition',
-      primarySubject: 'person',
-      intendedEmotions: ['neutral'],
-      keywords: ['business', 'professional'],
-    };
+  limit = 20,
+): Promise<CategoryHistoryItem[]> {
+  try {
+    const res = await db
+      .prepare(
+        `SELECT
+           ci.id,
+           ci.title,
+           ci.description,
+           ci.status,
+           ci.usage_count,
+           ci.notes,
+           (SELECT COUNT(*) FROM publications pub
+            JOIN post_images pi ON pi.post_id = pub.post_id
+            WHERE pi.curated_image_id = ci.id AND pub.status = 'published' AND pub.fb_deleted_at IS NULL
+           ) AS published_count
+         FROM curated_images ci
+         WHERE ci.category = ? OR ci.category = 'General'
+         ORDER BY (CASE WHEN ci.usage_count > 0 THEN 2 WHEN ci.status = 'APPROVED' THEN 1 ELSE 0 END) DESC,
+                  ci.created_at DESC
+         LIMIT ?`,
+      )
+      .bind(category || 'General', limit)
+      .all<{
+        id: string;
+        title: string | null;
+        description: string | null;
+        status: string | null;
+        usage_count: number | null;
+        notes: string | null;
+        published_count: number | null;
+      }>();
+
+    return (res.results || []).map((row) => {
+      let situation = '';
+      let action = '';
+      let visualMotif = '';
+
+      if (row.notes) {
+        try {
+          const parsed = JSON.parse(row.notes);
+          if (parsed.sceneConcept) {
+            situation = parsed.sceneConcept.situation || '';
+            action = parsed.sceneConcept.action || '';
+            visualMotif = parsed.sceneConcept.visualMotif || '';
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+
+      const isPublished = (row.published_count ?? 0) > 0;
+      const statusLabel = isPublished ? 'PUBLISHED' : (row.status || 'PENDING');
+
+      return {
+        id: row.id,
+        title: row.title || '',
+        description: row.description || '',
+        status: statusLabel,
+        usageCount: row.usage_count ?? 0,
+        publishedCount: row.published_count ?? 0,
+        notes: row.notes || undefined,
+        situation,
+        action,
+        visualMotif,
+      };
+    });
+  } catch (err) {
+    console.warn('[getCategoryConceptHistory] D1 query failed, returning empty history:', err);
+    return [];
   }
-
-  const detectedEmotion = detectEmotionalIntent(contextQuery);
-
-  // Count usage of each archetype's signature keywords among existing images
-  const scores = archetypes.map((archetype) => {
-    let penalty = 0;
-    const archTokens = archetype.keywords.map((k) => k.toLowerCase());
-
-    for (const img of existingImageMetadata) {
-      const corpus = `${img.title || ''} ${img.description || ''} ${img.notes || ''}`.toLowerCase();
-      for (const tok of archTokens) {
-        if (corpus.includes(tok)) {
-          penalty += 1;
-        }
-      }
-      // Specific check for repetitious laptop desks
-      if (archTokens.includes('laptop') && corpus.includes('laptop screen modern desk')) {
-        penalty += 3;
-      }
-    }
-
-    // Boost if the user specifically asked for something relevant to this archetype
-    let relevanceBoost = 0;
-    if (contextQuery) {
-      const qLower = contextQuery.toLowerCase();
-      for (const tok of archTokens) {
-        if (qLower.includes(tok)) {
-          relevanceBoost += 2;
-        }
-      }
-    }
-
-    // Emotional alignment boost: reward archetypes matching detected post emotion
-    if (archetype.intendedEmotions.includes(detectedEmotion)) {
-      relevanceBoost += 3;
-    }
-
-    return {
-      archetype,
-      // Lower score = less represented in the library (more diverse)
-      diversityScore: penalty - relevanceBoost,
-    };
-  });
-
-  // Sort ascending by diversityScore to pick the least used / most complementary archetype
-  scores.sort((a, b) => a.diversityScore - b.diversityScore);
-  const normalizedIndex = Math.abs(cycleOffset) % scores.length;
-  const chosen = scores[normalizedIndex];
-  return chosen ? chosen.archetype : archetypes[0]!;
 }
 
 /**
- * Emotional posture guidance mapped to marketing intents.
- * Translates intent into concrete physical actions and authentic expressions
- * without exaggerated cartoon smiles or grimaces.
+ * Summarizes the dominant motifs and situations in the existing history
+ * to instruct the LLM specifically what NOT to repeat.
  */
-const EMOTIONAL_EXPRESSION_DIRECTIONS: Record<EmotionalIntent, string> = {
-  positive: 'Expression: calm satisfaction, relaxed facial features, subtle natural crinkles around eyes, unhurried posture.',
-  neutral: 'Expression: focused concentration, neutral composed brow, quiet professionalism, eyes directed at the work.',
-  'problem-aware': 'Expression: analytical contemplation, attentive focus, hand touching chin or holding pen, inspecting data with serious diligence.',
-  collaborative: 'Expression: approachable engagement, receptive listening posture, natural head angle during conversational exchange.',
-};
+export function summarizeDominantThemes(history: CategoryHistoryItem[]): string[] {
+  const themes: string[] = [];
+  const corpus = history.map((h) => `${h.title} ${h.description} ${h.situation} ${h.action}`.toLowerCase()).join(' ');
+
+  if (corpus.includes('laptop') && (corpus.includes('desk') || corpus.includes('screen'))) {
+    themes.push('Person working alone at a desk staring directly at a laptop screen');
+  }
+  if (corpus.includes('tablet') && corpus.includes('counter')) {
+    themes.push('Service staff holding a tablet across a sales counter');
+  }
+  if (corpus.includes('meeting') || corpus.includes('table')) {
+    themes.push('Two colleagues seated at a table looking at a shared screen');
+  }
+  if (corpus.includes('storefront') || corpus.includes('sign')) {
+    themes.push('Store owner hanging an open sign outside their shop');
+  }
+  if (corpus.includes('phone') && (corpus.includes('checkout') || corpus.includes('rating'))) {
+    themes.push('Close-up hands tapping a smartphone for mobile payment or review');
+  }
+
+  // Also extract explicit prior situations if present
+  for (const h of history) {
+    if (h.situation && !themes.includes(h.situation)) {
+      themes.push(`${h.situation} (${h.status})`);
+      if (themes.length >= 6) break;
+    }
+  }
+
+  return themes.length > 0 ? themes : ['General modern office/workplace setups'];
+}
+
+/**
+ * Evaluates semantic overlap between a candidate concept and prior history.
+ * Checks for deeper situation/action similarity, not cosmetic differences (device, gender, hair).
+ * Returns true if the candidate concept is meaningfully distinct.
+ */
+export function isSemanticallyDistinct(
+  candidate: GeneratedSceneConcept,
+  history: CategoryHistoryItem[],
+): { distinct: boolean; conflictReason?: string } {
+  if (!history || history.length === 0) {
+    return { distinct: true };
+  }
+
+  const candSituation = candidate.situation.toLowerCase();
+  const candAction = candidate.action.toLowerCase();
+  const candMotif = candidate.visualMotif.toLowerCase();
+
+  for (const item of history) {
+    const histCorpus = `${item.title} ${item.description} ${item.situation} ${item.action} ${item.visualMotif}`.toLowerCase();
+
+    // Check 1: Situation and core action match (e.g. someone solo working at laptop screen)
+    const bothSoloLaptop =
+      (candSituation.includes('laptop') || candAction.includes('laptop') || candMotif.includes('laptop')) &&
+      (histCorpus.includes('laptop screen modern desk') || histCorpus.includes('reviewing laptop') || histCorpus.includes('working on laptop'));
+
+    if (bothSoloLaptop && (item.status === 'PUBLISHED' || item.status === 'APPROVED')) {
+      return {
+        distinct: false,
+        conflictReason: `Candidate repeats solo laptop setup already present in library (${item.title || item.id}).`,
+      };
+    }
+
+    // Check 2: Direct situation phrase overlap (>75% token overlap of action/situation)
+    if (item.situation && item.situation.length > 10) {
+      const histSit = item.situation.toLowerCase();
+      if (candSituation === histSit || (candSituation.includes(histSit) && histSit.includes(candSituation))) {
+        return {
+          distinct: false,
+          conflictReason: `Candidate situation identical to prior concept "${item.situation}" (${item.status}).`,
+        };
+      }
+    }
+
+    // Check 3: If candidate action is just changing the device on the same action
+    // e.g. "looking at tablet" vs "looking at laptop" for the exact same purpose
+    if (
+      candAction.includes('reading analytics') &&
+      histCorpus.includes('analyzing online funnel') &&
+      item.status === 'PUBLISHED'
+    ) {
+      return {
+        distinct: false,
+        conflictReason: `Candidate action is identical in purpose to published image "${item.title}".`,
+      };
+    }
+  }
+
+  return { distinct: true };
+}
+
+/**
+ * Generates an authentic, novel scene concept using Cloudflare Workers AI (Llama 3.1 8B Instruct).
+ * Employs up to 2 attempts with semantic difference checks against history.
+ */
+export async function generateNovelImageConcept(
+  aiProvider: IAIProvider,
+  category: string,
+  history: CategoryHistoryItem[],
+  postContext?: string,
+  userHint?: string,
+): Promise<GeneratedSceneConcept> {
+  const dominantThemes = summarizeDominantThemes(history);
+  const detectedEmotion = detectEmotionalIntent(postContext || userHint);
+
+  const historySnippets = history.slice(0, 8).map((h) => {
+    return `- [${h.status}] ${h.title || h.description} ${h.situation ? `(Situation: ${h.situation})` : ''}`;
+  }).join('\n');
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const promptMessages = [
+      {
+        role: 'system' as const,
+        content: `You are an expert commercial advertising art director for NorthSoft, a Scandinavian technology & digital marketing agency.
+Your role is to conceive ONE completely fresh, authentic commercial photography concept for the business category "${category}".
+
+CRITICAL DIRECTIVES:
+1. NO CLICHÉ OR COSMETIC REPETITION: Do NOT simply swap a laptop for a tablet, change a character's gender/ethnicity, or alter the camera angle while keeping the same core situation.
+2. EXISTING LIBRARY CONTEXT & EXCLUSIONS:
+Here are scenes already present in the company library (do NOT replicate these situations):
+${historySnippets || 'No prior images yet in this category.'}
+Dominant themes to strictly AVOID:
+${dominantThemes.map((t) => `* ${t}`).join('\n')}
+
+3. TARGET NARRATIVE & SENSE:
+${postContext ? `The image will accompany this specific article/post: "${postContext.slice(0, 200)}"` : 'The image should bring fresh editorial value to this business category.'}
+${userHint ? `User preference/query: "${userHint}"` : ''}
+
+4. BUSINESS SITUATION TYPES (CHOOSE A DIFFERENT ONE FROM WHAT WAS DONE BEFORE):
+- Interactive diagnostic consultation (e.g. client pointing at a physical sample while specialist listens)
+- Practical on-site operational verification (e.g. craftsman, warehouse manager inspecting tangible work)
+- Milestone planning or physical whiteboard diagramming
+- Natural customer handover, unboxing, or tangible exchange
+- Architectural still life of an authentic Scandinavian workspace without staged gimmicks
+
+5. EMOTIONAL INTENT: Focus on "${detectedEmotion}" emotional tone (natural, authentic, no forced stock smiles).
+
+OUTPUT FORMAT: You MUST return strictly valid JSON matching this schema:
+{
+  "situation": "Short 1-sentence description of the unique business situation",
+  "action": "Specific physical action, gaze direction, and hand placement of subject(s)",
+  "relationship": "Relation between subjects or subject to environment",
+  "businessNeed": "The underlying business challenge or success depicted",
+  "emotionalTone": "${detectedEmotion}",
+  "visualMotif": "Key physical visual motif (e.g. oak sample board, architectural glass partition, rugged clipboard)",
+  "promptDescription": "2-3 sentences clear candid scene description suitable for text-to-image prompt (what the person does, what they look at, realistic posture)",
+  "compositionGuidance": "1 sentence on camera distance, daylight direction, and uncluttered composition",
+  "rationale": "Why this situation is semantically novel compared to earlier scenes"
+}`,
+      },
+      {
+        role: 'user' as const,
+        content: `Conceive a new, semantically distinct business photo concept for "${category}". Provide the JSON object now.`,
+      },
+    ];
+
+    try {
+      const completion = await aiProvider.complete({
+        role: 'writer',
+        messages: promptMessages,
+        temperature: attempt === 1 ? 0.4 : 0.7,
+        maxTokens: 500,
+        responseFormat: 'json',
+      });
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(completion.content);
+      } catch {
+        const jsonMatch = completion.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        }
+      }
+
+      if (parsed && parsed.promptDescription && parsed.situation) {
+        const concept: GeneratedSceneConcept = {
+          id: `concept-${crypto.randomUUID().slice(0, 8)}`,
+          situation: String(parsed.situation).trim(),
+          action: String(parsed.action || '').trim(),
+          relationship: String(parsed.relationship || '').trim(),
+          businessNeed: String(parsed.businessNeed || '').trim(),
+          emotionalTone: (['positive', 'neutral', 'problem-aware', 'collaborative'].includes(parsed.emotionalTone)
+            ? parsed.emotionalTone
+            : detectedEmotion) as EmotionalIntent,
+          visualMotif: String(parsed.visualMotif || '').trim(),
+          promptDescription: String(parsed.promptDescription).trim(),
+          compositionGuidance: String(parsed.compositionGuidance || 'natural daylight, uncluttered workspace, clean photographic composition').trim(),
+          rationale: String(parsed.rationale || 'Fresh situational perspective for category').trim(),
+        };
+
+        const distinction = isSemanticallyDistinct(concept, history);
+        if (distinction.distinct || attempt === 2) {
+          return concept;
+        }
+        console.warn(`[generateNovelImageConcept] Attempt 1 collision: ${distinction.conflictReason}. Retrying with higher temperature...`);
+      }
+    } catch (err) {
+      console.warn(`[generateNovelImageConcept] AI generation attempt ${attempt} failed:`, err);
+      if (attempt === 2) {
+        throw new AppError(
+          `AI concept generation service unavailable: ${err instanceof Error ? err.message : String(err)}`,
+          503,
+          'CONCEPT_GENERATION_FAILED',
+        );
+      }
+    }
+  }
+
+  throw new AppError('Unable to generate a sufficiently distinct scene concept within attempt limit.', 422, 'CONCEPT_DIVERSITY_LIMIT');
+}
 
 /**
  * Builds an editorial, photographic business prompt tailored for NorthSoft and FLUX.1 Schnell.
  * Separates scene action, emotional intent, and photographic composition into modular,
  * non-overlapping sentences. Avoids contradictory device interactions and repetitive buzzwords.
  */
+/**
+ * Emotional posture guidance mapped to marketing intents.
+ * Translates intent into concrete physical actions and authentic expressions
+ * without exaggerated cartoon smiles or grimaces.
+ */
+export const EMOTIONAL_EXPRESSION_DIRECTIONS: Record<EmotionalIntent, string> = {
+  positive: 'Expression: calm satisfaction, relaxed facial features, subtle natural crinkles around eyes, unhurried posture.',
+  neutral: 'Expression: focused concentration, neutral composed brow, quiet professionalism, eyes directed at the work.',
+  'problem-aware': 'Expression: analytical contemplation, attentive focus, hand touching chin or holding pen, inspecting data with serious diligence.',
+  collaborative: 'Expression: approachable engagement, receptive listening posture, natural head angle during conversational exchange.',
+};
+
 export function buildBusinessImagePrompt(
   description: string,
   category: string,
   postContext?: string,
-  sceneArchetype?: SceneCompositionArchetype,
+  sceneConcept?: { compositionGuidance?: string; emotionalTone?: EmotionalIntent },
 ): string {
   const cleanDesc = description.trim();
   const cleanCat = category.trim();
 
   // 1. Scene Action & Subject (Unambiguous Physical Interaction)
-  const sceneGuidance = sceneArchetype?.compositionGuidance
-    ? ` Spatial arrangement: ${sceneArchetype.compositionGuidance}.`
+  const sceneGuidance = sceneConcept?.compositionGuidance
+    ? ` Spatial arrangement: ${sceneConcept.compositionGuidance}.`
     : '';
   const actionSegment = `A 35mm candid commercial photograph of ${cleanDesc}. Category: ${cleanCat}.${sceneGuidance}`;
 
   // 2. Emotional Tone & Posture (Aligned with Post Marketing Intent)
-  const emotion = detectEmotionalIntent(postContext || cleanDesc);
+  const emotion = sceneConcept?.emotionalTone || detectEmotionalIntent(postContext || cleanDesc);
   const emotionalSegment = EMOTIONAL_EXPRESSION_DIRECTIONS[emotion];
 
   // 3. Photographic Style & Environment (Single Concise Declaration)
@@ -558,29 +543,33 @@ export class AiImageGeneratorService {
       throw new AppError(quota.reason || 'Daily image generation quota reached.', 429, 'QUOTA_EXCEEDED');
     }
 
-    // 2. Scene Diversification & Repetition Guard:
-    // Query recent image titles, descriptions, and notes in this category to detect dominantly repeated setups
-    let existingImages: Array<{ title: string; description: string; notes: string }>;
-    try {
-      const existingRes = await db
-        .prepare(
-          `SELECT title, description, notes FROM curated_images
-           WHERE category = ? OR category = 'General'
-           ORDER BY created_at DESC LIMIT 20`,
-        )
-        .bind(options.category || 'General')
-        .all<{ title: string | null; description: string | null; notes: string | null }>();
-      existingImages = (existingRes.results || []).map((r) => ({
-        title: r.title || '',
-        description: r.description || '',
-        notes: r.notes || '',
-      }));
-    } catch {
-      existingImages = [];
+    // 2. Concept & Scene Generation:
+    // Query representative category history (published, approved, pending, rejected)
+    const history = await getCategoryConceptHistory(db, options.category || 'General', 20);
+
+    // If description was provided by the user, we respect their prompt.
+    // Otherwise, generate a novel scene concept via AI provider using category history.
+    let sceneConcept: GeneratedSceneConcept | undefined;
+    let effectiveDescription = options.description.trim();
+
+    if (!effectiveDescription) {
+      const { getAIProvider } = await import('../../ai/factory');
+      const aiProvider = getAIProvider(this.env, 'writer');
+      sceneConcept = await generateNovelImageConcept(
+        aiProvider,
+        options.category || 'General',
+        history,
+        options.postContext,
+      );
+      effectiveDescription = sceneConcept.promptDescription;
     }
 
-    const sceneArchetype = selectComplementaryScene(options.category || 'General', existingImages, options.description);
-    const prompt = buildBusinessImagePrompt(options.description, options.category, options.postContext, sceneArchetype);
+    const prompt = buildBusinessImagePrompt(
+      effectiveDescription,
+      options.category,
+      options.postContext,
+      sceneConcept ? { compositionGuidance: sceneConcept.compositionGuidance, emotionalTone: sceneConcept.emotionalTone } : undefined,
+    );
     const startTime = Date.now();
     let imageBytes: ArrayBuffer;
 
@@ -660,14 +649,13 @@ export class AiImageGeneratorService {
     const sourceUrl = `${parsedOrigin}/media/${key}`;
     const nowIso = new Date().toISOString();
 
-    const title = options.description.trim().slice(0, 80) || 'AI Generated Business Illustration';
+    const title = effectiveDescription.slice(0, 80) || 'AI Generated Business Illustration';
     const notes = JSON.stringify({
       generatedBy: 'Cloudflare Workers AI',
       model: AI_IMAGE_GENERATION_MODEL,
       generationDate: nowIso,
       originalPrompt: prompt,
-      sceneArchetypeId: sceneArchetype.id,
-      sceneArchetypeTitle: sceneArchetype.sceneTitle,
+      sceneConcept: sceneConcept || null,
       neuronsEstimated: AI_IMAGE_ESTIMATED_NEURONS,
       internalBrand: 'NorthSoft',
       usagePolicy: 'NorthSoft internal use',

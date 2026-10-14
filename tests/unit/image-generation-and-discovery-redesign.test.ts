@@ -118,94 +118,133 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       expect(prompt).not.toContain('holding a slim tablet resting on the tabletop');
     });
 
-    it('diversifies scenes away from repetitive laptop desk setups when selecting complementary scene', async () => {
-      const { selectComplementaryScene } = await import('../../src/services/content/ai-image-generator');
+    it('detects semantic similarity and rejects concepts that only cosmetically swap devices', async () => {
+      const { isSemanticallyDistinct } = await import('../../src/services/content/ai-image-generator');
 
-      // Given a library that already contains repetitive laptop desk setups
-      const existingLaptopScenes = [
+      const history = [
         {
-          title: 'contemporary business website layout on laptop screen modern desk',
-          description: 'contemporary business website layout on laptop screen modern desk',
-          notes: 'laptop screen modern desk',
-        },
-        {
-          title: 'Website mockup on laptop',
-          description: 'laptop on office desk with modern screen',
-          notes: 'laptop screen',
+          id: 'img-1',
+          title: 'Laptop on modern desk',
+          description: 'business owner analyzing online funnel performance on laptop screen modern desk',
+          status: 'PUBLISHED',
+          usageCount: 2,
+          publishedCount: 1,
+          situation: 'Person working alone at a desk staring directly at a laptop screen',
+          action: 'analyzing online funnel',
         },
       ];
 
-      const chosenArchetype = selectComplementaryScene('Websites & Landing Pages', existingLaptopScenes);
+      // Cosmetic swap: same situation, just tablet instead of laptop
+      const cosmeticSwapConcept = {
+        id: 'concept-test-1',
+        situation: 'Person working alone at a desk staring directly at a laptop screen',
+        action: 'reading analytics',
+        relationship: 'solo user',
+        businessNeed: 'funnel optimization',
+        emotionalTone: 'problem-aware' as const,
+        visualMotif: 'modern desk',
+        promptDescription: 'founder reviewing funnel metrics on tablet',
+        compositionGuidance: 'natural daylight',
+        rationale: 'swapped laptop for tablet',
+      };
 
-      // Should choose a non-laptop archetype (e.g. tablet consultation, mobile checkout, or large monitor)
-      expect(chosenArchetype.id).not.toBe('web-laptop-minimal');
-      expect(['web-client-booking-tablet', 'web-designer-desktop', 'web-mobile-checkout', 'web-team-review']).toContain(chosenArchetype.id);
+      const resultCosmetic = isSemanticallyDistinct(cosmeticSwapConcept, history);
+      expect(resultCosmetic.distinct).toBe(false);
+      expect(resultCosmetic.conflictReason).toBeTruthy();
+
+      // Truly distinct situation: client consultation with tangible samples
+      const distinctConcept = {
+        id: 'concept-test-2',
+        situation: 'Interactive in-person consultation reviewing tangible timber samples',
+        action: 'pointing at timber finish sample while client takes notes',
+        relationship: 'advisor and client across consultation table',
+        businessNeed: 'material selection and trust building',
+        emotionalTone: 'collaborative' as const,
+        visualMotif: 'oak material sample board',
+        promptDescription: 'specialist and client examining oak material samples across a low timber table',
+        compositionGuidance: 'natural soft daylight, candid conversational angle',
+        rationale: 'Introduces tangible material interaction and collaboration',
+      };
+
+      const resultDistinct = isSemanticallyDistinct(distinctConcept, history);
+      expect(resultDistinct.distinct).toBe(true);
+      expect(resultDistinct.conflictReason).toBeUndefined();
     });
 
-    it('detects emotional intent from post context and tailors expression direction', async () => {
-      const { detectEmotionalIntent, buildBusinessImagePrompt } = await import('../../src/services/content/ai-image-generator');
+    it('generates a novel concept using AI provider with category history and post context', async () => {
+      const { generateNovelImageConcept } = await import('../../src/services/content/ai-image-generator');
 
-      // Problem-aware context
-      const problemIntent = detectEmotionalIntent('Dlaczego klienci uciekają z Twojej strony? Spadek konwersji i błędy UX');
-      expect(problemIntent).toBe('problem-aware');
+      const mockHistory = [
+        {
+          id: 'hist-1',
+          title: 'Existing laptop setup',
+          description: 'laptop on desk with website homepage',
+          status: 'PUBLISHED',
+          usageCount: 1,
+          publishedCount: 1,
+        },
+      ];
 
-      const problemPrompt = buildBusinessImagePrompt(
-        'business owner analyzing bounce rates',
-        'Sales & Conversion Process',
-        'Dlaczego klienci uciekają z Twojej strony? Spadek konwersji i błędy UX',
+      const mockAIProvider = {
+        name: 'mock',
+        complete: async () => ({
+          content: JSON.stringify({
+            situation: 'Diagnostic client consultation reviewing architectural floor plans',
+            action: 'client gesturing toward paper blueprint layout while advisor listens attentively',
+            relationship: 'client and architect across timber meeting table',
+            businessNeed: 'collaborative spatial planning',
+            emotionalTone: 'collaborative',
+            visualMotif: 'architectural paper blueprint',
+            promptDescription: 'architect and client discussing blueprint draft on sunlit oak table',
+            compositionGuidance: 'wide candid shot with soft daylight',
+            rationale: 'Moves away from solo computer screens to physical blueprint consultation',
+          }),
+          model: 'llama-3.1-8b-instruct',
+          provider: 'mock',
+          usage: { promptTokens: 50, completionTokens: 40, totalTokens: 90 },
+          finishReason: 'stop',
+          durationMs: 50,
+        }),
+      };
+
+      const concept = await generateNovelImageConcept(
+        mockAIProvider as any,
+        'Websites & Landing Pages',
+        mockHistory,
+        'Dlaczego warto przeprowadzić audyt UX przed startem projektu?',
       );
-      expect(problemPrompt).toContain('analytical contemplation');
 
-      // Positive context
-      const positiveIntent = detectEmotionalIntent('Wzrost sprzedaży o 35% po wdrożeniu nowego koszyka zakupowego!');
-      expect(positiveIntent).toBe('positive');
-
-      const positivePrompt = buildBusinessImagePrompt(
-        'store manager celebrating sales numbers',
-        'Sales & Conversion Process',
-        'Wzrost sprzedaży o 35% po wdrożeniu nowego koszyka zakupowego!',
-      );
-      expect(positivePrompt).toContain('calm satisfaction');
-
-      // Collaborative context
-      const collabIntent = detectEmotionalIntent('Wspólne warsztaty i konsultacja strategii digitalowej z zespołem');
-      expect(collabIntent).toBe('collaborative');
-
-      // Safe neutral fallback
-      const neutralIntent = detectEmotionalIntent('Przegląd cotygodniowy');
-      expect(neutralIntent).toBe('neutral');
+      expect(concept).toBeDefined();
+      expect(concept.situation).toBe('Diagnostic client consultation reviewing architectural floor plans');
+      expect(concept.promptDescription).toContain('blueprint draft');
+      expect(concept.emotionalTone).toBe('collaborative');
+      expect(concept.visualMotif).toBe('architectural paper blueprint');
     });
 
-    it('guarantees physical consistency in all archetype definitions (hands, gaze, device orientation)', async () => {
-      const { CATEGORY_SCENE_ARCHETYPES } = await import('../../src/services/content/ai-image-generator');
+    it('handles empty history gracefully without errors', async () => {
+      const { isSemanticallyDistinct, summarizeDominantThemes } = await import('../../src/services/content/ai-image-generator');
 
-      for (const [, archetypes] of Object.entries(CATEGORY_SCENE_ARCHETYPES)) {
-        for (const arch of archetypes) {
-          // Check that archetype specifies clear subject action, gaze/orientation, and valid subject category
-          expect(['person', 'people', 'device_only', 'environment_only']).toContain(arch.primarySubject);
-          expect(arch.intendedEmotions.length).toBeGreaterThan(0);
-          expect(arch.subjectDescription.length).toBeGreaterThan(20);
-          expect(arch.compositionGuidance.length).toBeGreaterThan(20);
+      const distinctResult = isSemanticallyDistinct(
+        {
+          id: 'test-empty',
+          situation: 'New business meeting',
+          action: 'reviewing documents',
+          relationship: 'partners',
+          businessNeed: 'growth',
+          emotionalTone: 'neutral',
+          visualMotif: 'meeting table',
+          promptDescription: 'business partners reviewing documents',
+          compositionGuidance: 'natural daylight',
+          rationale: 'first image in library',
+        },
+        [],
+      );
 
-          // Physical consistency checks: no contradiction where device is both held and resting on tabletop
-          const lowerSubject = arch.subjectDescription.toLowerCase();
-          const lowerGuidance = arch.compositionGuidance.toLowerCase();
-          const combined = `${lowerSubject} ${lowerGuidance}`;
+      expect(distinctResult.distinct).toBe(true);
 
-          if (combined.includes('tablet')) {
-            const isResting = combined.includes('resting flat') || combined.includes('tabletop') || combined.includes('on the desk');
-            const isHeldTwoHands = combined.includes('holding') && combined.includes('both hands');
-            // Must not contradict resting flat on table and two-handed floating hold
-            expect(isResting && isHeldTwoHands).toBe(false);
-          }
-
-          // Single person vs consultation archetype consistency
-          if (arch.primarySubject === 'person') {
-            expect(combined).not.toContain('two colleagues discussing');
-            expect(combined).not.toContain('team of professionals');
-          }
-        }
-      }
+      const dominant = summarizeDominantThemes([]);
+      expect(dominant.length).toBeGreaterThan(0);
+      expect(dominant[0]).toContain('General modern office');
     });
   });
 
@@ -410,40 +449,56 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       expect(json.allowed).toBe(false);
     });
 
-    it('GET /api/admin/images/suggest-prompt dynamically suggests alternative scenes based on category and history without AI generation cost', async () => {
+    it('GET /api/admin/images/suggest-prompt conceives novel scene concepts via AI text model based on category history', async () => {
       const { db } = createMockD1Database([], [
         {
           title: 'Laptop on desk',
           description: 'contemporary business website layout on laptop screen modern desk',
           category: 'Websites & Landing Pages',
-          notes: 'laptop desk',
+          notes: JSON.stringify({
+            sceneConcept: {
+              situation: 'Person working alone at a desk staring directly at a laptop screen',
+              action: 'working on laptop',
+            },
+          }),
         },
       ]);
+
+      const mockAIResponse = JSON.stringify({
+        situation: 'Customer and shopkeeper reviewing eco-friendly packaging options in boutique store',
+        action: 'shopkeeper holding up sustainable craft paper box while customer touches the recycled texture',
+        relationship: 'collaborative exchange across solid wood counter',
+        businessNeed: 'brand transparency and environmental packaging',
+        emotionalTone: 'positive',
+        visualMotif: 'sustainable textured paper box',
+        promptDescription: 'shopkeeper and customer reviewing craft paper box over timber counter with natural window light',
+        compositionGuidance: 'candid eye-level documentary framing with soft daylight',
+        rationale: 'Moves away from screens to tactile customer product interaction',
+      });
+
+      const mockEnv: any = {
+        DB: db,
+        AI: {
+          run: async () => ({ response: mockAIResponse }),
+        },
+        ENVIRONMENT: 'test',
+      };
 
       const app = new Hono<AppEnv>();
       app.route('/', imagesRouter);
 
-      // Proposal 1: offset 0
-      const req1 = new Request('http://localhost/images/suggest-prompt?category=Websites%20%26%20Landing%20Pages&cycleOffset=0', {
+      const req = new Request('http://localhost/images/suggest-prompt?category=Websites%20%26%20Landing%20Pages', {
         method: 'GET',
       });
-      const res1 = await app.fetch(req1, { DB: db });
-      expect(res1.status).toBe(200);
-      const data1 = (await res1.json()) as any;
-      expect(data1.success).toBe(true);
-      expect(data1.prompt).toBeDefined();
-      expect(data1.archetypeId).not.toBe('web-laptop-minimal');
-
-      // Proposal 2: offset 1 (cycling to next scene alternative)
-      const req2 = new Request('http://localhost/images/suggest-prompt?category=Websites%20%26%20Landing%20Pages&cycleOffset=1', {
-        method: 'GET',
-      });
-      const res2 = await app.fetch(req2, { DB: db });
-      expect(res2.status).toBe(200);
-      const data2 = (await res2.json()) as any;
-      expect(data2.success).toBe(true);
-      expect(data2.prompt).toBeDefined();
-      expect(data2.prompt).not.toBe(data1.prompt);
+      const res = await app.fetch(req, mockEnv);
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.success).toBe(true);
+      expect(data.prompt).toBe('shopkeeper and customer reviewing craft paper box over timber counter with natural window light');
+      expect(data.situation).toBe('Customer and shopkeeper reviewing eco-friendly packaging options in boutique store');
+      expect(data.conceptId).toMatch(/^concept-/);
+      expect(data.visualMotif).toBe('sustainable textured paper box');
+      expect(data.emotionalTone).toBe('positive');
     });
 
     it('uses FLUX.1 Schnell model for high-fidelity generation without text corruption', async () => {
