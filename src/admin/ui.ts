@@ -1833,50 +1833,55 @@ export function renderAdminHtml(): string {
 
   <!-- 17. DISCOVER IMAGE CANDIDATES MODAL -->
   <div id="discover-image-modal" class="modal-backdrop">
-    <div class="modal-box" style="max-width:600px;">
+    <div class="modal-box" style="max-width:620px;">
       <div class="modal-header">
         <div class="modal-title" id="discover-modal-title">Discover Image Candidates</div>
         <button class="modal-close-btn" onclick="closeModal('discover-image-modal')">&times;</button>
       </div>
 
-      <!-- VIEW 1: Topic Selection Form -->
+      <!-- VIEW 1: Category & Description Form -->
       <div id="discover-view-form" class="modal-body">
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
-          Select a default content category, active research topic, or choose <strong>Custom Search</strong> to enter your own keywords.
+          Select a category and adjust the visual search description. You can search verified open-license photos or optionally generate a photorealistic scene via Cloudflare Workers AI.
         </p>
 
-        <div class="form-group">
-          <label class="form-label" for="discover-topic-select" style="font-weight:600;">Topic / Search Category</label>
-          <select id="discover-topic-select" class="form-input" onchange="handleDiscoverTopicSelectChange()">
-            <option value="">-- Loading categories &amp; topics... --</option>
-          </select>
-        </div>
-
-        <div class="form-group" id="discover-custom-topic-group" style="display:none; background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:1rem;">
-          <label class="form-label" for="discover-custom-topic-input" style="color:var(--accent-blue); font-weight:600;">Enter custom topic / keywords (Custom Search)</label>
-          <input type="text" id="discover-custom-topic-input" class="form-input" placeholder="e.g. Cloud Data Security, Business Website, Customer Service" oninput="validateDiscoverForm()" />
-          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">The system will search for high-quality royalty-free imagery matching your keywords.</div>
-        </div>
-
-        <div class="form-group" style="margin-bottom:0.5rem;">
-          <label class="form-label" for="discover-category-select">Assigned Library Category</label>
-          <select id="discover-category-select" class="form-input">
-            <option value="AI &amp; Business Automation">AI &amp; Business Automation</option>
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label class="form-label" for="discover-category-select" style="font-weight:600;">Image Library Category</label>
+          <select id="discover-category-select" class="form-input" onchange="handleDiscoverCategoryChange()">
             <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
             <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
             <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
+            <option value="AI &amp; Business Automation">AI &amp; Business Automation</option>
             <option value="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option>
             <option value="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option>
             <option value="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option>
             <option value="General">General</option>
           </select>
         </div>
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+          <label class="form-label" for="discover-description-input" style="font-weight:600;">Image search description</label>
+          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene (e.g. contemporary business website layout on laptop screen modern desk)..." oninput="validateDiscoverForm()"></textarea>
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">
+            Edit this description to fine-tune image matching or AI scene generation. All discovered &amp; generated images are saved as <strong>PENDING</strong> for manual review.
+          </div>
+        </div>
+
+        <div id="discover-ai-notice-box" style="display:flex; align-items:center; gap:0.5rem; background:rgba(96,165,250,0.08); border:1px solid rgba(96,165,250,0.25); border-radius:8px; padding:0.75rem 1rem; margin-bottom:0.5rem; font-size:0.78rem; color:var(--accent-blue);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <span>Cloudflare Workers AI Generation: <strong>1 image/day limit</strong> to conserve Neurons. Author: <em>NorthSoft</em>, License: <em>NorthSoft internal use</em>.</span>
+        </div>
       </div>
-      <div id="discover-footer-form" class="modal-footer" style="display:flex; justify-content:flex-end; gap:0.5rem;">
+      <div id="discover-footer-form" class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
         <button type="button" class="btn-secondary" onclick="closeModal('discover-image-modal')">Cancel</button>
-        <button type="button" id="start-discovery-btn" class="btn-primary" onclick="startCandidateDiscovery()">
-          Discover Images
-        </button>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="button" id="start-ai-generate-btn" class="btn-secondary" style="border-color:rgba(96,165,250,0.4); color:var(--accent-blue);" onclick="startAiImageGeneration()">
+            ✨ Generate with AI
+          </button>
+          <button type="button" id="start-discovery-btn" class="btn-primary" onclick="startCandidateDiscovery()">
+            🔍 Discover Photos
+          </button>
+        </div>
       </div>
 
       <!-- VIEW 2: Live Progress & Step Indicator -->

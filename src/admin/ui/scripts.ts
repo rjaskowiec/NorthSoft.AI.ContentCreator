@@ -5657,117 +5657,56 @@ export function getAdminScripts(): string {
 
     let isCandidateDiscoveryRunning = false;
 
-    async function openDiscoverImageModal() {
+    const CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS = {
+      'Websites & Landing Pages': 'contemporary business website layout on laptop screen modern desk',
+      'Marketing & Customer Acquisition': 'small business team reviewing digital marketing growth charts in modern office',
+      'Sales & Conversion Process': 'retail store counter checkout customer card payment pos terminal',
+      'AI & Business Automation': 'software developer laptop code modern workspace office',
+      'Small Business Productivity & Ops': 'small business owner working at laptop desk organized workspace',
+      'Customer Experience & Trust': 'smiling small business owner welcoming customer in local shop',
+      'Local Business & Regional Context': 'local store storefront entrance small business commercial street',
+      'General': 'professional business workspace laptop coffee desk',
+    };
+
+    function openDiscoverImageModal() {
       if (isCandidateDiscoveryRunning) return;
       resetDiscoverModalForm();
       openModal('discover-image-modal');
 
-      const selectEl = document.getElementById('discover-topic-select');
-      if (selectEl) {
-        selectEl.innerHTML = '<option value="">-- Loading system topics &amp; categories... --</option>';
+      const categorySelect = document.getElementById('discover-category-select');
+      if (categorySelect && !categorySelect.value) {
+        categorySelect.value = 'Websites & Landing Pages';
       }
-
-      try {
-        const res = await guardedFetch('/api/admin/images/discovery-topics');
-        const data = await res.json();
-
-        if (data.success && selectEl) {
-          let html = '<option value="">-- Select category or search topic --</option>';
-
-          if (data.pillars && data.pillars.length > 0) {
-            html += '<optgroup label="Default Content Categories (Standard Pillars)">';
-            data.pillars.forEach((p) => {
-              html += '<option value="pillar:' + escapeHtml(p.id) + '" data-query="' + escapeHtml(p.name) + '" data-category="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + '</option>';
-            });
-            html += '</optgroup>';
-          }
-
-          if (data.systemTopics && data.systemTopics.length > 0) {
-            html += '<optgroup label="Active Research Topics">';
-            data.systemTopics.forEach((t) => {
-              const cat = t.category || t.content_pillar || 'Technology & Business';
-              html += '<option value="topic:' + escapeHtml(t.id) + '" data-query="' + escapeHtml(t.title) + '" data-category="' + escapeHtml(cat) + '">' + escapeHtml(t.title) + '</option>';
-            });
-            html += '</optgroup>';
-          }
-
-          html += '<optgroup label="Custom Search">';
-          html += '<option value="__CUSTOM__">Custom search... (Enter manual keywords)</option>';
-          html += '</optgroup>';
-
-          selectEl.innerHTML = html;
-
-          if (data.pillars && data.pillars[0]) {
-            selectEl.value = 'pillar:' + data.pillars[0].id;
-            handleDiscoverTopicSelectChange();
-          }
-        }
-      } catch (err) {
-        console.error('[DiscoverModal] Failed to fetch topics:', err);
-        if (selectEl) {
-          selectEl.innerHTML = '<optgroup label="Default Content Categories"><option value="pillar:AI" data-query="AI &amp; Business Automation" data-category="AI &amp; Business Automation">AI &amp; Business Automation</option><option value="pillar:WEBSITE" data-query="Websites &amp; Landing Pages" data-category="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option><option value="pillar:MARKETING" data-query="Marketing &amp; Customer Acquisition" data-category="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option><option value="pillar:SALES" data-query="Sales &amp; Conversion Process" data-category="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option><option value="pillar:SMALL_BUSINESS" data-query="Small Business Productivity &amp; Ops" data-category="Small Business Productivity &amp; Ops">Small Business Productivity &amp; Ops</option><option value="pillar:CUSTOMER_EXPERIENCE" data-query="Customer Experience &amp; Trust" data-category="Customer Experience &amp; Trust">Customer Experience &amp; Trust</option><option value="pillar:LOCAL_BUSINESS" data-query="Local Business &amp; Regional Context" data-category="Local Business &amp; Regional Context">Local Business &amp; Regional Context</option></optgroup><optgroup label="Custom Search"><option value="__CUSTOM__">Custom search... (Enter manual keywords)</option></optgroup>';
-          selectEl.value = 'pillar:AI';
-          handleDiscoverTopicSelectChange();
-        }
-      }
+      handleDiscoverCategoryChange();
     }
 
-    function handleDiscoverTopicSelectChange() {
-      const selectEl = document.getElementById('discover-topic-select');
-      const customGrp = document.getElementById('discover-custom-topic-group');
+    function handleDiscoverCategoryChange() {
       const categorySelect = document.getElementById('discover-category-select');
-      if (!selectEl) return;
+      const descInput = document.getElementById('discover-description-input');
+      if (!categorySelect || !descInput) return;
 
-      const val = selectEl.value;
-      if (val === '__CUSTOM__') {
-        if (customGrp) customGrp.style.display = 'block';
-        const customInput = document.getElementById('discover-custom-topic-input');
-        if (customInput) customInput.focus();
-      } else {
-        if (customGrp) customGrp.style.display = 'none';
-        const selectedOpt = selectEl.options[selectEl.selectedIndex];
-        if (selectedOpt && categorySelect) {
-          const cat = selectedOpt.getAttribute('data-category');
-          if (cat) {
-            for (let i = 0; i < categorySelect.options.length; i++) {
-              if (categorySelect.options[i].value.toLowerCase().includes(cat.toLowerCase()) || cat.toLowerCase().includes(categorySelect.options[i].value.toLowerCase())) {
-                categorySelect.selectedIndex = i;
-                break;
-              }
-            }
-          }
-        }
-      }
+      const cat = categorySelect.value || 'Websites & Landing Pages';
+      const defaultDesc = CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS[cat] || CATEGORY_DEFAULT_IMAGE_DESCRIPTIONS['General'];
+      descInput.value = defaultDesc;
       validateDiscoverForm();
     }
 
     function validateDiscoverForm() {
-      const selectEl = document.getElementById('discover-topic-select');
-      const customInput = document.getElementById('discover-custom-topic-input');
-      const btn = document.getElementById('start-discovery-btn');
-      if (!btn) return;
+      const descInput = document.getElementById('discover-description-input');
+      const discBtn = document.getElementById('start-discovery-btn');
+      const aiBtn = document.getElementById('start-ai-generate-btn');
+      const txt = descInput ? descInput.value.trim() : '';
 
-      const val = selectEl ? selectEl.value : '';
-      if (!val) {
-        btn.disabled = true;
-        return;
-      }
-
-      if (val === '__CUSTOM__') {
-        const customTxt = customInput ? customInput.value.trim() : '';
-        btn.disabled = customTxt.length === 0;
-      } else {
-        btn.disabled = false;
-      }
+      const isValid = txt.length > 0;
+      if (discBtn) discBtn.disabled = !isValid;
+      if (aiBtn) aiBtn.disabled = !isValid;
     }
 
     function resetDiscoverModalForm() {
       setDiscoverModalView('form');
-      const customGrp = document.getElementById('discover-custom-topic-group');
-      if (customGrp) customGrp.style.display = 'none';
-      const customInput = document.getElementById('discover-custom-topic-input');
-      if (customInput) customInput.value = '';
-      validateDiscoverForm();
+      const categorySelect = document.getElementById('discover-category-select');
+      if (categorySelect) categorySelect.value = 'Websites & Landing Pages';
+      handleDiscoverCategoryChange();
     }
 
     function setDiscoverModalView(viewName) {
@@ -5830,23 +5769,14 @@ export function getAdminScripts(): string {
     async function startCandidateDiscovery() {
       if (isCandidateDiscoveryRunning) return;
 
-      const selectEl = document.getElementById('discover-topic-select');
-      const customInput = document.getElementById('discover-custom-topic-input');
       const categorySelect = document.getElementById('discover-category-select');
+      const descInput = document.getElementById('discover-description-input');
 
-      let query = '';
-      let category = categorySelect ? categorySelect.value : 'Technology & Business';
-
-      const selVal = selectEl ? selectEl.value : '';
-      if (selVal === '__CUSTOM__') {
-        query = customInput ? customInput.value.trim() : '';
-      } else if (selectEl && selectEl.selectedIndex >= 0) {
-        const selectedOpt = selectEl.options[selectEl.selectedIndex];
-        query = selectedOpt.getAttribute('data-query') || selectedOpt.text;
-      }
+      const category = categorySelect ? categorySelect.value : 'Websites & Landing Pages';
+      const query = descInput ? descInput.value.trim() : '';
 
       if (!query) {
-        alert('Please enter or select a topic for candidate discovery.');
+        alert('Please enter or verify the image search description.');
         return;
       }
 
@@ -5854,8 +5784,10 @@ export function getAdminScripts(): string {
 
       const discHeaderBtn = document.getElementById('discover-candidates-btn');
       const startModalBtn = document.getElementById('start-discovery-btn');
+      const startAiBtn = document.getElementById('start-ai-generate-btn');
       if (discHeaderBtn) discHeaderBtn.disabled = true;
       if (startModalBtn) startModalBtn.disabled = true;
+      if (startAiBtn) startAiBtn.disabled = true;
 
       setDiscoverModalView('progress');
 
@@ -5868,12 +5800,12 @@ export function getAdminScripts(): string {
       }
 
       try {
-        if (detailBox) detailBox.textContent = 'Initializing search strategy for "' + query + '"...';
-        await new Promise((r) => setTimeout(r, 400));
+        if (detailBox) detailBox.textContent = 'Initializing search strategy for "' + query + '" (' + category + ')...';
+        await new Promise((r) => setTimeout(r, 300));
 
         updateDiscoverStep(1, 'completed');
         updateDiscoverStep(2, 'active');
-        if (detailBox) detailBox.textContent = 'Querying Openverse API for open-license candidates...';
+        if (detailBox) detailBox.textContent = 'Querying Openverse API with bounded retry queries...';
 
         const resPromise = guardedFetch('/api/admin/images/candidate-discovery', {
           method: 'POST',
@@ -5881,10 +5813,10 @@ export function getAdminScripts(): string {
           body: JSON.stringify({ query, category }),
         });
 
-        await new Promise((r) => setTimeout(r, 450));
+        await new Promise((r) => setTimeout(r, 400));
         updateDiscoverStep(2, 'completed');
         updateDiscoverStep(3, 'active');
-        if (detailBox) detailBox.textContent = 'Evaluating candidate metadata & license compliance...';
+        if (detailBox) detailBox.textContent = 'Evaluating candidate metadata, visual relevance & license compliance...';
 
         const res = await resPromise;
         const data = await res.json();
@@ -5896,12 +5828,12 @@ export function getAdminScripts(): string {
         updateDiscoverStep(3, 'completed');
         updateDiscoverStep(4, 'active', (data.skippedCount || 0) + ' duplicate(s) skipped');
         if (detailBox) detailBox.textContent = 'Filtering duplicates & checking 90-day reuse window...';
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 250));
 
         updateDiscoverStep(4, 'completed');
         updateDiscoverStep(5, 'active', (data.addedCount || 0) + ' candidate(s) saved as PENDING');
         if (detailBox) detailBox.textContent = 'Saving candidate records to Image Library...';
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 250));
 
         updateDiscoverStep(5, 'completed');
 
@@ -5911,7 +5843,7 @@ export function getAdminScripts(): string {
 
         if (total === 0 || (added === 0 && skipped === 0)) {
           const emptyTopicEl = document.getElementById('discover-empty-topic-name');
-          if (emptyTopicEl) emptyTopicEl.textContent = '"' + query + '"';
+          if (emptyTopicEl) emptyTopicEl.textContent = '"' + query + '" (' + category + ')';
           setDiscoverModalView('empty');
         } else {
           const topicNameEl = document.getElementById('discover-result-topic-name');
@@ -5919,7 +5851,7 @@ export function getAdminScripts(): string {
           const addedEl = document.getElementById('discover-stat-added');
           const skippedEl = document.getElementById('discover-stat-skipped');
 
-          if (topicNameEl) topicNameEl.textContent = query;
+          if (topicNameEl) topicNameEl.textContent = query + ' [' + category + ']';
           if (totalEl) totalEl.textContent = String(total);
           if (addedEl) addedEl.textContent = String(added);
           if (skippedEl) skippedEl.textContent = String(skipped);
@@ -5937,6 +5869,102 @@ export function getAdminScripts(): string {
         isCandidateDiscoveryRunning = false;
         if (discHeaderBtn) discHeaderBtn.disabled = false;
         if (startModalBtn) startModalBtn.disabled = false;
+        if (startAiBtn) startAiBtn.disabled = false;
+      }
+    }
+
+    async function startAiImageGeneration() {
+      if (isCandidateDiscoveryRunning) return;
+
+      const categorySelect = document.getElementById('discover-category-select');
+      const descInput = document.getElementById('discover-description-input');
+
+      const category = categorySelect ? categorySelect.value : 'Websites & Landing Pages';
+      const description = descInput ? descInput.value.trim() : '';
+
+      if (!description) {
+        alert('Please enter a description for the image to generate.');
+        return;
+      }
+
+      isCandidateDiscoveryRunning = true;
+
+      const discHeaderBtn = document.getElementById('discover-candidates-btn');
+      const startModalBtn = document.getElementById('start-discovery-btn');
+      const startAiBtn = document.getElementById('start-ai-generate-btn');
+      if (discHeaderBtn) discHeaderBtn.disabled = true;
+      if (startModalBtn) startModalBtn.disabled = true;
+      if (startAiBtn) startAiBtn.disabled = true;
+
+      setDiscoverModalView('progress');
+
+      const topicTitleEl = document.getElementById('discover-progress-topic');
+      const detailBox = document.getElementById('discover-live-detail-box');
+      if (topicTitleEl) topicTitleEl.textContent = 'AI Generation: "' + description + '"';
+
+      for (let i = 1; i <= 5; i++) {
+        updateDiscoverStep(i, i === 1 ? 'active' : 'pending');
+      }
+
+      try {
+        if (detailBox) detailBox.textContent = 'Checking Cloudflare Workers AI daily quota (max 1/day)...';
+        await new Promise((r) => setTimeout(r, 200));
+
+        updateDiscoverStep(1, 'completed');
+        updateDiscoverStep(2, 'active');
+        if (detailBox) detailBox.textContent = 'Generating photorealistic scene via Cloudflare Workers AI...';
+
+        const resPromise = guardedFetch('/api/admin/images/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ description, category }),
+        });
+
+        await new Promise((r) => setTimeout(r, 400));
+        updateDiscoverStep(2, 'completed');
+        updateDiscoverStep(3, 'active');
+        if (detailBox) detailBox.textContent = 'Processing image bytes and verifying NorthSoft provenance metadata...';
+
+        const res = await resPromise;
+        const data = await res.json();
+
+        if (!data.success) {
+          throw new Error(safeStr(data.error, 'AI Image generation failed.'));
+        }
+
+        updateDiscoverStep(3, 'completed');
+        updateDiscoverStep(4, 'active', 'Stored in R2 bucket');
+        if (detailBox) detailBox.textContent = 'Saving generated image to Cloudflare R2 & Image Library...';
+        await new Promise((r) => setTimeout(r, 250));
+
+        updateDiscoverStep(4, 'completed');
+        updateDiscoverStep(5, 'active', 'Saved as PENDING for review');
+        await new Promise((r) => setTimeout(r, 200));
+        updateDiscoverStep(5, 'completed');
+
+        const topicNameEl = document.getElementById('discover-result-topic-name');
+        const totalEl = document.getElementById('discover-stat-total');
+        const addedEl = document.getElementById('discover-stat-added');
+        const skippedEl = document.getElementById('discover-stat-skipped');
+
+        if (topicNameEl) topicNameEl.textContent = 'AI Generated: ' + description + ' [' + category + ']';
+        if (totalEl) totalEl.textContent = '1';
+        if (addedEl) addedEl.textContent = '1';
+        if (skippedEl) skippedEl.textContent = '0';
+
+        setDiscoverModalView('result');
+      } catch (err) {
+        console.error('AI generation error:', err);
+        const errReasonEl = document.getElementById('discover-error-reason');
+        if (errReasonEl) {
+          errReasonEl.textContent = err instanceof Error ? err.message : String(err);
+        }
+        setDiscoverModalView('error');
+      } finally {
+        isCandidateDiscoveryRunning = false;
+        if (discHeaderBtn) discHeaderBtn.disabled = false;
+        if (startModalBtn) startModalBtn.disabled = false;
+        if (startAiBtn) startAiBtn.disabled = false;
       }
     }
 
@@ -6642,9 +6670,11 @@ export function getAdminScripts(): string {
     window.loadImagesData = loadImagesData;
     window.debounceImageSearch = debounceImageSearch;
     window.openDiscoverImageModal = openDiscoverImageModal;
-    window.handleDiscoverTopicSelectChange = handleDiscoverTopicSelectChange;
+    window.handleDiscoverCategoryChange = handleDiscoverCategoryChange;
+    window.handleDiscoverTopicSelectChange = handleDiscoverCategoryChange; // Backwards compatibility alias
     window.validateDiscoverForm = validateDiscoverForm;
     window.startCandidateDiscovery = startCandidateDiscovery;
+    window.startAiImageGeneration = startAiImageGeneration;
     window.resetDiscoverModalForm = resetDiscoverModalForm;
     window.closeDiscoverModalAndViewPending = closeDiscoverModalAndViewPending;
     window.openAddImageModal = openAddImageModal;

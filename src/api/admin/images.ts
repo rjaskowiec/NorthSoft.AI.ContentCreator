@@ -85,37 +85,55 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 
   const openverse = new OpenverseImageService(c.env);
   const imgService = new ImageLibraryService(db);
+  const { buildDiscoveryQueryHierarchy } = await import('../../services/content/image-service');
+  const { evaluateImageRelevance, filterDiverseCandidates } = await import('../../services/content/image-relevance-evaluator');
+  const { checkEditorialBrandSafety } = await import('../../services/content/editorial-policy');
 
   try {
-    const rawCandidates = await openverse.searchImages(query, 10);
-    const { evaluateImageRelevance, filterDiverseCandidates } = await import('../../services/content/image-relevance-evaluator');
-    const { checkEditorialBrandSafety } = await import('../../services/content/editorial-policy');
+    // Generate bounded retry queries: initial query -> broader business query -> category scene
+    const searchQueries = buildDiscoveryQueryHierarchy(query, category);
+    let chosenQuery = query;
+    let rawCandidates: any[] = [];
+    let relevantCandidatesWithScore: any[] = [];
 
-    // 1. Filter out candidates failing editorial brand safety
-    const safeCandidates = rawCandidates.filter((cand) => {
-      const safety = checkEditorialBrandSafety({
-        title: cand.title,
-        summary: (cand.tags || []).join(' '),
+    for (const q of searchQueries) {
+      chosenQuery = q;
+      const candidates = await openverse.searchImages(q, 10);
+      if (candidates.length === 0) continue;
+
+      rawCandidates = candidates;
+
+      // 1. Filter out candidates failing editorial brand safety
+      const safeCandidates = candidates.filter((cand) => {
+        const safety = checkEditorialBrandSafety({
+          title: cand.title,
+          summary: (cand.tags || []).join(' '),
+        });
+        return safety.passed;
       });
-      return safety.passed;
-    });
 
-    // 2. Filter through multi-pillar Business Relevance Evaluator
-    const relevantCandidatesWithScore = safeCandidates
-      .map((cand) => {
-        const relevance = evaluateImageRelevance(
-          {
-            title: cand.title,
-            keywords: (cand.tags || []).join(', '),
-            tags: cand.tags,
-            description: cand.title,
-            discoveryQuery: query,
-          },
-          query,
-        );
-        return { cand, relevance };
-      })
-      .filter(({ relevance }) => relevance.qualified);
+      // 2. Filter through multi-pillar Business Relevance Evaluator
+      const scored = safeCandidates
+        .map((cand) => {
+          const relevance = evaluateImageRelevance(
+            {
+              title: cand.title,
+              keywords: (cand.tags || []).join(', '),
+              tags: cand.tags,
+              description: cand.title,
+              discoveryQuery: q,
+            },
+            `${q} ${category}`,
+          );
+          return { cand, relevance };
+        })
+        .filter(({ relevance }) => relevance.qualified);
+
+      if (scored.length > 0) {
+        relevantCandidatesWithScore = scored;
+        break; // Found good candidates, no further retries needed
+      }
+    }
 
     // 3. Apply Diversity Filter to avoid series of identical events/sessions
     const diverseCandidates = filterDiverseCandidates(
@@ -145,8 +163,8 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
           licenseUrl: cand.licenseUrl,
           category,
           keywords: (cand.tags || []).join(', '),
-          description: `Discovered from Openverse topic: "${query}"`,
-          discoveryQuery: query,
+          description: `Discovered from Openverse topic: "${chosenQuery}"`,
+          discoveryQuery: chosenQuery,
           score: cand.relevanceScore,
           visualRelevanceScore: cand.relevanceScore ? cand.relevanceScore / 100 : 0.7,
           visualRelevanceReason: cand.relevanceReason || 'Verified business relevance',
@@ -162,13 +180,14 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
     return c.json({
       success: true,
       topic: query,
+      chosenQuery,
       category,
       totalDiscovered: rawCandidates.length,
       addedCount,
       skippedCount,
       steps: [
         { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed' },
-        { step: 'search', label: 'Searching image sources (Openverse API)', status: 'completed', details: `Found ${rawCandidates.length} candidate(s)` },
+        { step: 'search', label: `Searching image sources (Query: "${chosenQuery}")`, status: 'completed', details: `Found ${rawCandidates.length} candidate(s)` },
         { step: 'metadata', label: 'Evaluating candidate metadata & quality', status: 'completed' },
         { step: 'dedup', label: 'Checking duplicates & reuse window', status: 'completed', details: `${skippedCount} duplicate(s) skipped` },
         { step: 'save', label: 'Saving candidates to Image Library', status: 'completed', details: `${addedCount} new candidate(s) saved as PENDING` },
@@ -177,6 +196,49 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: `Candidate discovery failed: ${message}` }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/images/generate
+ * Generates a photorealistic business image via Cloudflare Workers AI.
+ * Strict limits: 1 image/day, author "NorthSoft", license "NorthSoft internal use", status "PENDING".
+ */
+imagesRouter.post('/images/generate', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    description?: string;
+    category?: string;
+    postContext?: string;
+  };
+
+  const description = (body.description || '').trim();
+  const category = (body.category || 'General').trim();
+  const postContext = (body.postContext || '').trim();
+
+  if (!description) {
+    return c.json({ success: false, error: 'Image search description or prompt is required for AI generation.' }, 400);
+  }
+
+  const { AiImageGeneratorService } = await import('../../services/content/ai-image-generator');
+  const generator = new AiImageGeneratorService(c.env);
+
+  try {
+    const result = await generator.generateAndPersistImage(db, c.req.url, {
+      description,
+      category,
+      postContext: postContext || undefined,
+    });
+
+    return c.json({
+      success: true,
+      image: result,
+      message: 'Image generated successfully via Cloudflare Workers AI and saved as PENDING for review.',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err as any)?.statusCode || (err as any)?.status || 500;
+    return c.json({ success: false, error: message }, status);
   }
 });
 

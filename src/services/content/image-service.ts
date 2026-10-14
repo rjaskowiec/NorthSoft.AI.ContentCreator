@@ -69,6 +69,73 @@ export function buildSearchHierarchy(topicTitle: string, category: string): Sear
   ];
 }
 
+/**
+ * Builds a bounded list of up to 3 queries for candidate discovery:
+ * 1. User-entered specific description / exact scene
+ * 2. Broader business query (filtered key concepts)
+ * 3. General category default scene
+ */
+export function buildDiscoveryQueryHierarchy(description: string, category: string): string[] {
+  const queries: string[] = [];
+  const cleanDesc = description.trim();
+  const cleanCat = category.trim();
+
+  if (cleanDesc) {
+    queries.push(cleanDesc);
+  }
+
+  // Broader query: extract 2-3 meaningful words and anchor to business scene
+  const meaningfulWords = cleanDesc
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !['with', 'that', 'this', 'from', 'about', 'small', 'modern', 'business', 'office'].includes(w));
+
+  let broader: string;
+  if (meaningfulWords.length >= 2) {
+    broader = `${meaningfulWords.slice(0, 3).join(' ')} business`;
+  } else if (cleanCat.toLowerCase().includes('website')) {
+    broader = 'responsive website computer laptop desk';
+  } else if (cleanCat.toLowerCase().includes('marketing')) {
+    broader = 'business marketing growth team meeting';
+  } else if (cleanCat.toLowerCase().includes('sales')) {
+    broader = 'client payment checkout customer store';
+  } else if (cleanCat.toLowerCase().includes('automation') || cleanCat.toLowerCase().includes('ai')) {
+    broader = 'automation software developer laptop workspace';
+  } else if (cleanCat.toLowerCase().includes('productivity')) {
+    broader = 'entrepreneur desk organized workspace laptop';
+  } else if (cleanCat.toLowerCase().includes('trust') || cleanCat.toLowerCase().includes('customer')) {
+    broader = 'customer service friendly meeting small business';
+  } else if (cleanCat.toLowerCase().includes('local')) {
+    broader = 'local store storefront small business customer';
+  } else {
+    broader = 'modern business workspace laptop coffee';
+  }
+
+  if (!queries.map((q) => q.toLowerCase()).includes(broader.toLowerCase())) {
+    queries.push(broader);
+  }
+
+  // Category fallback scene
+  const categoryScenes: Record<string, string> = {
+    'Websites & Landing Pages': 'laptop computer modern website design workspace',
+    'Marketing & Customer Acquisition': 'small business team marketing strategy meeting office',
+    'Sales & Conversion Process': 'retail store checkout payment customer pos terminal',
+    'AI & Business Automation': 'software code laptop modern office tech',
+    'Small Business Productivity & Ops': 'entrepreneur small business owner laptop desk workspace',
+    'Customer Experience & Trust': 'smiling business owner welcoming customer store',
+    'Local Business & Regional Context': 'local shop entrance retail commercial street',
+    'General': 'contemporary business workspace laptop meeting desk',
+  };
+
+  const catScene = categoryScenes[cleanCat] || 'contemporary business workspace laptop meeting desk';
+  if (!queries.map((q) => q.toLowerCase()).includes(catScene.toLowerCase()) && queries.length < 3) {
+    queries.push(catScene);
+  }
+
+  return queries.slice(0, 3);
+}
+
 const HISTORICAL_AND_MISLEADING_KEYWORDS = [
   'vintage', 'antique', 'black and white', 'b&w', '19th century', 'ancient',
   'historical', 'museum', 'medieval', 'archive', 'century', 'retro', 'victorian',
