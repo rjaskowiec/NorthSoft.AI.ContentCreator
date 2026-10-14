@@ -87,11 +87,50 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
   const imgService = new ImageLibraryService(db);
 
   try {
-    const candidates = await openverse.searchImages(query, 10);
+    const rawCandidates = await openverse.searchImages(query, 10);
+    const { evaluateImageRelevance, filterDiverseCandidates } = await import('../../services/content/image-relevance-evaluator');
+    const { checkEditorialBrandSafety } = await import('../../services/content/editorial-policy');
+
+    // 1. Filter out candidates failing editorial brand safety
+    const safeCandidates = rawCandidates.filter((cand) => {
+      const safety = checkEditorialBrandSafety({
+        title: cand.title,
+        summary: (cand.tags || []).join(' '),
+      });
+      return safety.passed;
+    });
+
+    // 2. Filter through multi-pillar Business Relevance Evaluator
+    const relevantCandidatesWithScore = safeCandidates
+      .map((cand) => {
+        const relevance = evaluateImageRelevance(
+          {
+            title: cand.title,
+            keywords: (cand.tags || []).join(', '),
+            tags: cand.tags,
+            description: cand.title,
+            discoveryQuery: query,
+          },
+          query,
+        );
+        return { cand, relevance };
+      })
+      .filter(({ relevance }) => relevance.qualified);
+
+    // 3. Apply Diversity Filter to avoid series of identical events/sessions
+    const diverseCandidates = filterDiverseCandidates(
+      relevantCandidatesWithScore.map(({ cand, relevance }) => ({
+        ...cand,
+        relevanceScore: relevance.score,
+        relevanceReason: relevance.reasons.join('; '),
+      })),
+      2,
+    );
+
     let addedCount = 0;
     let skippedCount = 0;
 
-    for (const cand of candidates) {
+    for (const cand of diverseCandidates) {
       const existing = cand.url ? await db.prepare('SELECT id FROM curated_images WHERE source_url = ?').bind(cand.url).first() : null;
       if (existing) {
         skippedCount++;
@@ -108,6 +147,9 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
           keywords: (cand.tags || []).join(', '),
           description: `Discovered from Openverse topic: "${query}"`,
           discoveryQuery: query,
+          score: cand.relevanceScore,
+          visualRelevanceScore: cand.relevanceScore ? cand.relevanceScore / 100 : 0.7,
+          visualRelevanceReason: cand.relevanceReason || 'Verified business relevance',
         });
         if (id) {
           addedCount++;
@@ -121,12 +163,12 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
       success: true,
       topic: query,
       category,
-      totalDiscovered: candidates.length,
+      totalDiscovered: rawCandidates.length,
       addedCount,
       skippedCount,
       steps: [
         { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed' },
-        { step: 'search', label: 'Searching image sources (Openverse API)', status: 'completed', details: `Found ${candidates.length} candidate(s)` },
+        { step: 'search', label: 'Searching image sources (Openverse API)', status: 'completed', details: `Found ${rawCandidates.length} candidate(s)` },
         { step: 'metadata', label: 'Evaluating candidate metadata & quality', status: 'completed' },
         { step: 'dedup', label: 'Checking duplicates & reuse window', status: 'completed', details: `${skippedCount} duplicate(s) skipped` },
         { step: 'save', label: 'Saving candidates to Image Library', status: 'completed', details: `${addedCount} new candidate(s) saved as PENDING` },

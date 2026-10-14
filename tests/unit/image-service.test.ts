@@ -85,12 +85,12 @@ describe('OpenverseImageService & Hierarchical Image Discovery', () => {
       const candidate = {
         id: 'img-repeat',
         url: 'https://images.example/repeat.jpg',
-        title: 'Digital Tech Workspace',
+        title: 'Digital Tech Workspace Laptop',
         author: 'Author',
         license: 'CC0',
         licenseUrl: 'https://creativecommons.org/',
         sourceUrl: 'https://images.example/repeat',
-        tags: ['technology'],
+        tags: ['technology', 'laptop', 'website', 'office'],
       };
 
       const recentlyUsed = new Set(['https://images.example/repeat.jpg']);
@@ -103,22 +103,24 @@ describe('OpenverseImageService & Hierarchical Image Discovery', () => {
 
   describe('findBestImage Execution', () => {
     it('returns candidate from openverse search results with match level details', async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            results: [
-              {
-                id: 'img-1',
-                url: 'https://images.example/tech.jpg',
-                title: 'Artificial Intelligence Interface',
-                creator: 'TechAuthor',
-                license: 'cc0',
-                foreign_landing_url: 'https://images.example/landing',
-                tags: [{ name: 'technology' }, { name: 'ai' }],
-              },
-            ],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
+      const fetchMock = vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              results: [
+                {
+                  id: 'img-1',
+                  url: 'https://images.example/tech.jpg',
+                  title: 'Artificial Intelligence Interface Software Laptop',
+                  creator: 'TechAuthor',
+                  license: 'cc0',
+                  foreign_landing_url: 'https://images.example/landing',
+                  tags: [{ name: 'technology' }, { name: 'ai' }, { name: 'software' }, { name: 'laptop' }],
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
         ),
       );
       vi.stubGlobal('fetch', fetchMock);

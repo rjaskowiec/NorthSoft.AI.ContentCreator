@@ -1,4 +1,5 @@
 import { AppError } from '../../core/errors';
+import { evaluateImageRelevance } from './image-relevance-evaluator';
 import type {
   ImageCandidate,
   ImageService,
@@ -20,43 +21,45 @@ export function buildSearchHierarchy(topicTitle: string, category: string): Sear
 
   let level1: string;
   if (cleanTitle.includes('ai') || cleanTitle.includes('chatbot') || cleanTitle.includes('intelligence')) {
-    level1 = 'artificial intelligence technology';
-  } else if (cleanTitle.includes('seo') || cleanTitle.includes('search')) {
-    level1 = 'search engine optimization';
+    level1 = 'artificial intelligence software computer laptop';
+  } else if (cleanTitle.includes('seo') || cleanTitle.includes('search') || cleanTitle.includes('google')) {
+    level1 = 'website search laptop desk';
   } else if (cleanTitle.includes('speed') || cleanTitle.includes('performance')) {
-    level1 = 'fast website speed';
+    level1 = 'person using smartphone responsive website';
+  } else if (cleanTitle.includes('booking') || cleanTitle.includes('appointment') || cleanTitle.includes('calendar')) {
+    level1 = 'customer booking appointment salon clinic desk';
   } else if (cleanTitle.includes('security') || cleanTitle.includes('cyber')) {
-    level1 = 'cybersecurity computer network';
+    level1 = 'secure computer laptop workspace';
   } else if (cleanTitle.includes('analytics') || cleanTitle.includes('data')) {
-    level1 = 'data analytics chart dashboard';
+    level1 = 'business analytics dashboard laptop';
   } else if (cleanTitle.includes('cloud') || cleanTitle.includes('infrastructure')) {
-    level1 = 'cloud server infrastructure';
-  } else if (cleanTitle.includes('e-commerce') || cleanTitle.includes('checkout')) {
-    level1 = 'ecommerce online shopping';
+    level1 = 'cloud server computer technology';
+  } else if (cleanTitle.includes('e-commerce') || cleanTitle.includes('checkout') || cleanTitle.includes('store') || cleanTitle.includes('shop')) {
+    level1 = 'retail store counter checkout pos terminal';
   } else if (cleanTitle.includes('mobile') || cleanTitle.includes('indexing')) {
-    level1 = 'mobile phone website';
-  } else if (cleanTitle.includes('social media')) {
-    level1 = 'social media marketing';
+    level1 = 'person browsing website on smartphone screen';
+  } else if (cleanTitle.includes('social media') || cleanTitle.includes('marketing')) {
+    level1 = 'small business marketing laptop office';
   } else {
     const words = cleanTitle
       .replace(/[^a-z0-9\s]/g, '')
       .split(/\s+/)
       .filter((w) => w.length > 3 && !['ways', 'your', 'with', 'that', 'this', 'from', 'about', 'how'].includes(w));
-    level1 = words.slice(0, 3).join(' ') || 'web development';
+    level1 = words.slice(0, 3).join(' ') || 'small business laptop office';
   }
 
-  let level2 = 'web development technology';
-  if (cleanCat.includes('ai') || cleanCat.includes('tech')) level2 = 'technology digital interface';
-  else if (cleanCat.includes('seo') || cleanCat.includes('search')) level2 = 'digital search optimization';
-  else if (cleanCat.includes('design') || cleanCat.includes('ui') || cleanCat.includes('branding')) level2 = 'web design UI';
-  else if (cleanCat.includes('security') || cleanCat.includes('it')) level2 = 'computer security';
-  else if (cleanCat.includes('marketing') || cleanCat.includes('content') || cleanCat.includes('email')) level2 = 'digital marketing business';
-  else if (cleanCat.includes('analytics')) level2 = 'business analytics dashboard';
-  else if (cleanCat.includes('cloud') || cleanCat.includes('hosting')) level2 = 'server technology';
-  else if (cleanCat.includes('e-commerce')) level2 = 'online store checkout';
+  let level2 = 'small business website office';
+  if (cleanCat.includes('ai') || cleanCat.includes('tech')) level2 = 'technology workspace laptop';
+  else if (cleanCat.includes('seo') || cleanCat.includes('search')) level2 = 'business website optimization laptop';
+  else if (cleanCat.includes('design') || cleanCat.includes('ui') || cleanCat.includes('branding')) level2 = 'web design UI screen laptop';
+  else if (cleanCat.includes('security') || cleanCat.includes('it')) level2 = 'computer security workspace';
+  else if (cleanCat.includes('marketing') || cleanCat.includes('content') || cleanCat.includes('email')) level2 = 'small business marketing desk';
+  else if (cleanCat.includes('analytics')) level2 = 'business dashboard screen office';
+  else if (cleanCat.includes('cloud') || cleanCat.includes('hosting')) level2 = 'server technology workspace';
+  else if (cleanCat.includes('e-commerce') || cleanCat.includes('landing')) level2 = 'retail shop checkout counter laptop';
 
-  const level3 = 'laptop computer workspace office';
-  const level4 = 'technology business workspace';
+  const level3 = 'small business owner desk laptop workspace';
+  const level4 = 'contemporary office customer service laptop';
 
   return [
     { level: 'LEVEL_1_SPECIFIC', query: level1 },
@@ -95,7 +98,26 @@ export function scoreImageCandidate(
     }
   }
 
-  let score = 40; // Base score for legal openverse result
+  // Multi-pillar Business Relevance & Disqualification Verification
+  const relEval = evaluateImageRelevance(
+    {
+      title: candidate.title,
+      tags: candidate.tags,
+      keywords: (candidate.tags || []).join(', '),
+      description: candidate.title,
+    },
+    `${topicTitle} ${category}`,
+  );
+
+  if (!relEval.qualified) {
+    return {
+      score: -100,
+      safe: false,
+      reason: `Business relevance rejection: ${relEval.reasons.join('; ')}`,
+    };
+  }
+
+  let score = 40 + Math.round(relEval.score * 0.4); // Base score for legal openverse result + relevance boost
 
   if (recentlyUsedUrls && recentlyUsedUrls.has(candidate.url)) {
     score -= 30; // Diversity penalty
@@ -134,8 +156,8 @@ export function scoreImageCandidate(
 
   return {
     score,
-    safe: score >= 25,
-    reason: `Scored ${score} based on visual & contemporary semantics and license ${candidate.license}`,
+    safe: score >= 40,
+    reason: `Scored ${score} based on verified business relevance and license ${candidate.license}`,
   };
 }
 

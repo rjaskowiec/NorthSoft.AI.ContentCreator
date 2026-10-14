@@ -336,15 +336,43 @@ export class ContentPlannerService {
         // Verify image search query against brand safety standards before querying Openverse
         const imgSafety = checkEditorialBrandSafety({ imageQuery: query });
         if (imgSafety.passed) {
-          const candidates = await openverseService.searchImages(query, 5);
-          for (const cand of candidates) {
-            // Check candidate title and tags against brand safety before saving
+          const rawCandidates = await openverseService.searchImages(query, 5);
+          const { evaluateImageRelevance, filterDiverseCandidates } = await import('./image-relevance-evaluator');
+
+          const safeCandidates = rawCandidates.filter((cand) => {
             const candSafety = checkEditorialBrandSafety({
               title: cand.title,
               summary: (cand.tags || []).join(' '),
             });
-            if (!candSafety.passed) continue;
+            return candSafety.passed;
+          });
 
+          const relevantCandidates = safeCandidates
+            .map((cand) => {
+              const relevance = evaluateImageRelevance(
+                {
+                  title: cand.title,
+                  keywords: (cand.tags || []).join(', '),
+                  tags: cand.tags,
+                  description: cand.title,
+                  discoveryQuery: query,
+                },
+                query,
+              );
+              return { cand, relevance };
+            })
+            .filter(({ relevance }) => relevance.qualified);
+
+          const diverseCandidates = filterDiverseCandidates(
+            relevantCandidates.map(({ cand, relevance }) => ({
+              ...cand,
+              relevanceScore: relevance.score,
+              relevanceReason: relevance.reasons.join('; '),
+            })),
+            2,
+          );
+
+          for (const cand of diverseCandidates) {
             await imgLibrary.addCandidate({
               title: cand.title,
               sourceUrl: cand.url,
@@ -357,6 +385,9 @@ export class ContentPlannerService {
               keywords: (cand.tags || []).join(', '),
               description: `Auto-discovered for topic: ${topicRow.title}`,
               discoveryQuery: query,
+              score: cand.relevanceScore,
+              visualRelevanceScore: cand.relevanceScore ? cand.relevanceScore / 100 : 0.7,
+              visualRelevanceReason: cand.relevanceReason || 'Verified business relevance',
             });
           }
         }
