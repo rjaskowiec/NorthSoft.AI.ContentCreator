@@ -232,7 +232,7 @@ export class OpenverseImageService implements ImageService {
   constructor(private readonly env: Env) {}
 
   async searchImages(query: string, limit = 10): Promise<ImageCandidate[]> {
-    const url = new URL('https://api.openverse.engineering/v1/images/');
+    const url = new URL('https://api.openverse.org/v1/images/');
     url.searchParams.set('q', query);
     url.searchParams.set('license', 'cc0,pdm,by,by-sa');
     url.searchParams.set('page_size', limit.toString());

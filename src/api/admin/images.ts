@@ -153,12 +153,25 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
     let addedCount = 0;
     let skippedCount = 0;
 
+    const { validateImageUrl } = await import('../../services/publishing/image-validator');
+
     for (const cand of diverseCandidates) {
       const existing = cand.url ? await db.prepare('SELECT id FROM curated_images WHERE source_url = ?').bind(cand.url).first() : null;
       if (existing) {
         skippedCount++;
-      } else {
-        const id = await imgService.addCandidate({
+        continue;
+      }
+
+      // Verify remote image is genuinely reachable before saving into Image Library
+      if (cand.url) {
+        const urlCheck = await validateImageUrl(cand.url, 4000);
+        if (!urlCheck.valid) {
+          skippedCount++;
+          continue;
+        }
+      }
+
+      const id = await imgService.addCandidate({
           title: cand.title,
           sourceUrl: cand.url,
           originalPageUrl: cand.sourceUrl,
@@ -179,7 +192,6 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
         } else {
           skippedCount++;
         }
-      }
     }
 
     let aiGeneratedCount = 0;

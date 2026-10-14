@@ -1763,6 +1763,15 @@ export function getAdminCss(): string {
       height: 150px;
       object-fit: cover;
       background: #090d16;
+      position: relative;
+    }
+    .image-card-preview.img-error {
+      background: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 0.75rem;
     }
     .image-card-body {
       padding: 0.85rem;

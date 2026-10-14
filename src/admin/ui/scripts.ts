@@ -3998,12 +3998,25 @@ export function getAdminScripts(): string {
       if (modal) modal.classList.remove('active');
     }
 
+    const FALLBACK_THUMBNAIL_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="150" viewBox="0 0 300 150"><rect width="100%" height="100%" fill="#111827"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="12">Image not accessible (404)</text></svg>');
+    const FALLBACK_LIGHTBOX_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300"><rect width="100%" height="100%" fill="#111827"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="16">Remote source image returned 404 Not Found</text></svg>');
+
+    function handleImagePreviewError(img) {
+      if (!img) return;
+      img.onerror = null;
+      img.src = FALLBACK_THUMBNAIL_SVG;
+    }
+
     function openImageLightboxModal(imageUrl, title) {
       if (!imageUrl) return;
       const modal = document.getElementById('image-lightbox-modal');
       const imgEl = document.getElementById('image-lightbox-img');
       const titleEl = document.getElementById('image-lightbox-title');
       if (imgEl) {
+        imgEl.onerror = function() {
+          this.onerror = null;
+          this.src = FALLBACK_LIGHTBOX_SVG;
+        };
         imgEl.src = imageUrl;
         imgEl.alt = title || 'Image preview';
       }
@@ -5624,7 +5637,7 @@ export function getAdminScripts(): string {
             '<div style="position:relative;">' +
               '<input type="checkbox" class="img-select-checkbox" data-id="' + imgId + '" ' + isChecked + ' onchange="updateImageSelectionState()" style="position:absolute; top:8px; left:8px; z-index:2;" />' +
               '<button type="button" class="img-preview-btn" style="width:100%;display:block;" onclick="openImageLightboxModal(&quot;' + escapeHtml(sourceUrl) + '&quot;, &quot;' + escapeHtml(title) + '&quot;)" aria-label="Preview image: ' + escapeHtml(title) + '">' +
-                '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" class="image-card-preview" loading="lazy" decoding="async" />' +
+                '<img src="' + escapeHtml(sourceUrl) + '" alt="' + title + '" class="image-card-preview" loading="lazy" decoding="async" onerror="handleImagePreviewError(this)" />' +
               '</button>' +
               '<span class="status-badge ' + statusBadgeClass + '" style="position:absolute; top:8px; right:8px; font-size:0.65rem;">' + status + '</span>' +
             '</div>' +
