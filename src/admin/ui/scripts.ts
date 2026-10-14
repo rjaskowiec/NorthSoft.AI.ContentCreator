@@ -3780,41 +3780,50 @@ export function getAdminScripts(): string {
 
     async function loadPipelineData() {
       try {
-        const res = await guardedFetch('/api/admin/pipeline/scheduler');
+        const res = await guardedFetch('/api/admin/pipeline/status');
         if (res.ok) {
           const data = await res.json();
-          const cfg = data.config || {};
+          const status = data.status || {};
+          const cfg = status.config || {};
+          const counts = status.counts || {};
+          const win = status.window || {};
+
           const masterSwitch = document.getElementById('sched-master-switch');
-          const freqSelect = document.getElementById('sched-frequency');
-          const timeInput = document.getElementById('sched-time');
-          const tzInput = document.getElementById('sched-timezone');
-          const stgDisc = document.getElementById('sched-stage-discovery');
-          const stgGen = document.getElementById('sched-stage-generation');
-          const stgEval = document.getElementById('sched-stage-evaluation');
-          const stgPub = document.getElementById('sched-stage-publishing');
+          const minTopicsInput = document.getElementById('sched-min-topics');
+          const targetCoverageInput = document.getElementById('sched-target-coverage');
+          const maxPostsInput = document.getElementById('sched-max-posts');
           const statusBadge = document.getElementById('scheduler-status-badge');
 
+          const statTopics = document.getElementById('pipeline-stat-topics');
+          const statImages = document.getElementById('pipeline-stat-images');
+          const statReady = document.getElementById('pipeline-stat-ready');
+          const statCoverage = document.getElementById('pipeline-stat-coverage');
+          const winStatus = document.getElementById('pipeline-window-status');
+
           if (masterSwitch) masterSwitch.value = cfg.enabled ? '1' : '0';
-          if (freqSelect) freqSelect.value = safeStr(cfg.frequency, 'daily');
-          if (timeInput) timeInput.value = safeStr(cfg.publicationTime, '09:00');
-          if (tzInput) tzInput.value = safeStr(cfg.timezone, 'UTC');
-          if (stgDisc) stgDisc.checked = cfg.discoveryEnabled !== false;
-          if (stgGen) stgGen.checked = cfg.generationEnabled !== false;
-          if (stgEval) stgEval.checked = cfg.evaluationEnabled !== false;
-          if (stgPub) stgPub.checked = cfg.publishingEnabled !== false;
+          if (minTopicsInput) minTopicsInput.value = cfg.minTopicBacklog ?? 5;
+          if (targetCoverageInput) targetCoverageInput.value = cfg.targetCoverageDays ?? 14;
+          if (maxPostsInput) maxPostsInput.value = cfg.maxPostsPerNight ?? 3;
+
+          if (statTopics) statTopics.textContent = counts.availableTopics ?? 0;
+          if (statImages) statImages.textContent = counts.postsWithoutImage ?? 0;
+          if (statReady) statReady.textContent = counts.readyToSchedule ?? 0;
+          if (statCoverage) statCoverage.textContent = (counts.coverageDays ?? 0) + ' days';
+          if (winStatus) {
+            const inWin = Boolean(win.inWindow);
+            winStatus.innerHTML = '<span style="color:' + (inWin ? 'var(--accent-emerald)' : 'var(--text-muted)') + ';">' + escapeHtml(win.label || '20:00–23:45 UTC') + (inWin ? ' (ACTIVE NOW)' : ' (Closed)') + '</span>';
+          }
 
           if (statusBadge) {
             if (cfg.enabled) {
-              statusBadge.innerHTML = '<span class="status-badge status-healthy">SCHEDULER ON (ACTIVE)</span>';
+              statusBadge.innerHTML = '<span class="status-badge status-healthy">AUTOMATION ON</span>';
             } else {
-              statusBadge.innerHTML = '<span class="status-badge status-disabled">SCHEDULER OFF</span>';
+              statusBadge.innerHTML = '<span class="status-badge status-disabled">AUTOMATION OFF</span>';
             }
           }
-        } else {
-          console.error('Failed to fetch pipeline scheduler config:', res.status);
         }
       } catch (err) {
-        console.error('Failed to load scheduler config:', err);
+        console.error('Failed to load pipeline status:', err);
       }
 
       try {
@@ -3824,7 +3833,7 @@ export function getAdminScripts(): string {
           const data = await res.json();
           const runs = (data && (data.history || data.runs)) || [];
           if (!Array.isArray(runs) || runs.length === 0) {
-            historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No pipeline execution runs logged yet. Click <strong>Run Full Pipeline Now</strong> above to start.</td></tr>';
+            historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No pipeline execution runs logged yet.</td></tr>';
           } else {
             historyBody.innerHTML = runs.map(r => {
               if (!r) return '';
@@ -3854,136 +3863,76 @@ export function getAdminScripts(): string {
               '</tr>';
             }).join('');
           }
-        } else if (historyBody) {
-          historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load pipeline execution history (HTTP ' + res.status + ').</td></tr>';
         }
       } catch (err) {
         console.error('Failed to load pipeline execution history:', err);
       }
     }
 
-    async function runDiscoveryNow() {
-      const btn = document.getElementById('stage-discovery-btn');
-      const taskId = window.TaskQueue.add('Topic Discovery', { type: 'manual', detail: 'Searching for relevant business topics...' });
-      window.TaskQueue.start(taskId, 'Searching for relevant business topics...');
-      if (btn) { btn.disabled = true; btn.textContent = 'Finding topics...'; }
+    async function runStageNow(stageName) {
+      const btnIdMap = {
+        topics: 'stage-discovery-btn',
+        posts: 'stage-generation-btn',
+        images: 'stage-images-btn',
+        scheduling: 'stage-scheduling-btn'
+      };
+      const btn = document.getElementById(btnIdMap[stageName] || '');
+      const originalText = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Running...'; }
+
+      const taskId = window.TaskQueue.add('Pipeline: ' + stageName.toUpperCase(), { type: 'manual', detail: 'Running ' + stageName + ' stage...' });
+      window.TaskQueue.start(taskId, 'Executing ' + stageName + ' stage...');
 
       try {
-        const res = await fetch('/api/admin/pipeline/discovery', {
+        const res = await fetch('/api/admin/pipeline/stage/' + encodeURIComponent(stageName), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
         });
         const data = await res.json();
 
         if (res.ok && data.success) {
-          const r = data.result || {};
-          const count = r.newProposalsCount || (Array.isArray(r.proposals) ? r.proposals.length : 0);
-          window.TaskQueue.complete(taskId, 'Topic discovery completed! Found ' + count + ' proposals.');
+          const summary = data.result?.summary || 'Stage completed successfully.';
+          window.TaskQueue.complete(taskId, summary);
         } else {
-          window.TaskQueue.fail(taskId, 'Discovery Failed', 'Could not retrieve new topics.');
+          window.TaskQueue.fail(taskId, 'Stage Failed', safeStr(data.error, 'Operation failed.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while running Topic Discovery.');
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while executing stage.');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Find topics'; }
+        if (btn) { btn.disabled = false; btn.textContent = originalText; }
         loadPipelineData();
       }
     }
 
-    async function runPostGenerationNow() {
-      const btn = document.getElementById('stage-generation-btn');
-      const taskId = window.TaskQueue.add('Draft Generation', { type: 'manual', detail: 'Generating next post draft and evaluating quality...' });
-      window.TaskQueue.start(taskId, 'Generating next post draft and evaluating quality...');
-      if (btn) { btn.disabled = true; btn.textContent = 'Generating post...'; }
-
-      try {
-        const res = await fetch('/api/admin/pipeline/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
-        });
-        const data = await res.json();
-        const r = data.result || {};
-
-        if (res.ok && data.success && r.finalDecision === 'PASS') {
-          const draftTitle = safeStr(r.title, 'Untitled Draft');
-          window.TaskQueue.complete(taskId, 'Post draft created: "' + draftTitle + '"');
-        } else {
-          const reason = r.errorMessage || (r.finalDecision === 'REJECT' ? 'Draft did not pass quality threshold.' : 'Post generation failed.');
-          window.TaskQueue.fail(taskId, 'Generation Issue', reason);
-        }
-      } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while generating post.');
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Generate post'; }
-        loadPipelineData();
-      }
-    }
-
-    async function runPublishNow() {
-      const btn = document.getElementById('stage-publishing-btn');
-      const taskId = window.TaskQueue.add('Post Publication', { type: 'manual', detail: 'Publishing approved draft to Facebook...' });
-      window.TaskQueue.start(taskId, 'Publishing approved draft to Facebook...');
-      if (btn) { btn.disabled = true; btn.textContent = 'Publishing...'; }
-
-      try {
-        const postsRes = await fetch('/api/admin/content');
-        const postsData = await postsRes.json();
-        const readyPost = (Array.isArray(postsData.posts) ? postsData.posts : []).find(p => p && (p.quality_decision === 'PASS' || p.status === 'approved' || p.status === 'draft'));
-
-        if (!readyPost) {
-          window.TaskQueue.fail(taskId, 'No Draft Available', 'No approved posts available to publish.');
-          return;
-        }
-
-        const res = await fetch('/api/admin/pipeline/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ postId: readyPost.id })
-        });
-        const data = await res.json();
-        const r = data.result || {};
-
-        if (res.ok && data.success && r.success) {
-          window.TaskQueue.complete(taskId, 'Post published to Facebook successfully.');
-        } else {
-          window.TaskQueue.fail(taskId, 'Publication Failed', 'Please verify Facebook connection.');
-        }
-      } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while publishing post.');
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Publish now'; }
-        loadPipelineData();
-      }
-    }
-
-    async function runFullPipelineNow() {
+    async function runAllPipelineStagesNow() {
       const btn = document.getElementById('run-full-pipeline-btn');
-      const taskId = window.TaskQueue.add('Full Pipeline Run', { type: 'manual', detail: 'Executing all automation stages end-to-end...' });
-      window.TaskQueue.start(taskId, 'Executing all automation stages end-to-end...');
-      if (btn) { btn.disabled = true; btn.textContent = 'Executing pipeline...'; }
+      const taskId = window.TaskQueue.add('Pipeline Run All', { type: 'manual', detail: 'Running needed stages sequentially...' });
+      window.TaskQueue.start(taskId, 'Executing needed pipeline stages...');
+      if (btn) { btn.disabled = true; btn.textContent = 'Running stages...'; }
 
       try {
-        const res = await fetch('/api/admin/pipeline/run-full', {
+        const res = await fetch('/api/admin/pipeline/run-all', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken }
         });
         const data = await res.json();
-        const r = data.result || {};
 
         if (res.status === 409 || data.code === 'PIPELINE_ALREADY_RUNNING') {
           window.TaskQueue.fail(taskId, 'Already Running', 'Pipeline is currently executing.');
           return;
         }
 
-        if (res.ok && data.success && r.status === 'SUCCESS') {
-          window.TaskQueue.complete(taskId, 'Full pipeline finished successfully.');
+        if (res.ok && data.success) {
+          const stepsSummary = (data.steps || []).map(s => s.summary).join(' | ');
+          window.TaskQueue.complete(taskId, 'All stages finished: ' + stepsSummary);
         } else {
-          window.TaskQueue.fail(taskId, 'Pipeline Incomplete', 'Pipeline run finished with issues.');
+          window.TaskQueue.fail(taskId, 'Pipeline Issues', safeStr(data.error, 'Some stages failed or were skipped.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while executing pipeline.');
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error while running stages.');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Run full pipeline'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Run all stages now'; }
+        loadPipelineData();
       }
     }
 
@@ -3993,27 +3942,19 @@ export function getAdminScripts(): string {
       if (btn) { btn.disabled = true; btn.textContent = 'Saving Settings...'; }
 
       const masterSwitch = document.getElementById('sched-master-switch');
-      const freqSelect = document.getElementById('sched-frequency');
-      const timeInput = document.getElementById('sched-time');
-      const tzInput = document.getElementById('sched-timezone');
-      const stgDisc = document.getElementById('sched-stage-discovery');
-      const stgGen = document.getElementById('sched-stage-generation');
-      const stgEval = document.getElementById('sched-stage-evaluation');
-      const stgPub = document.getElementById('sched-stage-publishing');
+      const minTopics = document.getElementById('sched-min-topics');
+      const targetCov = document.getElementById('sched-target-coverage');
+      const maxPosts = document.getElementById('sched-max-posts');
 
       const body = {
         enabled: masterSwitch ? masterSwitch.value === '1' : false,
-        frequency: freqSelect ? safeStr(freqSelect.value, 'daily') : 'daily',
-        publicationTime: timeInput ? safeStr(timeInput.value, '09:00') : '09:00',
-        timezone: tzInput ? safeStr(tzInput.value, 'UTC') : 'UTC',
-        discoveryEnabled: stgDisc ? stgDisc.checked : true,
-        generationEnabled: stgGen ? stgGen.checked : true,
-        evaluationEnabled: stgEval ? stgEval.checked : true,
-        publishingEnabled: stgPub ? stgPub.checked : true,
+        minTopicBacklog: minTopics ? parseInt(minTopics.value, 10) : 5,
+        targetCoverageDays: targetCov ? parseInt(targetCov.value, 10) : 14,
+        maxPostsPerNight: maxPosts ? parseInt(maxPosts.value, 10) : 3,
       };
 
-      const taskId = window.TaskQueue.add('Pipeline Scheduler', { type: 'manual', detail: 'Saving automation schedule settings...' });
-      window.TaskQueue.start(taskId, 'Saving automation schedule settings...');
+      const taskId = window.TaskQueue.add('Pipeline Settings', { type: 'manual', detail: 'Saving automation settings...' });
+      window.TaskQueue.start(taskId, 'Saving automation settings...');
 
       try {
         const res = await fetch('/api/admin/pipeline/scheduler', {
@@ -4025,17 +3966,23 @@ export function getAdminScripts(): string {
 
         if (res.ok && data.success) {
           const st = data.config?.enabled ? 'Active (ON)' : 'Disabled (OFF)';
-          window.TaskQueue.complete(taskId, 'Scheduler settings saved. Status: ' + st);
+          window.TaskQueue.complete(taskId, 'Pipeline settings saved. Status: ' + st);
         } else {
-          window.TaskQueue.fail(taskId, 'Save Failed', safeStr(data.error, 'Could not save scheduler settings.'));
+          window.TaskQueue.fail(taskId, 'Save Failed', safeStr(data.error, 'Could not save pipeline settings.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error saving scheduler settings.');
+        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error saving pipeline settings.');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Save Settings'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Save settings'; }
         loadPipelineData();
       }
     }
+
+    // Backwards-compatible aliases for test suites and scripts
+    async function runDiscoveryNow() { return runStageNow('topics'); }
+    async function runPostGenerationNow() { return runStageNow('posts'); }
+    async function runPublishNow() { return runStageNow('scheduling'); }
+    async function runFullPipelineNow() { return runAllPipelineStagesNow(); }
 
     // ======================================================================
     // Modal Overlays & Calendar Grid Functions
@@ -5656,6 +5603,15 @@ export function getAdminScripts(): string {
           usageHtml = '<span style="color:var(--accent-blue);">Never used</span>';
         }
 
+        const legalStatus = safeUpper(img.legal_verification_status || 'UNVERIFIED', 'UNVERIFIED');
+        const legalBadge = legalStatus === 'VERIFIED'
+          ? '<span style="color:var(--accent-emerald); font-size:0.7rem; font-weight:600;">&#10003; Commercial OK</span>'
+          : legalStatus === 'REJECTED'
+            ? '<span style="color:var(--accent-rose); font-size:0.7rem; font-weight:600;">&#10007; Non-Commercial</span>'
+            : '<span style="color:var(--accent-amber); font-size:0.7rem;">Unverified Lic</span>';
+
+        const sourceLabel = img.source_type || (img.source_url ? 'Web' : 'Upload');
+
         return '<div class="image-card" id="img-card-' + imgId + '">' +
             '<div style="position:relative;">' +
               '<input type="checkbox" class="img-select-checkbox" data-id="' + imgId + '" ' + isChecked + ' onchange="updateImageSelectionState()" style="position:absolute; top:8px; left:8px; z-index:2;" />' +
@@ -5666,13 +5622,17 @@ export function getAdminScripts(): string {
             '</div>' +
             '<div class="image-card-body">' +
               '<div class="image-card-title" title="' + title + '">' + title + '</div>' +
-              '<div class="image-card-meta">' +
+              '<div class="image-card-meta" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.25rem;">' +
                 '<span style="background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px; font-weight:600;">' + category + '</span>' +
-                '<span style="color:var(--text-muted);">By ' + author + ' (' + license + ')</span>' +
+                legalBadge +
               '</div>' +
-              '<div style="font-size:0.75rem; color:var(--text-subtle); max-height:36px; overflow:hidden; text-overflow:ellipsis;">' +
-                keywords +
+              '<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">' +
+                '<span><strong>Author:</strong> ' + author + '</span> &bull; <span><strong>Source:</strong> ' + escapeHtml(sourceLabel) + '</span>' +
               '</div>' +
+              '<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.1rem;">' +
+                '<span><strong>License:</strong> ' + license + (img.requires_attribution ? ' <em style="color:var(--accent-amber);">(Attribution Req.)</em>' : '') + '</span>' +
+              '</div>' +
+              (img.visual_relevance_reason ? '<div style="font-size:0.7rem; color:var(--text-subtle); margin-top:0.2rem; font-style:italic;">Match: ' + escapeHtml(img.visual_relevance_reason) + '</div>' : '') +
               '<div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">' +
                 usageHtml +
                 (img.reserved_post_id ? ' &bull; <span style="color:var(--accent-amber);">Reserved</span>' : '') +

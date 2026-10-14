@@ -14,7 +14,7 @@
 
 import { getAIProvider } from '../../ai/factory';
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
-import { isAiExecutionPermitted } from '../../core/ai-window-policy';
+import { AI_BACKGROUND_WINDOW_LABEL, isAiExecutionPermitted } from '../../core/ai-window-policy';
 import { QuotaManager } from '../ai/quota-manager';
 import { ResearchService } from '../research/research-service';
 import { ContentPlannerService } from './content-planner-service';
@@ -32,6 +32,10 @@ export interface OrchestrationResult {
   durationMs: number;
 }
 
+/**
+ * @deprecated Cron automation now runs through PipelineOrchestratorService.runAutomationTick().
+ * Kept only for the legacy POST /api/admin/pipeline/run endpoint.
+ */
 export class ContentOrchestrator {
   private quotaManager: QuotaManager;
   private auditLogger: IAuditLogger;
@@ -72,15 +76,15 @@ export class ContentOrchestrator {
       }
     }
 
-    // 0b. AI Background Execution Window Policy Check: Automated cron runs are restricted to 18:00–23:30 UTC
+    // 0b. AI Background Execution Window Policy Check: Automated cron runs are restricted to the nightly AI window
     if (!isAiExecutionPermitted(triggerType)) {
-      const deferMsg = 'Outside AI background execution window (18:00–23:30 UTC). Job deferred until next evening window.';
+      const deferMsg = `Outside AI background execution window (${AI_BACKGROUND_WINDOW_LABEL}). Job deferred until next nightly window.`;
       await this.auditLogger.log({
         eventType: 'ORCHESTRATOR_RUN_DEFERRED',
         entityType: 'orchestrator_run',
         entityId: runId,
         actor: triggerType === 'manual' ? 'admin' : 'system',
-        details: { reason: deferMsg, window: '18:00-23:30 UTC' },
+        details: { reason: deferMsg, window: AI_BACKGROUND_WINDOW_LABEL },
       });
 
       return {

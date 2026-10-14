@@ -24,6 +24,9 @@ class MockD1Database {
             }
             if (sql.includes('FROM curated_images WHERE id =')) {
               const imgId = args[0];
+              if (this.store.has(`curated_image_${imgId}`)) {
+                return this.store.get(`curated_image_${imgId}`) as unknown as T;
+              }
               if (imgId === 'nonexistent-img') return null;
               if (imgId === 'rejected-img') {
                 return { id: 'rejected-img', title: 'Rejected', status: 'REJECTED', source_url: 'https://example.com/rejected.jpg' } as unknown as T;
@@ -189,13 +192,38 @@ describe('PublicationService — changePublicationImage', () => {
     expect(res.error).toContain('could not be changed on Facebook');
   });
 
-  it('should resolve publication record when facebook_post_id is passed as ID', async () => {
-    db.store.set('post_image_post-published', 'img-A');
-    const pubService = new PublicationService(db as any, mockPublisher);
-    const res = await pubService.changePublicationImage('107455558114139_1444523667778333', 'img-B');
+  it('should reject change if selected image is reserved by another post', async () => {
+    db.store.set('curated_image_img-reserved', {
+      id: 'img-reserved',
+      title: 'Reserved Image',
+      status: 'APPROVED',
+      reserved_post_id: 'other-post-999',
+      source_url: 'https://example.com/res.jpg',
+    });
 
-    expect(res.success).toBe(true);
-    expect(res.isPublished).toBe(true);
-    expect(mockPublisher.updatePostImage).toHaveBeenCalled();
+    const pubService = new PublicationService(db as any, mockPublisher);
+    const res = await pubService.changePublicationImage('pub-draft', 'img-reserved');
+
+    expect(res.success).toBe(false);
+    expect(res.code).toBe('IMAGE_RESERVED');
+    expect(res.error).toContain('already reserved by post other-post-999');
+  });
+
+  it('should reject change if selected image was published within last 90 days', async () => {
+    const sixtyDaysAgoIso = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    db.store.set('curated_image_img-recent', {
+      id: 'img-recent',
+      title: 'Recently Used Image',
+      status: 'APPROVED',
+      last_used_at: sixtyDaysAgoIso,
+      source_url: 'https://example.com/recent.jpg',
+    });
+
+    const pubService = new PublicationService(db as any, mockPublisher);
+    const res = await pubService.changePublicationImage('pub-draft', 'img-recent');
+
+    expect(res.success).toBe(false);
+    expect(res.code).toBe('IMAGE_RECENTLY_USED');
+    expect(res.error).toContain('within the last 90 days');
   });
 });

@@ -170,18 +170,16 @@ contentRouter.post('/content/posts/:id/image/search', csrfProtection, async (c) 
       score: found.score,
     });
 
-    const targetPostId = postId || '';
-    await imgLib.updateMetadata(curatedImageId, { status: 'APPROVED' });
-    await imgLib.reserveImageForDraft(curatedImageId, targetPostId, true);
-
     return c.json({
       success: true,
+      pendingCandidate: true,
       imageId: curatedImageId,
       imageUrl: candidate.url,
       author: candidate.author,
       license: candidate.license,
       matchLevel: found.level,
       score: found.score,
+      message: 'Candidate image added to Image Library as PENDING. Please review and approve it manually before scheduling.',
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

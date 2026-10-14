@@ -61,10 +61,9 @@ describe('PipelineOrchestratorService Unit Tests', () => {
 
     const config = await service.getSchedulerConfig();
     expect(config.enabled).toBe(false);
-    expect(config.discoveryEnabled).toBe(true);
-    expect(config.frequency).toBe('daily');
-    expect(config.publicationTime).toBe('09:00');
-    expect(config.timezone).toBe('UTC');
+    expect(config.minTopicBacklog).toBe(5);
+    expect(config.targetCoverageDays).toBe(14);
+    expect(config.maxPostsPerNight).toBe(3);
   });
 
   it('updateSchedulerConfig persists and returns updated configuration', async () => {
@@ -78,16 +77,12 @@ describe('PipelineOrchestratorService Unit Tests', () => {
       }
       if (sql.includes('INSERT INTO pipeline_scheduler_config')) {
         return {
-          bind: vi.fn().mockImplementation((enabled, disc, gen, evalStage, pub, freq, time, tz, updated) => {
+          bind: vi.fn().mockImplementation((enabled, minTopics, targetCov, maxPosts, updated) => {
             storedConfig = {
               enabled,
-              discovery_enabled: disc,
-              generation_enabled: gen,
-              evaluation_enabled: evalStage,
-              publishing_enabled: pub,
-              frequency: freq,
-              publication_time: time,
-              timezone: tz,
+              min_topic_backlog: minTopics,
+              target_coverage_days: targetCov,
+              max_posts_per_night: maxPosts,
               updated_at: updated,
             };
             return {
@@ -116,12 +111,14 @@ describe('PipelineOrchestratorService Unit Tests', () => {
 
     const updated = await service.updateSchedulerConfig({
       enabled: true,
-      frequency: '6h',
-      publicationTime: '12:00',
+      minTopicBacklog: 8,
+      targetCoverageDays: 21,
+      maxPostsPerNight: 2,
     });
 
     expect(updated.enabled).toBe(true);
-    expect(updated.frequency).toBe('6h');
-    expect(updated.publicationTime).toBe('12:00');
+    expect(updated.minTopicBacklog).toBe(8);
+    expect(updated.targetCoverageDays).toBe(21);
+    expect(updated.maxPostsPerNight).toBe(2);
   });
 });

@@ -1,24 +1,42 @@
 /**
- * NorthSoft.AI.ContentCreator — Decoupled Pipeline Orchestrator Service
+ * NorthSoft.AI.ContentCreator — Pipeline Orchestrator Service
  *
- * Core engine connecting Stage 1 (Discovery), Stage 2 (Generation & Quality),
- * Stage 3 (Facebook Publishing), 1-Click Full Pipeline Execution, and Automatic Scheduler.
+ * Single control point for the content pipeline. Four stages, each runnable manually:
+ *   1. Topics      — AI research / content discovery (ResearchService)
+ *   2. Posts       — AI post generation + quality gates (ContentPlannerService)
+ *   3. Images      — image assignment: approved library first, then Openverse fallback
+ *   4. Scheduling  — publication slots chosen by IntelligentSchedulingService (no AI)
  *
- * Enforces:
- *  - Single execution lock / idempotency protection (PIPELINE_ALREADY_RUNNING)
- *  - Strict separation between Cloudflare Verified Neurons and local estimated tokens
- *  - Stage 1 random inspiration / NO_USEFUL_ANGLE discovery philosophy
- *  - Exactly ONE post publication for 1-click full pipeline
+ * Automation (single master switch) is need-driven, not frequency-driven:
+ *   - The cron tick (every 5 min) always runs the non-AI scheduling stage when posts are ready.
+ *   - Inside the nightly AI window (22:00–23:45 UTC, right before the 00:00 UTC neuron reset)
+ *     each tick performs ONE bounded AI step, chosen by what is currently missing:
+ *       a) images for approved posts  →  b) topic backlog below minimum  →
+ *       c) schedule coverage below target (up to max posts per night).
+ *   - Actual Facebook publication stays with PublicationService.publishScheduledDuePosts().
+ *
+ * Enforces a single execution lock per stage / automation tick (PIPELINE_ALREADY_RUNNING).
  */
 
 import { getAIProvider } from '../../ai/factory';
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
+import {
+  AI_BACKGROUND_WINDOW,
+  AI_BACKGROUND_WINDOW_LABEL,
+  getNextAiWindowStart,
+  isWithinAiBackgroundWindow,
+} from '../../core/ai-window-policy';
 import { CloudflareUsageService } from '../cloudflare/cloudflare-usage-service';
-import { FacebookPublisher } from '../../publishing/facebook-publisher';
-import { NorthSoftMailGatewayClient } from '../mail/mail-service';
-import { PublicationService } from '../publishing/publication-service';
+import { IntelligentSchedulingService } from '../publishing/intelligent-scheduler-service';
 import { ResearchService } from '../research/research-service';
 import { ContentPlannerService } from './content-planner-service';
+import { ImageLibraryService } from './image-library-service';
+import { OpenverseImageService } from './image-service';
+
+export type PipelineStage = 'topics' | 'posts' | 'images' | 'scheduling';
+export type PipelineActor = 'admin' | 'system';
+
+const ACTIVE_TOPIC_STATUSES = "('queued', 'new', 'accepted', 'discovered', 'pending')";
 
 export interface DiscoveryStageResult {
   runId: string;
@@ -60,44 +78,89 @@ export interface GenerationStageResult {
     brandRelevance: number;
     originality: number;
   };
-  finalDecision: 'PASS' | 'REJECTED' | 'BLOCKED';
+  finalDecision: 'PASS' | 'REJECTED' | 'BLOCKED' | 'DEFERRED';
   rejectionReason?: string;
-  suggestedPublishTime?: string;
   durationMs: number;
 }
 
-export interface PublishingStageResult {
+export interface ImagesStageResult {
   runId: string;
-  postId: string;
+  processed: number;
+  assignedFromLibrary: number;
+  assignedFromOpenverse: number;
+  notFound: number;
+  details: Array<{ postId: string; title: string; source: 'library' | 'openverse' | 'none'; error?: string }>;
+  durationMs: number;
+}
+
+export interface SchedulingStageResult {
+  runId: string;
+  scheduledCount: number;
+  skippedWithoutImage: number;
+  slots: Array<{ postId: string; postTitle: string; scheduledAtIso: string; reason: string }>;
+  durationMs: number;
+}
+
+export interface StageRunResult {
+  stage: PipelineStage;
   success: boolean;
-  facebookPostId?: string;
-  publishedAt?: string;
+  summary: string;
+  result?: DiscoveryStageResult | GenerationStageResult | ImagesStageResult | SchedulingStageResult;
   error?: string;
-  durationMs: number;
 }
 
-export interface FullPipelineResult {
-  runId: string;
-  status: 'SUCCESS' | 'FAILED' | 'PIPELINE_ALREADY_RUNNING';
-  stage1Discovery?: DiscoveryStageResult;
-  stage2Generation?: GenerationStageResult;
-  stage3Publishing?: PublishingStageResult;
-  publishedPostsCount: number; // MUST BE EXACTLY 1 ON SUCCESS
-  facebookPostId?: string;
-  errorMessage?: string;
-  durationMs: number;
+export interface AutomationTickResult {
+  ran: boolean;
+  reason: string;
+  steps: StageRunResult[];
 }
 
 export interface SchedulerConfig {
   enabled: boolean;
-  discoveryEnabled: boolean;
-  generationEnabled: boolean;
-  evaluationEnabled: boolean;
-  publishingEnabled: boolean;
-  frequency: 'daily' | '12h' | '6h';
-  publicationTime: string;
-  timezone: string;
+  minTopicBacklog: number;
+  targetCoverageDays: number;
+  maxPostsPerNight: number;
   updatedAt?: string;
+}
+
+export interface PipelineStatus {
+  config: SchedulerConfig;
+  window: {
+    label: string;
+    inWindow: boolean;
+    nextWindowStart: string;
+  };
+  counts: {
+    availableTopics: number;
+    postsWithoutImage: number;
+    readyToSchedule: number;
+    scheduledPending: number;
+    coverageDays: number;
+    postsGeneratedTonight: number;
+  };
+  needs: {
+    topics: boolean;
+    posts: boolean;
+    images: boolean;
+    scheduling: boolean;
+  };
+}
+
+const DEFAULT_CONFIG: SchedulerConfig = {
+  enabled: false,
+  minTopicBacklog: 5,
+  targetCoverageDays: 14,
+  maxPostsPerNight: 3,
+};
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function newRunId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
 export class PipelineOrchestratorService {
@@ -113,6 +176,10 @@ export class PipelineOrchestratorService {
     this.cfUsageService = CloudflareUsageService.fromEnv(env);
   }
 
+  // ---------------------------------------------------------------------------
+  // Locks
+  // ---------------------------------------------------------------------------
+
   /**
    * Acquire execution lock for idempotency / duplicate run protection
    */
@@ -120,7 +187,6 @@ export class PipelineOrchestratorService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
 
-    // Clean up expired locks first
     await this.db
       .prepare('DELETE FROM pipeline_execution_locks WHERE expires_at <= ?')
       .bind(now.toISOString())
@@ -150,57 +216,41 @@ export class PipelineOrchestratorService {
       .run();
   }
 
-  /**
-   * STAGE 1 — Content Discovery / Content Scout
-   */
-  async runDiscovery(actor: 'admin' | 'system' = 'admin'): Promise<DiscoveryStageResult> {
-    const startTime = Date.now();
-    const runId = `disc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const lockAcquired = await this.acquireLock('stage_discovery', runId, actor, 180);
-
-    if (!lockAcquired) {
-      throw new Error('PIPELINE_ALREADY_RUNNING: Stage 1 Content Discovery is already running.');
+  private async withLock<T>(lockKey: string, actor: PipelineActor, ttlSeconds: number, fn: (runId: string) => Promise<T>): Promise<T> {
+    const runId = newRunId(lockKey);
+    const acquired = await this.acquireLock(lockKey, runId, actor, ttlSeconds);
+    if (!acquired) {
+      throw new Error(`PIPELINE_ALREADY_RUNNING: ${lockKey} is already running.`);
     }
-
     try {
+      return await fn(runId);
+    } finally {
+      await this.releaseLock(lockKey);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // STAGE 1 — Topics (Content Discovery)
+  // ---------------------------------------------------------------------------
+
+  async runDiscovery(actor: PipelineActor = 'admin'): Promise<DiscoveryStageResult> {
+    return this.withLock('stage_discovery', actor, 600, async (runId) => {
+      const startTime = Date.now();
       const researchProvider = getAIProvider(this.env, 'researcher');
       const researchService = new ResearchService(this.db, researchProvider, this.auditLogger);
       const res = await researchService.runResearchPipeline(actor === 'admin' ? 'manual' : 'cron');
 
-      // Fetch newly created proposals
       const recentProposals = await this.db
         .prepare(
           `SELECT id, title, content_angle, content_pillar, source_url
            FROM content_ideas
-           WHERE status IN ('queued', 'new', 'accepted', 'discovered', 'pending')
+           WHERE status IN ${ACTIVE_TOPIC_STATUSES}
            ORDER BY created_at DESC
            LIMIT 10`,
         )
-        .all<{
-          id: string;
-          title: string;
-          content_angle: string;
-          content_pillar: string;
-          source_url: string;
-        }>();
+        .all<{ id: string; title: string; content_angle: string; content_pillar: string; source_url: string }>();
 
-      // Fetch Cloudflare Verified Neurons
       const cfTelemetry = await this.cfUsageService.getVerifiedUsage();
-
-      const proposals = (recentProposals.results || []).map((p) => ({
-        id: p.id,
-        title: p.title,
-        contentAngle: p.content_angle || '',
-        contentPillar: p.content_pillar || 'GENERAL',
-        sourceUrl: p.source_url || undefined,
-      }));
-
-      const rejectedTotal =
-        (res.rejectedIrrelevant || 0) +
-        (res.rejectedTooTechnical || 0) +
-        (res.rejectedRecentCooldown || 0);
-
-      const durationMs = Date.now() - startTime;
 
       return {
         runId,
@@ -212,48 +262,42 @@ export class PipelineOrchestratorService {
         usefulInspirations: res.potentialAnglesDiscovered,
         noUsefulAngleCount: res.noUsefulAngleCount,
         duplicatesFound: res.duplicatesFound,
-        rejectedCount: rejectedTotal,
+        rejectedCount: (res.rejectedIrrelevant || 0) + (res.rejectedTooTechnical || 0) + (res.rejectedRecentCooldown || 0),
         newProposalsCount: res.topicsCreated,
-        proposals,
+        proposals: (recentProposals.results || []).map((p) => ({
+          id: p.id,
+          title: p.title,
+          contentAngle: p.content_angle || '',
+          contentPillar: p.content_pillar || 'GENERAL',
+          sourceUrl: p.source_url || undefined,
+        })),
         cloudflareVerifiedNeurons: cfTelemetry.actualNeurons,
         estimatedTokens: Math.round(res.itemsDiscovered * 120),
-        durationMs,
+        durationMs: Date.now() - startTime,
       };
-    } finally {
-      await this.releaseLock('stage_discovery');
-    }
+    });
   }
 
-  /**
-   * STAGE 2 — Post Generation & Quality Pipeline
-   */
-  async runPostGeneration(
-    ideaId?: string,
-    actor: 'admin' | 'system' = 'admin',
-  ): Promise<GenerationStageResult> {
-    const startTime = Date.now();
-    const runId = `gen-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const lockAcquired = await this.acquireLock('stage_generation', runId, actor, 180);
+  // ---------------------------------------------------------------------------
+  // STAGE 2 — Posts (Generation & Quality)
+  // ---------------------------------------------------------------------------
 
-    if (!lockAcquired) {
-      throw new Error('PIPELINE_ALREADY_RUNNING: Stage 2 Post Generation is already running.');
-    }
+  async runPostGeneration(ideaId?: string, actor: PipelineActor = 'admin'): Promise<GenerationStageResult> {
+    return this.withLock('stage_generation', actor, 600, async (runId) => {
+      const startTime = Date.now();
 
-    try {
-      // 1. Select idea if not specified
       let targetIdeaId = ideaId;
       if (!targetIdeaId) {
         const topIdea = await this.db
           .prepare(
             `SELECT id FROM content_ideas
-             WHERE status IN ('queued', 'new', 'accepted', 'discovered', 'pending')
+             WHERE status IN ${ACTIVE_TOPIC_STATUSES}
              ORDER BY relevance_score DESC, priority DESC, created_at ASC
              LIMIT 1`,
           )
           .first<{ id: string }>();
-
         if (!topIdea) {
-          throw new Error('No candidate content ideas available in queue. Run Content Discovery first.');
+          throw new Error('No candidate content ideas available in queue. Run topic discovery first.');
         }
         targetIdeaId = topIdea.id;
       }
@@ -266,6 +310,16 @@ export class PipelineOrchestratorService {
       const planner = new ContentPlannerService(this.db, this.env, this.auditLogger);
       const planResult = await planner.generatePostFromTopic(targetIdeaId, actor);
 
+      const emptyClassification = {
+        pillar: 'GENERAL',
+        postType: 'SHORT_SOCIAL',
+        engagementPotential: 0,
+        clarity: 0,
+        practicalValue: 0,
+        brandRelevance: 0,
+        originality: 0,
+      };
+
       if (planResult.status !== 'approved' || !planResult.postId) {
         return {
           runId,
@@ -273,50 +327,32 @@ export class PipelineOrchestratorService {
           title: ideaRow?.title || 'Unapproved Draft',
           body: '',
           qualityScore: planResult.qualityScore || 0,
-          classification: {
-            pillar: 'GENERAL',
-            postType: 'SHORT_SOCIAL',
-            engagementPotential: 40,
-            clarity: 40,
-            practicalValue: 40,
-            brandRelevance: 40,
-            originality: 40,
-          },
-          finalDecision: planResult.status === 'blocked' ? 'BLOCKED' : 'REJECTED',
+          classification: emptyClassification,
+          finalDecision:
+            planResult.status === 'blocked' ? 'BLOCKED' : planResult.status === 'deferred' ? 'DEFERRED' : 'REJECTED',
           rejectionReason: planResult.errorMessage || 'Failed quality gate evaluation.',
           durationMs: Date.now() - startTime,
         };
       }
 
-      // Fetch generated post version details
       const postRow = await this.db
         .prepare(
-          `SELECT p.id, p.title, p.quality_score, p.quality_decision, v.content, v.metadata
+          `SELECT p.id, p.title, p.quality_score, v.content, v.metadata
            FROM posts p
            JOIN post_versions v ON p.id = v.post_id AND p.current_version = v.version_number
            WHERE p.id = ?`,
         )
         .bind(planResult.postId)
-        .first<{
-          id: string;
-          title: string;
-          quality_score: number;
-          quality_decision: string;
-          content: string;
-          metadata: string;
-        }>();
+        .first<{ id: string; title: string; quality_score: number; content: string; metadata: string }>();
 
-      let metaParsed: Record<string, unknown> = {};
+      let meta: Record<string, unknown> = {};
       if (postRow?.metadata) {
         try {
-          metaParsed = JSON.parse(postRow.metadata);
+          meta = JSON.parse(postRow.metadata);
         } catch {
-          // ignore
+          // ignore malformed metadata
         }
       }
-
-      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      tomorrow.setUTCHours(9, 0, 0, 0);
 
       return {
         runId,
@@ -324,285 +360,554 @@ export class PipelineOrchestratorService {
         ideaId: targetIdeaId,
         title: postRow?.title || ideaRow?.title || 'Generated Post',
         body: postRow?.content || '',
-        qualityScore: postRow?.quality_score || planResult.qualityScore || 90,
+        qualityScore: postRow?.quality_score || planResult.qualityScore || 0,
         classification: {
-          pillar: String(metaParsed.pillar || 'SMALL_BUSINESS'),
+          ...emptyClassification,
+          pillar: String(meta.pillar || 'SMALL_BUSINESS'),
           postType: 'SHORT_POST',
-          engagementPotential: Number(metaParsed.engagement || 85),
-          clarity: Number(metaParsed.clarity || 90),
-          practicalValue: Number(metaParsed.practicalValue || 88),
-          brandRelevance: Number(metaParsed.brandRelevance || 92),
-          originality: Number(metaParsed.originality || 85),
         },
         finalDecision: 'PASS',
-        suggestedPublishTime: tomorrow.toISOString(),
         durationMs: Date.now() - startTime,
       };
-    } finally {
-      await this.releaseLock('stage_generation');
-    }
+    });
   }
 
+  // ---------------------------------------------------------------------------
+  // STAGE 3 — Images
+  // ---------------------------------------------------------------------------
+
   /**
-   * STAGE 3 — Facebook Publishing
+   * Assigns images to approved, unpublished posts that do not have one for their current version.
+   * Order: best APPROVED image from the curated library, then Openverse search (the found
+   * candidate is added to the library as APPROVED — same behaviour as the manual "search image").
    */
-  async runPublishing(
-    postId: string,
-    actor: 'admin' | 'system' = 'admin',
-  ): Promise<PublishingStageResult> {
-    const startTime = Date.now();
-    const runId = `pub-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const lockAcquired = await this.acquireLock(`stage_publishing_${postId}`, runId, actor, 120);
+  async runImagesStage(actor: PipelineActor = 'admin', limit = 5): Promise<ImagesStageResult> {
+    return this.withLock('stage_images', actor, 300, async (runId) => {
+      const startTime = Date.now();
+      const rows = await this.db
+        .prepare(
+          `SELECT p.id, p.title, pv.content, ci.category
+           FROM posts p
+           JOIN post_versions pv ON pv.post_id = p.id AND pv.version_number = p.current_version
+           LEFT JOIN content_ideas ci ON ci.id = p.idea_id
+           WHERE p.status IN ('approved', 'scheduled')
+             AND NOT EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)
+           ORDER BY p.created_at ASC
+           LIMIT ?`,
+        )
+        .bind(limit)
+        .all<{ id: string; title: string; content: string; category: string | null }>();
 
-    if (!lockAcquired) {
-      throw new Error(`PIPELINE_ALREADY_RUNNING: Publication for post ${postId} is already in progress.`);
-    }
+      const imgLibrary = new ImageLibraryService(this.db, this.auditLogger);
+      const openverse = new OpenverseImageService(this.env);
+      const result: ImagesStageResult = {
+        runId,
+        processed: 0,
+        assignedFromLibrary: 0,
+        assignedFromOpenverse: 0,
+        notFound: 0,
+        details: [],
+        durationMs: 0,
+      };
 
-    try {
-      const publisher = new FacebookPublisher(this.env);
-      const mailClient = new NorthSoftMailGatewayClient(this.env);
-      const pubService = new PublicationService(this.db, publisher, this.auditLogger, mailClient, this.env.IMAGE_BUCKET);
+      let recentlyUsedUrls: Set<string> | null = null;
 
-      const pubResult = await pubService.publishPost(postId, { actor });
+      for (const post of rows.results || []) {
+        result.processed++;
+        const category = post.category || 'Technology & Business';
+        try {
+          const libMatch = await imgLibrary.findBestApprovedImage(post.title, category, post.content, post.id);
+          if (libMatch) {
+            await imgLibrary.reserveImageForDraft(libMatch.image.id, post.id, false);
+            result.assignedFromLibrary++;
+            result.details.push({ postId: post.id, title: post.title, source: 'library' });
+            continue;
+          }
 
-      if (!pubResult.success) {
-        return {
-          runId,
-          postId,
-          success: false,
-          error: pubResult.message || 'Facebook API returned an error.',
-          durationMs: Date.now() - startTime,
-        };
+          if (!recentlyUsedUrls) {
+            const used = await this.db
+              .prepare('SELECT url FROM post_images ORDER BY created_at DESC LIMIT 50')
+              .all<{ url: string }>();
+            recentlyUsedUrls = new Set((used.results || []).map((r) => r.url));
+          }
+
+          const found = await openverse.findBestImage(post.title, category, post.content, recentlyUsedUrls);
+          if (!found) {
+            result.notFound++;
+            result.details.push({ postId: post.id, title: post.title, source: 'none' });
+            continue;
+          }
+
+          const cand = found.candidate;
+          await imgLibrary.addCandidate({
+            title: cand.title || 'Selected Illustration',
+            sourceUrl: cand.sourceUrl || cand.url,
+            originalPageUrl: cand.sourceUrl || cand.url,
+            author: cand.author || undefined,
+            authorUrl: cand.authorUrl || undefined,
+            license: cand.license || undefined,
+            licenseUrl: cand.licenseUrl || undefined,
+            category,
+            description: post.title,
+            score: found.score,
+          });
+          // STRICT POLICY: Never auto-approve discovered candidates.
+          // They stay in PENDING for manual admin review. The post remains without an image.
+          result.assignedFromOpenverse++;
+          result.details.push({ postId: post.id, title: post.title, source: 'openverse' });
+        } catch (err: unknown) {
+          result.notFound++;
+          result.details.push({
+            postId: post.id,
+            title: post.title,
+            source: 'none',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
-      return {
-        runId,
-        postId,
-        success: true,
-        facebookPostId: pubResult.externalPostId,
-        publishedAt: pubResult.publishedAt,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await this.releaseLock(`stage_publishing_${postId}`);
-    }
+      result.durationMs = Date.now() - startTime;
+      return result;
+    });
   }
 
-  /**
-   * PART 3 — 1-Click Full Pipeline (Executes End-to-End & Publishes EXACTLY 1 post)
-   */
-  async runFullPipeline(actor: 'admin' | 'system' = 'admin'): Promise<FullPipelineResult> {
-    const startTime = Date.now();
-    const runId = `full-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  // ---------------------------------------------------------------------------
+  // STAGE 4 — Scheduling (IntelligentSchedulingService, no AI)
+  // ---------------------------------------------------------------------------
 
-    // 1. Idempotency Lock
-    const lockAcquired = await this.acquireLock('full_pipeline_lock', runId, actor, 300);
-    if (!lockAcquired) {
-      return {
+  /**
+   * Schedules approved posts that have an image and no pending schedule, using the
+   * existing IntelligentSchedulingService slot proposal algorithm.
+   */
+  async runSchedulingStage(actor: PipelineActor = 'admin'): Promise<SchedulingStageResult> {
+    return this.withLock('stage_scheduling', actor, 120, async (runId) => {
+      const startTime = Date.now();
+
+      const ready = await this.db
+        .prepare(
+          `SELECT p.id FROM posts p
+           WHERE p.status = 'approved'
+             AND EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)
+             AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing'))
+             AND NOT EXISTS (SELECT 1 FROM publications pub WHERE pub.post_id = p.id AND pub.status = 'published')
+           ORDER BY p.quality_score DESC, p.created_at ASC
+           LIMIT 20`,
+        )
+        .all<{ id: string }>();
+
+      const withoutImage = await this.db
+        .prepare(
+          `SELECT COUNT(*) as cnt FROM posts p
+           WHERE p.status = 'approved'
+             AND NOT EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)`,
+        )
+        .first<{ cnt: number }>();
+
+      const postIds = (ready.results || []).map((r) => r.id);
+      const result: SchedulingStageResult = {
         runId,
-        status: 'PIPELINE_ALREADY_RUNNING',
-        publishedPostsCount: 0,
-        errorMessage: 'A full pipeline execution is already in progress.',
-        durationMs: Date.now() - startTime,
+        scheduledCount: 0,
+        skippedWithoutImage: withoutImage?.cnt ?? 0,
+        slots: [],
+        durationMs: 0,
       };
+
+      if (postIds.length > 0) {
+        const scheduler = new IntelligentSchedulingService();
+        const slots = await scheduler.proposeIntelligentSchedules(this.db, postIds);
+        for (const slot of slots) {
+          await this.commitSchedule(slot.postId, slot.scheduledAtIso, slot.decisionMetadata, actor);
+          result.scheduledCount++;
+          result.slots.push({
+            postId: slot.postId,
+            postTitle: slot.postTitle,
+            scheduledAtIso: slot.scheduledAtIso,
+            reason: slot.reason,
+          });
+        }
+      }
+
+      result.durationMs = Date.now() - startTime;
+      return result;
+    });
+  }
+
+  private async commitSchedule(
+    postId: string,
+    scheduledAtIso: string,
+    decisionMetadata: unknown,
+    actor: PipelineActor,
+  ): Promise<void> {
+    const nowIso = new Date().toISOString();
+    const metadataJson = decisionMetadata ? JSON.stringify(decisionMetadata) : null;
+    const existing = await this.db.prepare('SELECT id FROM schedules WHERE post_id = ?').bind(postId).first<{ id: string }>();
+
+    if (existing) {
+      await this.db
+        .prepare("UPDATE schedules SET scheduled_at = ?, status = 'pending', decision_metadata = ?, updated_at = ? WHERE post_id = ?")
+        .bind(scheduledAtIso, metadataJson, nowIso, postId)
+        .run();
+    } else {
+      await this.db
+        .prepare(
+          `INSERT INTO schedules (id, post_id, scheduled_at, timezone, status, decision_metadata, created_at, updated_at)
+           VALUES (?, ?, ?, 'UTC', 'pending', ?, ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), postId, scheduledAtIso, metadataJson, nowIso, nowIso)
+        .run();
     }
 
-    // Insert orchestrator_runs record
+    await this.db.prepare("UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ?").bind(nowIso, postId).run();
     await this.db
       .prepare(
-        `INSERT INTO orchestrator_runs (
-          id, trigger_type, status, started_at, created_at
-        ) VALUES (?, ?, 'running', datetime('now'), datetime('now'))`,
+        `UPDATE content_ideas SET status = 'scheduled', updated_at = ?
+         WHERE id = (SELECT idea_id FROM posts WHERE id = ?)`,
       )
-      .bind(runId, actor === 'admin' ? 'manual' : 'cron')
+      .bind(nowIso, postId)
       .run();
 
+    await this.auditLogger.log({
+      eventType: 'POST_SCHEDULED',
+      entityType: 'post',
+      entityId: postId,
+      actor,
+      details: { scheduledAt: scheduledAtIso, strategy: 'intelligent_scheduler' },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unified stage runner (manual buttons + automation)
+  // ---------------------------------------------------------------------------
+
+  async runStage(stage: PipelineStage, actor: PipelineActor = 'admin'): Promise<StageRunResult> {
+    const triggerType = actor === 'admin' ? 'manual' : 'cron';
+    const runId = newRunId(`stage-${stage}`);
+    await this.recordRunStart(runId, triggerType);
+
     try {
-      // 1. Stage 1: Discovery
-      const stage1 = await this.runDiscovery(actor);
-
-      // 2. Select 1 suitable proposal
-      let targetIdeaId: string | undefined;
-      if (stage1.proposals && stage1.proposals.length > 0) {
-        targetIdeaId = stage1.proposals[0]?.id;
+      let res: StageRunResult;
+      switch (stage) {
+        case 'topics': {
+          const r = await this.runDiscovery(actor);
+          res = { stage, success: true, result: r, summary: `Nowe tematy: ${r.newProposalsCount}` };
+          await this.recordRunEnd(runId, 'completed', 'topics', { topicsDiscovered: r.newProposalsCount, message: res.summary });
+          break;
+        }
+        case 'posts': {
+          const r = await this.runPostGeneration(undefined, actor);
+          const ok = r.finalDecision === 'PASS';
+          res = {
+            stage,
+            success: ok,
+            result: r,
+            summary: ok ? `Wygenerowano post: "${r.title}"` : `Post odrzucony (${r.finalDecision}): ${r.rejectionReason || ''}`,
+          };
+          await this.recordRunEnd(runId, ok ? 'completed' : r.finalDecision === 'DEFERRED' ? 'deferred' : 'failed', 'posts', {
+            postId: r.postId,
+            topicsSelected: 1,
+            message: res.summary,
+          });
+          break;
+        }
+        case 'images': {
+          const r = await this.runImagesStage(actor);
+          const assigned = r.assignedFromLibrary + r.assignedFromOpenverse;
+          res = {
+            stage,
+            success: true,
+            result: r,
+            summary: `Obrazy: przypisano ${assigned} (biblioteka ${r.assignedFromLibrary}, Openverse ${r.assignedFromOpenverse}), brak ${r.notFound}`,
+          };
+          await this.recordRunEnd(runId, 'completed', 'images', { message: res.summary });
+          break;
+        }
+        case 'scheduling': {
+          const r = await this.runSchedulingStage(actor);
+          res = {
+            stage,
+            success: true,
+            result: r,
+            summary: `Zaplanowano ${r.scheduledCount} post(ów)` + (r.skippedWithoutImage ? `, ${r.skippedWithoutImage} czeka na obraz` : ''),
+          };
+          await this.recordRunEnd(runId, 'completed', 'scheduling', { message: res.summary });
+          break;
+        }
+        default:
+          throw new Error(`Unknown pipeline stage: ${String(stage)}`);
       }
-
-      if (!targetIdeaId) {
-        const topIdea = await this.db
-          .prepare(
-            `SELECT id FROM content_ideas
-             WHERE status IN ('queued', 'new', 'accepted', 'discovered', 'pending')
-             ORDER BY relevance_score DESC, priority DESC, created_at ASC
-             LIMIT 1`,
-          )
-          .first<{ id: string }>();
-        targetIdeaId = topIdea?.id;
-      }
-
-      if (!targetIdeaId) {
-        throw new Error('No candidate content ideas found after discovery.');
-      }
-
-      // 3. Stage 2: Post Generation & Quality Evaluation
-      const stage2 = await this.runPostGeneration(targetIdeaId, actor);
-      if (stage2.finalDecision !== 'PASS' || !stage2.postId) {
-        throw new Error(`Stage 2 Quality Evaluation rejected draft: ${stage2.rejectionReason}`);
-      }
-
-      // 4. Stage 3: Facebook Publishing (Publishes EXACTLY 1 post)
-      const stage3 = await this.runPublishing(stage2.postId, actor);
-      if (!stage3.success || !stage3.facebookPostId) {
-        throw new Error(`Stage 3 Facebook Publishing failed: ${stage3.error}`);
-      }
-
-      // Update orchestrator_runs record
-      await this.db
-        .prepare(
-          `UPDATE orchestrator_runs
-           SET status = 'completed', finished_at = datetime('now'), result_status = 'published',
-               post_id = ?, neurons_used = ?
-           WHERE id = ?`,
-        )
-        .bind(stage2.postId, stage1.cloudflareVerifiedNeurons || 120, runId)
-        .run();
-
-      await this.auditLogger.log({
-        eventType: 'ORCHESTRATOR_RUN_COMPLETED',
-        entityType: 'orchestrator_run',
-        entityId: runId,
-        actor: actor === 'admin' ? 'admin' : 'system',
-        details: {
-          resultStatus: 'published',
-          postId: stage2.postId,
-          facebookPostId: stage3.facebookPostId,
-          publishedPostsCount: 1,
-        },
-      });
-
-      return {
-        runId,
-        status: 'SUCCESS',
-        stage1Discovery: stage1,
-        stage2Generation: stage2,
-        stage3Publishing: stage3,
-        publishedPostsCount: 1,
-        facebookPostId: stage3.facebookPostId,
-        durationMs: Date.now() - startTime,
-      };
+      return res;
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-
-      await this.db
-        .prepare(
-          `UPDATE orchestrator_runs
-           SET status = 'failed', finished_at = datetime('now'), result_status = 'failed', error_message = ?
-           WHERE id = ?`,
-        )
-        .bind(errorMsg.substring(0, 500), runId)
-        .run();
-
-      await this.auditLogger.log({
-        eventType: 'WORKFLOW_FAILED',
-        entityType: 'orchestrator_run',
-        entityId: runId,
-        actor: actor === 'admin' ? 'admin' : 'system',
-        details: { error: errorMsg },
-      });
-
-      return {
-        runId,
-        status: 'FAILED',
-        publishedPostsCount: 0,
-        errorMessage: errorMsg,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await this.releaseLock('full_pipeline_lock');
+      const message = err instanceof Error ? err.message : String(err);
+      await this.recordRunEnd(runId, 'failed', stage, { message });
+      return { stage, success: false, summary: message, error: message };
     }
   }
 
   /**
-   * PART 4 — Get Scheduler Configuration
+   * Manual "run everything now": topics (only if backlog is low) → one post → images → scheduling.
+   * Never publishes directly; publication happens at the scheduled time.
    */
-  async getSchedulerConfig(): Promise<SchedulerConfig> {
-    const row = await this.db
-      .prepare('SELECT * FROM pipeline_scheduler_config WHERE id = "default"')
-      .first<{
-        enabled: number;
-        discovery_enabled: number;
-        generation_enabled: number;
-        evaluation_enabled: number;
-        publishing_enabled: number;
-        frequency: 'daily' | '12h' | '6h';
-        publication_time: string;
-        timezone: string;
-        updated_at: string;
-      }>();
+  async runAllStages(actor: PipelineActor = 'admin'): Promise<StageRunResult[]> {
+    const config = await this.getSchedulerConfig();
+    const counts = await this.getCounts();
+    const steps: StageRunResult[] = [];
 
-    if (!row) {
-      return {
-        enabled: false,
-        discoveryEnabled: true,
-        generationEnabled: true,
-        evaluationEnabled: true,
-        publishingEnabled: true,
-        frequency: 'daily',
-        publicationTime: '09:00',
-        timezone: 'UTC',
-      };
+    if (counts.availableTopics < config.minTopicBacklog) {
+      steps.push(await this.runStage('topics', actor));
     }
+    steps.push(await this.runStage('posts', actor));
+    steps.push(await this.runStage('images', actor));
+    steps.push(await this.runStage('scheduling', actor));
+    return steps;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Automation (cron tick)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Called by the Worker cron every 5 minutes. Performs at most one AI step per tick
+   * inside the nightly window, plus non-AI scheduling whenever posts are ready.
+   */
+  async runAutomationTick(now: Date = new Date()): Promise<AutomationTickResult> {
+    const config = await this.getSchedulerConfig();
+    if (!config.enabled) {
+      return { ran: false, reason: 'Automation is disabled.', steps: [] };
+    }
+
+    const runId = newRunId('automation');
+    const acquired = await this.acquireLock('automation_tick', runId, 'system', 900);
+    if (!acquired) {
+      return { ran: false, reason: 'Previous automation tick still running.', steps: [] };
+    }
+
+    const steps: StageRunResult[] = [];
+    try {
+      const counts = await this.getCounts(now);
+      const needs = this.evaluateNeeds(config, counts);
+
+      if (isWithinAiBackgroundWindow(now)) {
+        let aiStage: PipelineStage | null = null;
+        if (needs.images) aiStage = 'images';
+        else if (needs.topics && !(await this.stageRanTonight('topics', now))) aiStage = 'topics';
+        else if (needs.posts) aiStage = 'posts';
+
+        if (aiStage) {
+          steps.push(await this.runStage(aiStage, 'system'));
+        }
+      }
+
+      const countsAfter = steps.length > 0 ? await this.getCounts(now) : counts;
+      if (countsAfter.readyToSchedule > 0) {
+        steps.push(await this.runStage('scheduling', 'system'));
+      }
+
+      return {
+        ran: steps.length > 0,
+        reason: steps.length > 0 ? steps.map((s) => s.summary).join(' | ') : 'Nothing to do.',
+        steps,
+      };
+    } finally {
+      await this.releaseLock('automation_tick');
+    }
+  }
+
+  private evaluateNeeds(config: SchedulerConfig, counts: PipelineStatus['counts']): PipelineStatus['needs'] {
+    return {
+      topics: counts.availableTopics < config.minTopicBacklog,
+      posts:
+        counts.availableTopics > 0 &&
+        counts.coverageDays < config.targetCoverageDays &&
+        counts.postsGeneratedTonight < config.maxPostsPerNight,
+      images: counts.postsWithoutImage > 0,
+      scheduling: counts.readyToSchedule > 0,
+    };
+  }
+
+  private tonightWindowStartIso(now: Date): string {
+    const start = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      AI_BACKGROUND_WINDOW.START_HOUR_UTC,
+      AI_BACKGROUND_WINDOW.START_MINUTE_UTC,
+    ));
+    if (now.getTime() < start.getTime()) start.setUTCDate(start.getUTCDate() - 1);
+    return start.toISOString();
+  }
+
+  private async stageRanTonight(stage: PipelineStage, now: Date): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        "SELECT id FROM orchestrator_runs WHERE trigger_type = 'cron' AND result_status = ? AND started_at >= ? LIMIT 1",
+      )
+      .bind(stage, this.tonightWindowStartIso(now))
+      .first<{ id: string }>();
+    return Boolean(row);
+  }
+
+  async getCounts(now: Date = new Date()): Promise<PipelineStatus['counts']> {
+    const scalar = async (sql: string, ...binds: unknown[]): Promise<number> => {
+      try {
+        const stmt = this.db.prepare(sql);
+        const row = await (binds.length ? stmt.bind(...binds) : stmt).first<{ cnt: number }>();
+        return Number(row?.cnt ?? 0);
+      } catch {
+        return 0;
+      }
+    };
+
+    const [availableTopics, postsWithoutImage, readyToSchedule, scheduledPending, postsGeneratedTonight] = await Promise.all([
+      scalar(`SELECT COUNT(*) as cnt FROM content_ideas WHERE status IN ${ACTIVE_TOPIC_STATUSES}`),
+      scalar(
+        `SELECT COUNT(*) as cnt FROM posts p
+         WHERE p.status IN ('approved', 'scheduled')
+           AND NOT EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)`,
+      ),
+      scalar(
+        `SELECT COUNT(*) as cnt FROM posts p
+         WHERE p.status = 'approved'
+           AND EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)
+           AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing'))`,
+      ),
+      scalar("SELECT COUNT(*) as cnt FROM schedules WHERE status IN ('pending', 'publishing') AND scheduled_at > ?", now.toISOString()),
+      scalar(
+        "SELECT COUNT(*) as cnt FROM orchestrator_runs WHERE trigger_type = 'cron' AND result_status = 'posts' AND status = 'completed' AND started_at >= ?",
+        this.tonightWindowStartIso(now),
+      ),
+    ]);
+
+    let coverageDays: number;
+    try {
+      coverageDays = (await new IntelligentSchedulingService().calculateScheduleCoverageDays(this.db)).coverageDays;
+    } catch {
+      coverageDays = 0;
+    }
+
+    return { availableTopics, postsWithoutImage, readyToSchedule, scheduledPending, coverageDays, postsGeneratedTonight };
+  }
+
+  async getStatus(now: Date = new Date()): Promise<PipelineStatus> {
+    const config = await this.getSchedulerConfig();
+    const counts = await this.getCounts(now);
+    return {
+      config,
+      window: {
+        label: AI_BACKGROUND_WINDOW_LABEL,
+        inWindow: isWithinAiBackgroundWindow(now),
+        nextWindowStart: getNextAiWindowStart(now).toISOString(),
+      },
+      counts,
+      needs: this.evaluateNeeds(config, counts),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Run history (orchestrator_runs)
+  // ---------------------------------------------------------------------------
+
+  private async recordRunStart(runId: string, triggerType: 'manual' | 'cron'): Promise<void> {
+    try {
+      const nowIso = new Date().toISOString();
+      await this.db
+        .prepare(
+          `INSERT INTO orchestrator_runs (id, trigger_type, status, started_at, created_at)
+           VALUES (?, ?, 'running', ?, ?)`,
+        )
+        .bind(runId, triggerType, nowIso, nowIso)
+        .run();
+    } catch {
+      // history is best-effort
+    }
+  }
+
+  private async recordRunEnd(
+    runId: string,
+    status: 'completed' | 'failed' | 'deferred',
+    stage: PipelineStage,
+    extra: { postId?: string; topicsDiscovered?: number; topicsSelected?: number; message?: string },
+  ): Promise<void> {
+    try {
+      await this.db
+        .prepare(
+          `UPDATE orchestrator_runs
+           SET status = ?, finished_at = ?, result_status = ?, post_id = ?, topics_discovered = ?, topics_selected = ?, error_message = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          status,
+          new Date().toISOString(),
+          stage,
+          extra.postId || null,
+          extra.topicsDiscovered ?? 0,
+          extra.topicsSelected ?? 0,
+          extra.message ? extra.message.substring(0, 500) : null,
+          runId,
+        )
+        .run();
+    } catch {
+      // history is best-effort
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Configuration
+  // ---------------------------------------------------------------------------
+
+  async getSchedulerConfig(): Promise<SchedulerConfig> {
+    let row: {
+      enabled: number;
+      min_topic_backlog?: number;
+      target_coverage_days?: number;
+      max_posts_per_night?: number;
+      updated_at?: string;
+    } | null;
+    try {
+      row = await this.db
+        .prepare("SELECT * FROM pipeline_scheduler_config WHERE id = 'default'")
+        .first();
+    } catch {
+      row = null;
+    }
+
+    if (!row) return { ...DEFAULT_CONFIG };
 
     return {
       enabled: Boolean(row.enabled),
-      discoveryEnabled: Boolean(row.discovery_enabled),
-      generationEnabled: Boolean(row.generation_enabled),
-      evaluationEnabled: Boolean(row.evaluation_enabled),
-      publishingEnabled: Boolean(row.publishing_enabled),
-      frequency: row.frequency || 'daily',
-      publicationTime: row.publication_time || '09:00',
-      timezone: row.timezone || 'UTC',
+      minTopicBacklog: clampInt(row.min_topic_backlog, 0, 100, DEFAULT_CONFIG.minTopicBacklog),
+      targetCoverageDays: clampInt(row.target_coverage_days, 1, 90, DEFAULT_CONFIG.targetCoverageDays),
+      maxPostsPerNight: clampInt(row.max_posts_per_night, 0, 10, DEFAULT_CONFIG.maxPostsPerNight),
       updatedAt: row.updated_at,
     };
   }
 
-  /**
-   * PART 4 — Update Scheduler Configuration
-   */
-  async updateSchedulerConfig(config: Partial<SchedulerConfig>): Promise<SchedulerConfig> {
+  async updateSchedulerConfig(input: Partial<SchedulerConfig>): Promise<SchedulerConfig> {
     const current = await this.getSchedulerConfig();
     const updated: SchedulerConfig = {
-      ...current,
-      ...config,
+      enabled: input.enabled !== undefined ? Boolean(input.enabled) : current.enabled,
+      minTopicBacklog: clampInt(input.minTopicBacklog ?? current.minTopicBacklog, 0, 100, current.minTopicBacklog),
+      targetCoverageDays: clampInt(input.targetCoverageDays ?? current.targetCoverageDays, 1, 90, current.targetCoverageDays),
+      maxPostsPerNight: clampInt(input.maxPostsPerNight ?? current.maxPostsPerNight, 0, 10, current.maxPostsPerNight),
       updatedAt: new Date().toISOString(),
     };
 
     await this.db
       .prepare(
         `INSERT INTO pipeline_scheduler_config (
-          id, enabled, discovery_enabled, generation_enabled, evaluation_enabled, publishing_enabled,
-          frequency, publication_time, timezone, updated_at
-        ) VALUES (
-          'default', ?, ?, ?, ?, ?, ?, ?, ?, ?
-        ) ON CONFLICT(id) DO UPDATE SET
+          id, enabled, min_topic_backlog, target_coverage_days, max_posts_per_night, updated_at
+        ) VALUES ('default', ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
           enabled = excluded.enabled,
-          discovery_enabled = excluded.discovery_enabled,
-          generation_enabled = excluded.generation_enabled,
-          evaluation_enabled = excluded.evaluation_enabled,
-          publishing_enabled = excluded.publishing_enabled,
-          frequency = excluded.frequency,
-          publication_time = excluded.publication_time,
-          timezone = excluded.timezone,
+          min_topic_backlog = excluded.min_topic_backlog,
+          target_coverage_days = excluded.target_coverage_days,
+          max_posts_per_night = excluded.max_posts_per_night,
           updated_at = excluded.updated_at`,
       )
       .bind(
         updated.enabled ? 1 : 0,
-        updated.discoveryEnabled ? 1 : 0,
-        updated.generationEnabled ? 1 : 0,
-        updated.evaluationEnabled ? 1 : 0,
-        updated.publishingEnabled ? 1 : 0,
-        updated.frequency,
-        updated.publicationTime,
-        updated.timezone,
+        updated.minTopicBacklog,
+        updated.targetCoverageDays,
+        updated.maxPostsPerNight,
         updated.updatedAt,
       )
       .run();
@@ -612,7 +917,12 @@ export class PipelineOrchestratorService {
       entityType: 'scheduler_config',
       entityId: 'default',
       actor: 'admin',
-      details: { enabled: updated.enabled, frequency: updated.frequency },
+      details: {
+        enabled: updated.enabled,
+        minTopicBacklog: updated.minTopicBacklog,
+        targetCoverageDays: updated.targetCoverageDays,
+        maxPostsPerNight: updated.maxPostsPerNight,
+      },
     });
 
     return updated;

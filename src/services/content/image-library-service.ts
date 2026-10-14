@@ -6,6 +6,7 @@
  */
 
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
+import { validateImageLicense } from './image-license-policy';
 
 export interface CuratedImageRow {
   id: string;
@@ -27,6 +28,12 @@ export interface CuratedImageRow {
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'DELETED';
   discovery_query: string | null;
   discovery_score: number;
+  requires_attribution?: number;
+  allows_modifications?: number;
+  attribution_text?: string | null;
+  legal_verification_status?: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+  visual_relevance_score?: number;
+  visual_relevance_reason?: string | null;
   usage_count: number;
   historical_usage_count?: number;
   last_used_at: string | null;
@@ -49,6 +56,8 @@ export interface CandidateImageInput {
   description?: string;
   discoveryQuery?: string;
   score?: number;
+  visualRelevanceScore?: number;
+  visualRelevanceReason?: string;
 }
 
 export interface ManualImageInput {
@@ -97,13 +106,22 @@ export class ImageLibraryService {
       }
     }
 
+    const legalVal = validateImageLicense(
+      candidate.license || 'cc0',
+      candidate.author,
+      sourceUrl,
+      'Openverse',
+    );
+
     await this.db
       .prepare(
         `INSERT INTO curated_images (
           id, title, source_type, source_url, original_page_url, author, author_url,
           license, license_url, category, keywords, description, status,
-          discovery_query, discovery_score, created_at, updated_at
-        ) VALUES (?, ?, 'DISCOVERED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)`,
+          discovery_query, discovery_score, requires_attribution, allows_modifications,
+          attribution_text, legal_verification_status, visual_relevance_score, visual_relevance_reason,
+          created_at, updated_at
+        ) VALUES (?, ?, 'DISCOVERED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -112,13 +130,19 @@ export class ImageLibraryService {
         candidate.originalPageUrl?.trim() || null,
         candidate.author?.trim() || null,
         candidate.authorUrl?.trim() || null,
-        candidate.license?.trim() || 'Custom',
+        legalVal.normalizedLicense,
         candidate.licenseUrl?.trim() || null,
         (candidate.category || 'Technology').trim(),
         candidate.keywords?.trim() || null,
         candidate.description?.trim() || null,
         candidate.discoveryQuery?.trim() || null,
         candidate.score || 0,
+        legalVal.requiresAttribution ? 1 : 0,
+        legalVal.allowsModifications ? 1 : 0,
+        legalVal.attributionText,
+        legalVal.allowedForCommercialUse ? 'VERIFIED' : 'REJECTED',
+        candidate.visualRelevanceScore ?? (candidate.score ? candidate.score / 100 : 0.5),
+        candidate.visualRelevanceReason || 'Initial discovery evaluation',
         nowIso,
         nowIso,
       )
@@ -230,6 +254,19 @@ export class ImageLibraryService {
       bindings.push(updates.license.trim());
     }
     if (updates.status !== undefined) {
+      if (updates.status === 'APPROVED') {
+        // Fetch current image to validate license
+        const current = await this.db.prepare('SELECT author, source_url, license FROM curated_images WHERE id = ?').bind(id).first<{ author: string | null; source_url: string | null; license: string | null }>();
+        const licToCheck = updates.license ?? current?.license;
+        const authorToCheck = updates.author ?? current?.author;
+        const sourceUrlToCheck = updates.sourceUrl ?? current?.source_url;
+        const val = validateImageLicense(licToCheck, authorToCheck, sourceUrlToCheck);
+        if (!val.allowedForCommercialUse) {
+          throw new Error(`Cannot approve image: ${val.rejectionReason || 'Commercial use is not permitted by license'}`);
+        }
+        fields.push('legal_verification_status = ?', 'requires_attribution = ?', 'allows_modifications = ?', 'attribution_text = ?');
+        bindings.push('VERIFIED', val.requiresAttribution ? 1 : 0, val.allowsModifications ? 1 : 0, val.attributionText);
+      }
       fields.push('status = ?');
       bindings.push(updates.status);
     }
@@ -466,6 +503,19 @@ export class ImageLibraryService {
 
     if (img.status !== 'APPROVED') {
       throw new Error(`Cannot assign image ${imageId} because its status is '${img.status}'. Only APPROVED images can be selected.`);
+    }
+
+    if (img.reserved_post_id && img.reserved_post_id !== postId) {
+      throw new Error(`Image ${imageId} is already reserved by post ${img.reserved_post_id}.`);
+    }
+
+    // Enforce 90-day reuse exclusion policy strictly
+    if (img.last_used_at) {
+      const lastUsedMs = new Date(img.last_used_at).getTime();
+      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      if (!isNaN(lastUsedMs) && Date.now() - lastUsedMs < ninetyDaysMs) {
+        throw new Error(`Image ${imageId} was used in publication within the last 90 days (last used: ${img.last_used_at}) and cannot be reserved.`);
+      }
     }
 
     const postRow = await this.db

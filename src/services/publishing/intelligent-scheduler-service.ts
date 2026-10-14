@@ -172,7 +172,7 @@ export class IntelligentSchedulingService {
 
     // 1. Fetch post metadata for candidates (allow any unpublished post, including scheduled or draft)
     const placeholders = candidatePostIds.map(() => '?').join(',');
-    let candidatePosts: SchedulingCandidatePost[] = [];
+    let candidatePosts: SchedulingCandidatePost[];
 
     try {
       const postsRes = await db
@@ -227,7 +227,7 @@ export class IntelligentSchedulingService {
 
     // 4. Fetch existing future schedules to prevent conflicts
     const nowIso = new Date().toISOString();
-    let existingSchedList: Array<{ post_id?: string; scheduled_at: string }> = [];
+    let existingSchedList: Array<{ post_id?: string; scheduled_at: string }>;
     try {
       const existingScheds = await db
         .prepare(

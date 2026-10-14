@@ -11,13 +11,13 @@ import {
 
 describe('AI Background Execution Window Policy', () => {
   describe('isWithinAiBackgroundWindow', () => {
-    it('returns false before the evening window (17:59 UTC)', () => {
-      const date = new Date('2026-09-28T17:59:00Z');
+    it('returns false before the evening window (19:59 UTC)', () => {
+      const date = new Date('2026-09-28T19:59:00Z');
       expect(isWithinAiBackgroundWindow(date)).toBe(false);
     });
 
-    it('returns true at the start of the evening window (18:00 UTC)', () => {
-      const date = new Date('2026-09-28T18:00:00Z');
+    it('returns true at the start of the evening window (20:00 UTC)', () => {
+      const date = new Date('2026-09-28T20:00:00Z');
       expect(isWithinAiBackgroundWindow(date)).toBe(true);
     });
 
@@ -26,18 +26,18 @@ describe('AI Background Execution Window Policy', () => {
       expect(isWithinAiBackgroundWindow(date)).toBe(true);
     });
 
-    it('returns true one minute before cutoff (23:29 UTC)', () => {
-      const date = new Date('2026-09-28T23:29:00Z');
+    it('returns true one minute before cutoff (23:44 UTC)', () => {
+      const date = new Date('2026-09-28T23:44:00Z');
       expect(isWithinAiBackgroundWindow(date)).toBe(true);
     });
 
-    it('returns true at exact cutoff (23:30 UTC)', () => {
-      const date = new Date('2026-09-28T23:30:00Z');
+    it('returns true at exact cutoff (23:45 UTC)', () => {
+      const date = new Date('2026-09-28T23:45:00Z');
       expect(isWithinAiBackgroundWindow(date)).toBe(true);
     });
 
-    it('returns false after cutoff (23:31 UTC)', () => {
-      const date = new Date('2026-09-28T23:31:00Z');
+    it('returns false after cutoff (23:46 UTC)', () => {
+      const date = new Date('2026-09-28T23:46:00Z');
       expect(isWithinAiBackgroundWindow(date)).toBe(false);
     });
 
@@ -89,18 +89,18 @@ describe('AI Background Execution Window Policy', () => {
       expect(isAiExecutionPermitted('cron', date)).toBe(false);
     });
 
-    it('permits automated cron actions inside window (19:30 UTC)', () => {
-      const date = new Date('2026-09-28T19:30:00Z');
+    it('permits automated cron actions inside window (21:30 UTC)', () => {
+      const date = new Date('2026-09-28T21:30:00Z');
       expect(isAiExecutionPermitted('cron', date)).toBe(true);
     });
   });
 
   describe('Boundary and configuration constants', () => {
-    it('defines start at 18:00 and end at 23:30 UTC', () => {
-      expect(AI_BACKGROUND_WINDOW.START_HOUR_UTC).toBe(18);
+    it('defines start at 20:00 and end at 23:45 UTC', () => {
+      expect(AI_BACKGROUND_WINDOW.START_HOUR_UTC).toBe(20);
       expect(AI_BACKGROUND_WINDOW.START_MINUTE_UTC).toBe(0);
       expect(AI_BACKGROUND_WINDOW.END_HOUR_UTC).toBe(23);
-      expect(AI_BACKGROUND_WINDOW.END_MINUTE_UTC).toBe(30);
+      expect(AI_BACKGROUND_WINDOW.END_MINUTE_UTC).toBe(45);
     });
   });
 });

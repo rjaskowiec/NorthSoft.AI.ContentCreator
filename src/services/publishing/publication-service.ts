@@ -632,17 +632,25 @@ export class PublicationService {
     actor: 'system' | 'admin',
     options?: { scheduleId?: string; actor?: 'system' | 'admin' },
   ): Promise<PublishResult> {
-    // 7. INVOKE META PUBLISHER (0 AI calls, exact approved post content)
+    // 7. INVOKE META PUBLISHER (0 AI calls, exact approved post content + legal attribution if required)
     // 6.5. PUBLISHING SAFETY CHECK: Ensure image belongs to approved library and is valid
     const piRow = await this.db
       .prepare(
-        `SELECT pi.curated_image_id, ci.status
+        `SELECT pi.curated_image_id, ci.status, ci.requires_attribution, ci.attribution_text, ci.author, ci.license, ci.source_url
          FROM post_images pi
          LEFT JOIN curated_images ci ON ci.id = pi.curated_image_id
          WHERE pi.post_id = ? AND pi.version_number = ?`,
       )
       .bind(postId, postRow.version_number)
-      .first<{ curated_image_id: string | null; status: string | null }>();
+      .first<{
+        curated_image_id: string | null;
+        status: string | null;
+        requires_attribution?: number | null;
+        attribution_text?: string | null;
+        author?: string | null;
+        license?: string | null;
+        source_url?: string | null;
+      }>();
 
     if (piRow && piRow.curated_image_id) {
       if (!piRow.status || piRow.status !== 'APPROVED') {
@@ -666,6 +674,14 @@ export class PublicationService {
           message: `Publication blocked: Image attached to post ${postId} has status '${imageStatus}'. Only APPROVED images can be published to Facebook.`,
           retryable: false,
         };
+      }
+    }
+
+    let publishMessage = postRow.body;
+    if (piRow?.curated_image_id && piRow.requires_attribution) {
+      const attr = piRow.attribution_text || (piRow.author ? `Photo by ${piRow.author}${piRow.source_url ? ` (${piRow.source_url})` : ''}` : null);
+      if (attr && !publishMessage.includes(attr)) {
+        publishMessage = `${publishMessage.trim()}\n\n${attr}`;
       }
     }
 
@@ -732,7 +748,7 @@ export class PublicationService {
     const pubResult = await this.publisher.publish({
       postId,
       postVersionId: postRow.version_id,
-      message: postRow.body,
+      message: publishMessage,
       idempotencyKey,
       imageUrl: canonicalImageUrl,
     });
@@ -1598,7 +1614,7 @@ export class PublicationService {
           const normalize = (t: string) => (t || '').trim().toLowerCase().replace(/\s+/g, ' ');
           const normFbContent = normalize(content);
 
-          let matchedLocal = existingLocalPost.results?.find(row => {
+          const matchedLocal = existingLocalPost.results?.find(row => {
             // Never reconcile a post scheduled for the future
             if (row.schedule_time && new Date(row.schedule_time).getTime() > Date.now()) {
               return false;
@@ -1990,6 +2006,8 @@ export class PublicationService {
         source_url: string | null;
         r2_key: string | null;
         status: string;
+        reserved_post_id?: string | null;
+        last_used_at?: string | null;
         original_page_url: string | null;
         author: string | null;
         author_url: string | null;
@@ -2008,6 +2026,26 @@ export class PublicationService {
         error: `Cannot assign image '${newImg.title}' because its status is '${newImg.status}'. Only APPROVED images can be selected.`,
         code: 'IMAGE_NOT_APPROVED',
       };
+    }
+
+    if (newImg.reserved_post_id && newImg.reserved_post_id !== postId) {
+      return {
+        success: false,
+        error: `Image '${newCuratedImageId}' is already reserved by post ${newImg.reserved_post_id}.`,
+        code: 'IMAGE_RESERVED',
+      };
+    }
+
+    if (newImg.last_used_at) {
+      const lastUsedMs = new Date(newImg.last_used_at).getTime();
+      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      if (!isNaN(lastUsedMs) && Date.now() - lastUsedMs < ninetyDaysMs) {
+        return {
+          success: false,
+          error: `Image '${newCuratedImageId}' was used in publication within the last 90 days (last used: ${newImg.last_used_at}) and cannot be assigned.`,
+          code: 'IMAGE_RECENTLY_USED',
+        };
+      }
     }
 
     const newImageUrl = getPublicImageUrl(newImg);

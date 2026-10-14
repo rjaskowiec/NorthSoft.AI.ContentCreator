@@ -123,9 +123,9 @@ describe('Admin UI Integrity & Pipeline Endpoint Security', () => {
     );
 
     expect(res.status).toBe(200);
-    const data = (await res.json()) as { config: { enabled: boolean; frequency: string } };
+    const data = (await res.json()) as { config: { enabled: boolean; minTopicBacklog: number } };
     expect(data.config).toBeDefined();
     expect(data.config.enabled).toBe(false);
-    expect(data.config.frequency).toBe('daily');
+    expect(data.config.minTopicBacklog).toBe(5);
   });
 });

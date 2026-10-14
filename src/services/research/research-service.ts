@@ -7,7 +7,7 @@
 
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import { formatResearchPromptPayload } from '../../core/security/prompt-injection';
-import { isAiExecutionPermitted } from '../../core/ai-window-policy';
+import { AI_BACKGROUND_WINDOW_LABEL, isAiExecutionPermitted } from '../../core/ai-window-policy';
 import type { IAIProvider } from '../../ai/provider';
 import { QuotaManager } from '../ai/quota-manager';
 import {
@@ -96,7 +96,7 @@ export class ResearchService {
     const runId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
 
-    // 0. AI Background Window Check: Automated cron research is restricted to 18:00–23:30 UTC
+    // 0. AI Background Window Check: Automated cron research is restricted to the nightly AI window (22:00–23:45 UTC)
     if (!isAiExecutionPermitted(triggerType)) {
       return {
         runId,
@@ -128,7 +128,7 @@ export class ResearchService {
         rejectedLowQuality: 0,
         pillarBreakdown: {},
         errorMessage:
-          'Outside AI background execution window (18:00–23:30 UTC). Research run deferred.',
+          `Outside AI background execution window (${AI_BACKGROUND_WINDOW_LABEL}). Research run deferred.`,
         durationMs: Date.now() - startTime,
         localEstimatedTokens: 0,
         cloudflareVerifiedUsage: null,

@@ -18,8 +18,8 @@ import { D1AuditLogger } from './core/audit';
 import { errorHandler } from './core/errors';
 import { requestLogger } from './core/middleware/logger';
 import { FacebookPublisher } from './publishing/facebook-publisher';
-import { ContentOrchestrator } from './services/content/content-orchestrator';
 import { ImageLibraryService } from './services/content/image-library-service';
+import { PipelineOrchestratorService } from './services/content/pipeline-orchestrator-service';
 import { NorthSoftMailGatewayClient } from './services/mail/mail-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { PublicationService } from './services/publishing/publication-service';
@@ -124,7 +124,6 @@ export { app };
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    const orchestrator = new ContentOrchestrator(env.DB, env);
     const publisher = new FacebookPublisher(env);
     const mailClient = new NorthSoftMailGatewayClient(env);
     const pubService = new PublicationService(env.DB, publisher, new D1AuditLogger(env.DB), mailClient, env.IMAGE_BUCKET);
@@ -137,9 +136,10 @@ export default {
     }
 
     // 2. Background maintenance and discovery tasks (run concurrently via waitUntil)
+    const pipelineService = new PipelineOrchestratorService(env.DB, env);
     const backgroundTasks: Array<[string, () => Promise<unknown>]> = [
       ['syncFacebookPostsToSystem', () => pubService.syncFacebookPostsToSystem()],
-      ['runPipeline', () => orchestrator.runPipeline('cron')],
+      ['runAutomationTick', () => pipelineService.runAutomationTick()],
       ['sendWeeklyDigest', () => NotificationService.sendWeeklyDigest(env.DB, mailClient)],
       ['purgeExpiredRejectedImages', () => new ImageLibraryService(env.DB).purgeExpiredRejectedImages(7, env.IMAGE_BUCKET)],
     ];

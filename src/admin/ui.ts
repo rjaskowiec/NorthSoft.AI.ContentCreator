@@ -317,65 +317,99 @@ export function renderAdminHtml(): string {
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Pipeline Control</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Manage automation and content pipeline execution.</p>
+                <p class="page-subtitle" style="margin-bottom:0;">Automated nightly pipeline (20:00–23:45 UTC) &amp; manual stage triggers.</p>
               </div>
-              <button id="run-full-pipeline-btn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:0.95rem; padding:0.75rem 1.4rem;" onclick="runFullPipelineNow()">
-                Run full pipeline
+              <button id="run-full-pipeline-btn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:0.95rem; padding:0.75rem 1.4rem;" onclick="runAllPipelineStagesNow()">
+                Run all stages now
               </button>
             </div>
 
-            <!-- Live Progress Stepper Container -->
-            <div id="pipeline-stepper-box" style="display:none;" class="panel">
-              <div class="panel-header">
-                <div class="panel-title" style="color:#60a5fa;">● Pipeline Execution Live Progress</div>
-                <span class="status-badge badge-running">RUNNING</span>
-              </div>
-              <div class="pipeline-stepper">
-                <div class="stepper-step" id="step-1"><span class="stepper-icon">1</span> <span>Finding topics...</span></div>
-                <div class="stepper-step" id="step-2"><span class="stepper-icon">2</span> <span>Selecting topic...</span></div>
-                <div class="stepper-step" id="step-3"><span class="stepper-icon">3</span> <span>Generating post draft...</span></div>
-                <div class="stepper-step" id="step-4"><span class="stepper-icon">4</span> <span>Evaluating content quality...</span></div>
-                <div class="stepper-step" id="step-5"><span class="stepper-icon">5</span> <span>Publishing to Facebook...</span></div>
+            <!-- Pipeline Status Bar -->
+            <div class="panel" style="margin-bottom:1.25rem;">
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; align-items:center;">
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">AI Window</div>
+                  <div id="pipeline-window-status" style="font-size:0.95rem; font-weight:700; color:var(--accent-emerald);">20:00–23:45 UTC</div>
+                </div>
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Topic Backlog</div>
+                  <div id="pipeline-stat-topics" style="font-size:1.1rem; font-weight:700;">--</div>
+                </div>
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Awaiting Image Review</div>
+                  <div id="pipeline-stat-images" style="font-size:1.1rem; font-weight:700; color:var(--accent-amber);">--</div>
+                </div>
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Ready to Schedule</div>
+                  <div id="pipeline-stat-ready" style="font-size:1.1rem; font-weight:700; color:var(--accent-cyan);">--</div>
+                </div>
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Schedule Coverage</div>
+                  <div id="pipeline-stat-coverage" style="font-size:1.1rem; font-weight:700;">-- days</div>
+                </div>
               </div>
             </div>
 
-            <!-- 3 Pipeline Stage Cards -->
+            <!-- 4 Pipeline Stage Cards -->
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Pipeline Stages</div>
               </div>
 
-              <div class="section-grid" style="margin-bottom:0.5rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+              <div class="section-grid" style="margin-bottom:0.5rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
                 <!-- Stage 1 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">Topic Research</div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <div class="card-label">1. Topics (Discovery)</div>
+                    <span class="status-badge status-neutral" style="font-size:0.65rem;">AI</span>
+                  </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Find content ideas from configured sources.
+                    Runs research scout when free topics fall below threshold.
                   </p>
-                  <button id="stage-discovery-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runDiscoveryNow()">
+                  <button id="stage-discovery-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('topics')">
                     Find topics
                   </button>
                 </div>
 
                 <!-- Stage 2 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">Post Generation</div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <div class="card-label">2. Posts (Generation)</div>
+                    <span class="status-badge status-neutral" style="font-size:0.65rem;">AI</span>
+                  </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Generate post drafts from active topics.
+                    Generates 1 draft with QA and factual evaluation.
                   </p>
-                  <button id="stage-generation-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPostGenerationNow()">
+                  <button id="stage-generation-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('posts')">
                     Generate post
                   </button>
                 </div>
 
                 <!-- Stage 3 -->
                 <div class="card" style="padding:1.25rem;">
-                  <div class="card-label">Facebook Publishing</div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <div class="card-label">3. Images (Library &amp; Search)</div>
+                    <span class="status-badge status-neutral" style="font-size:0.65rem;">Semi-AI</span>
+                  </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Publish approved drafts to Facebook.
+                    Assigns approved images or fetches Openverse candidates as PENDING.
                   </p>
-                  <button id="stage-publishing-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runPublishNow()">
-                    Publish now
+                  <button id="stage-images-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('images')">
+                    Process images
+                  </button>
+                </div>
+
+                <!-- Stage 4 -->
+                <div class="card" style="padding:1.25rem;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <div class="card-label">4. Intelligent Scheduling</div>
+                    <span class="status-badge status-healthy" style="font-size:0.65rem;">No AI</span>
+                  </div>
+                  <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
+                    Assigns optimal publication slots for posts with approved images.
+                  </p>
+                  <button id="stage-scheduling-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('scheduling')">
+                    Schedule ready posts
                   </button>
                 </div>
               </div>
@@ -389,26 +423,28 @@ export function renderAdminHtml(): string {
               </div>
 
               <form id="scheduler-config-form" onsubmit="saveSchedulerConfig(event)">
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1.25rem; margin-bottom:1.25rem;">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.25rem; margin-bottom:1.25rem;">
                   <div>
-                    <label class="form-label" for="sched-master-switch">Automation</label>
+                    <label class="form-label" for="sched-master-switch">Master Switch</label>
                     <select id="sched-master-switch" class="form-input">
-                      <option value="1">ON — Enabled</option>
+                      <option value="1">ON — Enabled (Need-driven)</option>
                       <option value="0">OFF — Disabled</option>
                     </select>
                   </div>
 
                   <div>
-                    <label class="form-label" for="sched-frequency">Frequency</label>
-                    <select id="sched-frequency" class="form-input">
-                      <option value="daily">Daily (Once per 24 hours)</option>
-                      <option value="12h">Every 12 Hours</option>
-                    </select>
+                    <label class="form-label" for="sched-min-topics">Min Topic Backlog</label>
+                    <input type="number" id="sched-min-topics" class="form-input" min="0" max="50" value="5" />
                   </div>
 
                   <div>
-                    <label class="form-label" for="sched-time">Schedule Time (UTC)</label>
-                    <input type="text" id="sched-time" class="form-input" value="08:00" placeholder="08:00" />
+                    <label class="form-label" for="sched-target-coverage">Target Coverage (Days)</label>
+                    <input type="number" id="sched-target-coverage" class="form-input" min="1" max="60" value="14" />
+                  </div>
+
+                  <div>
+                    <label class="form-label" for="sched-max-posts">Max Posts / Night</label>
+                    <input type="number" id="sched-max-posts" class="form-input" min="1" max="10" value="3" />
                   </div>
                 </div>
 

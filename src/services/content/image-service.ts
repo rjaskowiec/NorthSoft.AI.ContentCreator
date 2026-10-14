@@ -66,6 +66,13 @@ export function buildSearchHierarchy(topicTitle: string, category: string): Sear
   ];
 }
 
+const HISTORICAL_AND_MISLEADING_KEYWORDS = [
+  'vintage', 'antique', 'black and white', 'b&w', '19th century', 'ancient',
+  'historical', 'museum', 'medieval', 'archive', 'century', 'retro', 'victorian',
+  'painting', 'sketch', 'drawing', 'engraving', 'monochrome', 'statue', 'sculpture',
+  'cemetery', 'graveyard', 'tomb', 'funeral', 'ruins',
+];
+
 export function scoreImageCandidate(
   candidate: ImageCandidate,
   topicTitle: string,
@@ -78,6 +85,13 @@ export function scoreImageCandidate(
   for (const badWord of UNSAFE_KEYWORDS) {
     if (text.includes(badWord)) {
       return { score: -100, safe: false, reason: `Safety rejection: unsafe word '${badWord}'` };
+    }
+  }
+
+  // Reject historical, vintage, archival or irrelevant non-contemporary artwork
+  for (const hist of HISTORICAL_AND_MISLEADING_KEYWORDS) {
+    if (text.includes(hist)) {
+      return { score: -80, safe: false, reason: `Rejection: outdated, historical, or non-contemporary image context ('${hist}')` };
     }
   }
 
@@ -98,7 +112,7 @@ export function scoreImageCandidate(
   const cleanTitle = topicTitle.toLowerCase();
   const cleanCat = category.toLowerCase();
   for (const word of cleanTitle.split(/\s+/)) {
-    if (word.length > 3 && text.includes(word)) score += 10;
+    if (word.length > 3 && text.includes(word)) score += 12;
   }
   for (const word of cleanCat.split(/\s+/)) {
     if (word.length > 3 && text.includes(word)) score += 15;
@@ -108,6 +122,7 @@ export function scoreImageCandidate(
     'technology', 'web', 'computer', 'digital', 'code', 'software',
     'laptop', 'office', 'ai', 'data', 'search', 'marketing', 'business',
     'network', 'security', 'design', 'phone', 'server', 'analytics',
+    'modern', 'workspace', 'developer', 'startup',
   ];
   for (const kw of techKeywords) {
     if (text.includes(kw)) score += 10;
@@ -119,8 +134,8 @@ export function scoreImageCandidate(
 
   return {
     score,
-    safe: score > 0,
-    reason: `Scored ${score} based on metadata semantics and license ${candidate.license}`,
+    safe: score >= 25,
+    reason: `Scored ${score} based on visual & contemporary semantics and license ${candidate.license}`,
   };
 }
 

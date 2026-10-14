@@ -11,6 +11,71 @@ import { PipelineOrchestratorService } from '../../services/content/pipeline-orc
 export const pipelineRouter = new Hono<AppEnv>();
 
 /**
+ * GET /api/admin/pipeline/status
+ * Returns live status of the 4 stages, automation config, counts, and AI window state.
+ */
+pipelineRouter.get('/pipeline/status', async (c) => {
+  const db = c.env.DB;
+  const service = new PipelineOrchestratorService(db, c.env);
+  const status = await service.getStatus();
+  return c.json({ success: true, status });
+});
+
+/**
+ * POST /api/admin/pipeline/stage/:name
+ * Runs a specific stage (topics, posts, images, scheduling) on demand.
+ */
+pipelineRouter.post('/pipeline/stage/:name', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const stageName = c.req.param('name') as any;
+  const validStages = ['topics', 'posts', 'images', 'scheduling'];
+  if (!validStages.includes(stageName)) {
+    return c.json({ success: false, error: `Invalid stage: ${stageName}. Allowed: ${validStages.join(', ')}` }, 400);
+  }
+
+  const service = new PipelineOrchestratorService(db, c.env);
+  try {
+    const result = await service.runStage(stageName, 'admin');
+    return c.json({ success: result.success, result });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        success: false,
+        error: errorMsg,
+        code: errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 'PIPELINE_ALREADY_RUNNING' : 'STAGE_FAILED',
+      },
+      errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 409 : 500,
+    );
+  }
+});
+
+/**
+ * POST /api/admin/pipeline/run-all
+ * 1-Click: runs needed stages and schedules (does NOT publish immediately).
+ */
+pipelineRouter.post('/pipeline/run-all', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const service = new PipelineOrchestratorService(db, c.env);
+
+  try {
+    const steps = await service.runAllStages('admin');
+    const allSuccessful = steps.every((s) => s.success);
+    return c.json({ success: allSuccessful, steps });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        success: false,
+        error: errorMsg,
+        code: errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 'PIPELINE_ALREADY_RUNNING' : 'PIPELINE_FAILED',
+      },
+      errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 409 : 500,
+    );
+  }
+});
+
+/**
  * POST /api/admin/pipeline/discovery
  * Stage 1: Runs Content Discovery / Scout.
  * Protected by requireAdmin and csrfProtection.
@@ -65,66 +130,27 @@ pipelineRouter.post('/pipeline/generate', csrfProtection, async (c) => {
 });
 
 /**
- * POST /api/admin/pipeline/publish
- * Stage 3: Publishes an approved post to Facebook.
- * Protected by requireAdmin and csrfProtection.
+ * POST /api/admin/pipeline/run-full (Legacy alias pointing to runAllStages)
  */
-pipelineRouter.post('/pipeline/publish', csrfProtection, async (c) => {
+pipelineRouter.post('/pipeline/run-full', csrfProtection, async (c) => {
   const db = c.env.DB;
-  const body = (await c.req.json().catch(() => ({}))) as { postId?: string };
-
-  if (!body.postId || typeof body.postId !== 'string') {
-    return c.json({ success: false, error: 'Missing required field: postId' }, 400);
-  }
-
   const service = new PipelineOrchestratorService(db, c.env);
 
   try {
-    const result = await service.runPublishing(body.postId, 'admin');
-    return c.json({
-      success: result.success,
-      result,
-    });
+    const steps = await service.runAllStages('admin');
+    const allSuccessful = steps.every((s) => s.success);
+    return c.json({ success: allSuccessful, steps, result: { status: allSuccessful ? 'SUCCESS' : 'PARTIAL' } });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json(
       {
         success: false,
         error: errorMsg,
-        code: errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 'PIPELINE_ALREADY_RUNNING' : 'PUBLISHING_FAILED',
+        code: errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 'PIPELINE_ALREADY_RUNNING' : 'PIPELINE_FAILED',
       },
       errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 409 : 500,
     );
   }
-});
-
-/**
- * POST /api/admin/pipeline/run-full
- * 1-Click Full Pipeline: Discovery → Select 1 Proposal → Generate → Evaluate → Publish EXACTLY 1 post.
- * Protected by requireAdmin and csrfProtection.
- */
-pipelineRouter.post('/pipeline/run-full', csrfProtection, async (c) => {
-  const db = c.env.DB;
-  const service = new PipelineOrchestratorService(db, c.env);
-
-  const result = await service.runFullPipeline('admin');
-
-  if (result.status === 'PIPELINE_ALREADY_RUNNING') {
-    return c.json(
-      {
-        success: false,
-        error: 'PIPELINE_ALREADY_RUNNING: A full pipeline execution is already in progress.',
-        code: 'PIPELINE_ALREADY_RUNNING',
-        result,
-      },
-      409,
-    );
-  }
-
-  return c.json({
-    success: result.status === 'SUCCESS',
-    result,
-  });
 });
 
 /**
