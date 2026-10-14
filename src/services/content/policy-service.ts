@@ -6,6 +6,7 @@
  */
 
 import type { PostDraft } from './writer-service';
+import { checkEditorialBrandSafety } from './editorial-policy';
 
 export interface PolicyReviewResult {
   passed: boolean;
@@ -45,6 +46,21 @@ export class PolicyReviewService {
     // 3. Unsubstantiated Financial / Performance Guarantees
     if (/\b(guarantee|guaranteed|100% profit|zero risk)\b/i.test(draft.body)) {
       violations.push('Post contains prohibited unsubstantiated guarantee claims.');
+    }
+
+    // 4. NorthSoft Editorial Brand Safety Standards (Religion, Sexuality, Occult, Gambling, Inappropriate)
+    const editorialCheck = checkEditorialBrandSafety({
+      title: draft.title,
+      body: draft.body,
+      angle: draft.contentAngle,
+      hook: draft.audienceContext,
+      cta: draft.callToAction,
+      hashtags: draft.hashtags,
+      imageQuery: draft.imageSearchQuery,
+    });
+
+    if (!editorialCheck.passed) {
+      violations.push(...editorialCheck.reasons);
     }
 
     const passed = violations.length === 0;

@@ -5,6 +5,7 @@
  */
 
 import { parseAiJsonResponse } from '../../core/json-parser';
+import { checkEditorialBrandSafety } from '../content/editorial-policy';
 import {
   determineContentPillar,
   resolveClusterKey,
@@ -267,6 +268,18 @@ export function validateCandidateIdeaOutput(
     contentPillar,
     `${title} ${angle} ${summary} ${marketPhenomenon}`,
   );
+
+  // Editorial Policy & Brand Safety Standards check
+  const editorialCheck = checkEditorialBrandSafety({
+    title,
+    angle,
+    hook,
+    summary,
+  });
+
+  if (!editorialCheck.passed) {
+    errors.push(...editorialCheck.reasons);
+  }
 
   if (errors.length > 0) {
     return { valid: false, errors };

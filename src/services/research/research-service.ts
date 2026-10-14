@@ -512,11 +512,23 @@ CORE REASONING DISCOVERY PROCESS (Insight → Opportunity → Cluster → Topic)
 4. BUSINESS ANGLE: How a NorthSoft service (website overhaul, local SEO, speed optimization, workflow automation, AI assistant) naturally solves this without sounding like a forced sales pitch.
 5. FINAL TOPIC: A mid-level, focused social post topic (NOT just the article headline).
 
-CRITICAL RULES:
+CRITICAL RULES & BRAND SAFETY:
 1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. Forbidden: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
-2. SOURCE AS INSPIRATION: The article is a loose springboard, not something to summarize. Do NOT merely repeat tech release details.
-3. FACT PRESERVATION: Never invent fake numbers, percentages, or false statistics.
-4. If the source cannot yield any credible small-business angle, return {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
+2. EDITORIAL BRAND SAFETY — STRICTLY FORBIDDEN TOPICS:
+   Never select, generate, or suggest topics touching on:
+   - Religion and religious celebrations (e.g. churches, scriptures, theological holidays, prayers, rituals).
+   - Sexuality, erotica, and adult entertainment.
+   - Occultism, astrology, horoscopes, tarot, witchcraft, or supernatural folklore.
+   - Gambling, sports betting, casinos, and lotteries.
+   - Recreational intoxicants, entertainment violence, or vulgarity.
+   NEUTRAL COMMERCIAL SEASONS ARE PERMITTED: You may freely discuss commercial and seasonal demand (e.g. Q4 holiday shopping preparation, Black Friday website load readiness, January business goal planning, seasonal tourist booking spikes), framed STRICTLY around operational readiness, customer conversion, and capacity — NEVER religious or cultural rituals.
+3. TIMELINESS & BUSINESS OPPORTUNITIES:
+   Highlight emerging economic trends, buying periods, and seasonal spikes WITH ADVANCE NOTICE so business owners have time to prepare websites, booking calendars, and automation before the opportunity passes.
+4. COMPELLING HOOKS & HONEST CURIOSITY:
+   Craft titles and hooks that pique honest curiosity — highlight hidden costs, missed customer inquiries, unneeded friction, or surprising contrasts without resorting to deceptive clickbait or fake urgency.
+5. SOURCE AS INSPIRATION: The article is a loose springboard, not something to summarize. Do NOT merely repeat tech release details.
+6. FACT PRESERVATION: Never invent fake numbers, percentages, or false statistics.
+7. If the source touches a prohibited topic or cannot yield any credible small-business angle, return {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
 
 Return ONLY a valid JSON object matching this schema:
 {

@@ -81,6 +81,38 @@ export class ContentPlannerService {
       };
     }
 
+    // 1b. Editorial Brand Safety Pre-Check on Topic
+    const { checkEditorialBrandSafety } = await import('./editorial-policy');
+    const topicSafety = checkEditorialBrandSafety({
+      title: topicRow.title,
+      summary: topicRow.description,
+      angle: topicRow.content_angle,
+    });
+
+    if (!topicSafety.passed) {
+      const reasonMsg = `Topic rejected by NorthSoft editorial brand safety policy: ${topicSafety.reasons.join('; ')}`;
+      await this.db
+        .prepare("UPDATE content_ideas SET status = 'rejected', updated_at = datetime('now') WHERE id = ?")
+        .bind(topicId)
+        .run();
+
+      await this.auditLogger.log({
+        eventType: 'TOPIC_SAFETY_REJECTED',
+        entityType: 'content_idea',
+        entityId: topicId,
+        actor: 'system',
+        details: { reasons: topicSafety.reasons, categoryViolations: topicSafety.categoryViolations },
+      });
+
+      return {
+        topicId,
+        status: 'blocked',
+        currentVersion: 0,
+        errorMessage: reasonMsg,
+        durationMs: Date.now() - startTime,
+      };
+    }
+
     // 2. Fetch Supporting Research Sources
     const sources: ResearchSourceItem[] = [];
     if (topicRow.source_url) {
@@ -301,21 +333,32 @@ export class ContentPlannerService {
       // Background Candidate Discovery: Collect candidates into PENDING library if needed
       try {
         const query = lastDraft.imageSearchQuery || topicRow.title;
-        const candidates = await openverseService.searchImages(query, 5);
-        for (const cand of candidates) {
-          await imgLibrary.addCandidate({
-            title: cand.title,
-            sourceUrl: cand.url,
-            originalPageUrl: cand.sourceUrl,
-            author: cand.author,
-            authorUrl: cand.authorUrl,
-            license: cand.license,
-            licenseUrl: cand.licenseUrl,
-            category: topicRow.category || 'Technology',
-            keywords: (cand.tags || []).join(', '),
-            description: `Auto-discovered for topic: ${topicRow.title}`,
-            discoveryQuery: query,
-          });
+        // Verify image search query against brand safety standards before querying Openverse
+        const imgSafety = checkEditorialBrandSafety({ imageQuery: query });
+        if (imgSafety.passed) {
+          const candidates = await openverseService.searchImages(query, 5);
+          for (const cand of candidates) {
+            // Check candidate title and tags against brand safety before saving
+            const candSafety = checkEditorialBrandSafety({
+              title: cand.title,
+              summary: (cand.tags || []).join(' '),
+            });
+            if (!candSafety.passed) continue;
+
+            await imgLibrary.addCandidate({
+              title: cand.title,
+              sourceUrl: cand.url,
+              originalPageUrl: cand.sourceUrl,
+              author: cand.author,
+              authorUrl: cand.authorUrl,
+              license: cand.license,
+              licenseUrl: cand.licenseUrl,
+              category: topicRow.category || 'Technology',
+              keywords: (cand.tags || []).join(', '),
+              description: `Auto-discovered for topic: ${topicRow.title}`,
+              discoveryQuery: query,
+            });
+          }
         }
       } catch (discErr) {
         console.warn('[ContentPlanner] Candidate discovery failed:', discErr);
