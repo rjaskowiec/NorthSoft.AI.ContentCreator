@@ -18,6 +18,7 @@ imagesRouter.get('/images', async (c) => {
   const db = c.env.DB;
   const status = (c.req.query('status') || 'ALL').trim();
   const category = (c.req.query('category') || '').trim();
+  const source = (c.req.query('source') || 'ALL').trim();
   const search = (c.req.query('search') || '').trim();
   const limit = parseInt(c.req.query('limit') || '24', 10);
   const offset = parseInt(c.req.query('offset') || '0', 10);
@@ -28,6 +29,7 @@ imagesRouter.get('/images', async (c) => {
   const result = await imgService.listImages({
     status,
     category,
+    source,
     search,
     limit,
     offset,
@@ -177,21 +179,68 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
       }
     }
 
+    let aiGeneratedCount = 0;
+    let aiGenerationNotice: string | null = null;
+
+    // 4. Automatic AI Generation Supplement:
+    // If web search yielded zero new qualified candidates, automatically supplement with Cloudflare Workers AI
+    // without requiring manual prompt input, provided daily quota is available.
+    if (addedCount === 0 && c.env.AI && c.env.IMAGE_BUCKET) {
+      try {
+        const { AiImageGeneratorService } = await import('../../services/content/ai-image-generator');
+        const aiGenerator = new AiImageGeneratorService(c.env);
+        const quotaCheck = await aiGenerator.checkDailyImageQuota(db);
+
+        if (quotaCheck.allowed) {
+          await aiGenerator.generateAndPersistImage(db, c.req.url, {
+            description: query,
+            category,
+          });
+          aiGeneratedCount = 1;
+          addedCount += 1;
+        } else {
+          aiGenerationNotice = quotaCheck.reason || 'AI generation skipped (quota limit reached).';
+        }
+      } catch (aiErr: unknown) {
+        console.warn('[candidate-discovery] AI generation supplement skipped:', aiErr);
+        aiGenerationNotice = aiErr instanceof Error ? aiErr.message : String(aiErr);
+      }
+    }
+
+    const steps = [
+      { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed' },
+      { step: 'search', label: `Searching image sources (Query: "${chosenQuery}")`, status: 'completed', details: `Found ${rawCandidates.length} candidate(s)` },
+      { step: 'metadata', label: 'Evaluating candidate metadata & quality', status: 'completed' },
+      { step: 'dedup', label: 'Checking duplicates & reuse window', status: 'completed', details: `${skippedCount} duplicate(s) skipped` },
+    ];
+
+    if (aiGeneratedCount > 0) {
+      steps.push({
+        step: 'ai_supplement',
+        label: 'Automatic Cloudflare Workers AI supplement',
+        status: 'completed',
+        details: '1 photorealistic business image generated via SDXL-Lightning & saved as PENDING',
+      });
+    }
+
+    steps.push({
+      step: 'save',
+      label: 'Saving candidates to Image Library',
+      status: 'completed',
+      details: `${addedCount} new candidate(s) saved as PENDING (${aiGeneratedCount} AI generated)`,
+    });
+
     return c.json({
       success: true,
       topic: query,
       chosenQuery,
       category,
-      totalDiscovered: rawCandidates.length,
+      totalDiscovered: rawCandidates.length + aiGeneratedCount,
       addedCount,
       skippedCount,
-      steps: [
-        { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed' },
-        { step: 'search', label: `Searching image sources (Query: "${chosenQuery}")`, status: 'completed', details: `Found ${rawCandidates.length} candidate(s)` },
-        { step: 'metadata', label: 'Evaluating candidate metadata & quality', status: 'completed' },
-        { step: 'dedup', label: 'Checking duplicates & reuse window', status: 'completed', details: `${skippedCount} duplicate(s) skipped` },
-        { step: 'save', label: 'Saving candidates to Image Library', status: 'completed', details: `${addedCount} new candidate(s) saved as PENDING` },
-      ],
+      aiGeneratedCount,
+      aiGenerationNotice,
+      steps,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

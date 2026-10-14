@@ -88,8 +88,9 @@ export interface ImagesStageResult {
   processed: number;
   assignedFromLibrary: number;
   assignedFromOpenverse: number;
+  generatedFromAi: number;
   notFound: number;
-  details: Array<{ postId: string; title: string; source: 'library' | 'openverse' | 'none'; error?: string }>;
+  details: Array<{ postId: string; title: string; source: 'library' | 'openverse' | 'ai' | 'none'; error?: string }>;
   durationMs: number;
 }
 
@@ -405,6 +406,7 @@ export class PipelineOrchestratorService {
         processed: 0,
         assignedFromLibrary: 0,
         assignedFromOpenverse: 0,
+        generatedFromAi: 0,
         notFound: 0,
         details: [],
         durationMs: 0,
@@ -432,29 +434,56 @@ export class PipelineOrchestratorService {
           }
 
           const found = await openverse.findBestImage(post.title, category, post.content, recentlyUsedUrls);
-          if (!found) {
-            result.notFound++;
-            result.details.push({ postId: post.id, title: post.title, source: 'none' });
+          if (found) {
+            const cand = found.candidate;
+            await imgLibrary.addCandidate({
+              title: cand.title || 'Selected Illustration',
+              sourceUrl: cand.sourceUrl || cand.url,
+              originalPageUrl: cand.sourceUrl || cand.url,
+              author: cand.author || undefined,
+              authorUrl: cand.authorUrl || undefined,
+              license: cand.license || undefined,
+              licenseUrl: cand.licenseUrl || undefined,
+              category,
+              description: post.title,
+              score: found.score,
+            });
+            // STRICT POLICY: Never auto-approve discovered candidates.
+            // They stay in PENDING for manual admin review. The post remains without an image.
+            result.assignedFromOpenverse++;
+            result.details.push({ postId: post.id, title: post.title, source: 'openverse' });
             continue;
           }
 
-          const cand = found.candidate;
-          await imgLibrary.addCandidate({
-            title: cand.title || 'Selected Illustration',
-            sourceUrl: cand.sourceUrl || cand.url,
-            originalPageUrl: cand.sourceUrl || cand.url,
-            author: cand.author || undefined,
-            authorUrl: cand.authorUrl || undefined,
-            license: cand.license || undefined,
-            licenseUrl: cand.licenseUrl || undefined,
-            category,
-            description: post.title,
-            score: found.score,
-          });
-          // STRICT POLICY: Never auto-approve discovered candidates.
-          // They stay in PENDING for manual admin review. The post remains without an image.
-          result.assignedFromOpenverse++;
-          result.details.push({ postId: post.id, title: post.title, source: 'openverse' });
+          // Automatic AI Generation Fallback:
+          // If web search found nothing suitable, generate a realistic business image candidate via Workers AI
+          // if Cloudflare bindings are configured and daily quota (1/day) is available.
+          let aiGenerated = false;
+          if (this.env.AI && this.env.IMAGE_BUCKET) {
+            try {
+              const { AiImageGeneratorService } = await import('./ai-image-generator');
+              const aiGen = new AiImageGeneratorService(this.env);
+              const quota = await aiGen.checkDailyImageQuota(this.db);
+              if (quota.allowed) {
+                const originUrl = 'https://ai.northsoft.is';
+                await aiGen.generateAndPersistImage(this.db, originUrl, {
+                  category,
+                  description: post.title,
+                  postContext: post.content ? post.content.slice(0, 150) : undefined,
+                });
+                result.generatedFromAi++;
+                result.details.push({ postId: post.id, title: post.title, source: 'ai' });
+                aiGenerated = true;
+              }
+            } catch (aiErr: unknown) {
+              console.warn('[runImagesStage] AI generation fallback skipped:', aiErr);
+            }
+          }
+
+          if (!aiGenerated) {
+            result.notFound++;
+            result.details.push({ postId: post.id, title: post.title, source: 'none' });
+          }
         } catch (err: unknown) {
           result.notFound++;
           result.details.push({

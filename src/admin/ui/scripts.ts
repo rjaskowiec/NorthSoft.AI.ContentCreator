@@ -5488,6 +5488,7 @@ export function getAdminScripts(): string {
     // Image Library Frontend State & Logic
     let currentImageStatusTab = 'PENDING';
     let currentImageCategoryFilter = '';
+    let currentImageSourceFilter = 'ALL';
     let currentImageSearchQuery = '';
     let cachedImages = [];
     let selectedImageIds = new Set();
@@ -5520,6 +5521,9 @@ export function getAdminScripts(): string {
         const catSelect = document.getElementById('image-category-filter');
         currentImageCategoryFilter = catSelect ? catSelect.value.trim() : '';
 
+        const srcSelect = document.getElementById('image-source-filter');
+        currentImageSourceFilter = srcSelect ? srcSelect.value.trim() : 'ALL';
+
         const gridEl = document.getElementById('image-library-grid');
         if (gridEl) {
           gridEl.innerHTML = Array.from({ length: 8 }).map(() =>
@@ -5529,6 +5533,7 @@ export function getAdminScripts(): string {
 
         const url = '/api/admin/images?status=' + encodeURIComponent(currentImageStatusTab) +
           '&category=' + encodeURIComponent(currentImageCategoryFilter) +
+          '&source=' + encodeURIComponent(currentImageSourceFilter) +
           '&search=' + encodeURIComponent(currentImageSearchQuery) +
           '&limit=40';
 
@@ -5610,7 +5615,10 @@ export function getAdminScripts(): string {
             ? '<span style="color:var(--accent-rose); font-size:0.7rem; font-weight:600;">&#10007; Non-Commercial</span>'
             : '<span style="color:var(--accent-amber); font-size:0.7rem;">Unverified Lic</span>';
 
-        const sourceLabel = img.source_type || (img.source_url ? 'Web' : 'Upload');
+        const isAiGenerated = (img.notes && img.notes.includes('Cloudflare Workers AI')) || img.author === 'NorthSoft';
+        const sourceLabel = isAiGenerated
+          ? '✨ AI Generated'
+          : (img.source_type === 'DISCOVERED' ? '🌐 Web (Openverse)' : '📁 Upload');
 
         return '<div class="image-card" id="img-card-' + imgId + '">' +
             '<div style="position:relative;">' +

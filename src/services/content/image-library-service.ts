@@ -631,6 +631,7 @@ export class ImageLibraryService {
     status?: string;
     category?: string;
     search?: string;
+    source?: string;
     limit?: number;
     offset?: number;
   }): Promise<{
@@ -642,6 +643,7 @@ export class ImageLibraryService {
     const offset = options.offset || 0;
     const statusFilter = (options.status || 'ALL').toUpperCase().trim();
     const categoryFilter = (options.category || '').trim();
+    const sourceFilter = (options.source || 'ALL').toUpperCase().trim();
     const searchTerm = (options.search || '').trim().toLowerCase();
 
     const whereClauses: string[] = ["status != 'DELETED'"];
@@ -657,6 +659,14 @@ export class ImageLibraryService {
     if (categoryFilter) {
       whereClauses.push('category = ?');
       bindings.push(categoryFilter);
+    }
+
+    if (sourceFilter === 'AI') {
+      whereClauses.push("(notes LIKE '%Cloudflare Workers AI%' OR author = 'NorthSoft')");
+    } else if (sourceFilter === 'WEB') {
+      whereClauses.push("(source_type = 'DISCOVERED' AND (notes IS NULL OR notes NOT LIKE '%Cloudflare Workers AI%') AND (author IS NULL OR author != 'NorthSoft'))");
+    } else if (sourceFilter === 'UPLOAD') {
+      whereClauses.push("(source_type = 'UPLOADED' AND (notes IS NULL OR notes NOT LIKE '%Cloudflare Workers AI%') AND (author IS NULL OR author != 'NorthSoft'))");
     }
 
     if (searchTerm) {
