@@ -1865,8 +1865,8 @@ export function renderAdminHtml(): string {
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
             <div style="display:flex; align-items:center; gap:0.5rem;">
               <label class="form-label" for="discover-description-input" style="font-weight:600; margin-bottom:0;">Image search description</label>
-              <span id="discover-prompt-loading" style="display:none; font-size:0.75rem; color:var(--accent-blue); align-items:center; gap:0.35rem;">
-                <span class="inline-spinner" style="display:inline-block; width:12px; height:12px; border:2px solid rgba(96,165,250,0.3); border-top-color:var(--accent-blue); border-radius:50%; animation:spin 0.8s linear infinite;"></span>
+              <span id="discover-prompt-loading" style="display:none; font-size:0.75rem; color:var(--accent-blue); align-items:center; gap:0.4rem;">
+                <span class="inline-spinner"></span>
                 <span>Generating AI concept...</span>
               </span>
             </div>

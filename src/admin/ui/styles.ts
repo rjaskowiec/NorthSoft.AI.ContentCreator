@@ -1988,8 +1988,22 @@ export function getAdminCss(): string {
       background: rgba(255, 255, 255, 0.015);
       transition: opacity 0.15s ease;
     }
-    .schedule-published-dimmed:hover {
-      opacity: 0.92;
+    /* INLINE SPINNER */
+    .inline-spinner {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(96, 165, 250, 0.25);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
   `;
 }
