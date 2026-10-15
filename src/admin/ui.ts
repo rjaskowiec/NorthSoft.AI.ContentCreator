@@ -23,6 +23,7 @@ export function renderAdminHtml(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Control Center — NorthSoft AI Content Creator</title>
+  <link rel="icon" type="image/svg+xml" href="https://northsoft.is/brand/logos/northsoft-symbol.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -36,7 +37,7 @@ export function renderAdminHtml(): string {
     <div class="auth-card">
       <div class="auth-header">
         <div class="brand-logo">
-          <svg viewBox="0 0 24 24" style="width:28px; height:28px; fill:none; stroke:white; stroke-width:2;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          <img src="https://northsoft.is/brand/logos/northsoft-symbol.svg" alt="NorthSoft" style="width:32px; height:32px; display:block;" />
         </div>
         <h1 class="brand-title">NorthSoft AI</h1>
         <p class="brand-sub">Content Creator Admin Interface</p>
@@ -106,7 +107,7 @@ export function renderAdminHtml(): string {
       <aside class="sidebar">
         <div class="sidebar-brand">
           <div class="brand-logo" style="width:36px; height:36px; margin-bottom:0;">
-            <svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:white; stroke-width:2;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            <img src="https://northsoft.is/brand/logos/northsoft-symbol.svg" alt="NorthSoft" style="width:24px; height:24px; display:block;" />
           </div>
           <div>
             <div class="sidebar-brand-name">NorthSoft AI</div>
