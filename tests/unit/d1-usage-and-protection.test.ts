@@ -178,18 +178,36 @@ describe('D1 Quota & Automation Activity Suite', () => {
       // Under PROTECTIVE_MODE, background AI scout & posts are deferred
       const deferTopics = service.shouldDeferStage('topics', protectiveStatus);
       expect(deferTopics.defer).toBe(true);
-      expect(deferTopics.reason).toContain('Protective Mode Active');
+      expect(deferTopics.reason).toContain('D1 Protective Mode');
 
       const deferPosts = service.shouldDeferStage('posts', protectiveStatus);
       expect(deferPosts.defer).toBe(true);
 
-      // Critical scheduling operation is preserved even in protective mode
+      // Critical scheduling and publishing operations are preserved even in protective mode
       const deferSched = service.shouldDeferStage('scheduling', protectiveStatus);
       expect(deferSched.defer).toBe(false);
 
-      // Manual runs are NEVER deferred regardless of protective mode
+      const deferPublish = service.shouldDeferStage('publishing' as any, protectiveStatus);
+      expect(deferPublish.defer).toBe(false);
+
+      // Manual runs of heavy stages are ALSO strictly blocked in protective mode to protect quota
       const manualTopics = service.shouldDeferStage('topics', protectiveStatus, true);
-      expect(manualTopics.defer).toBe(false);
+      expect(manualTopics.defer).toBe(true);
+
+      const manualRunAll = service.shouldDeferStage('runAllStages', protectiveStatus, true);
+      expect(manualRunAll.defer).toBe(true);
+    });
+
+    it('returns TELEMETRY_UNAVAILABLE with unmeasured state when neither Cloudflare nor local telemetry exists', async () => {
+      const db = createMockDb();
+      const service = new D1QuotaService();
+
+      // No rows in d1_daily_usage, empty local buffer, no Cloudflare service
+      const status = await service.getD1UsageStatus(db);
+      expect(status.telemetrySource).toBe('TELEMETRY_UNAVAILABLE');
+      expect(status.rowsWritten).toBeNull();
+      expect(status.usagePercentage).toBeNull();
+      expect(status.reason).toContain('D1 telemetry is currently unavailable');
     });
   });
 
@@ -271,6 +289,147 @@ describe('D1 Quota & Automation Activity Suite', () => {
       expect(activity.items).toHaveLength(1);
       expect(activity.items[0]!.details).toBeUndefined();
       expect(activity.items[0]!.errorMessage).toBe('Workers AI timeout');
+    });
+
+    it('returns structured camelCase fields matching frontend contract with accurate types', async () => {
+      const db = createMockDb();
+      const startIso = '2026-10-15T12:00:00.000Z';
+      const finishIso = '2026-10-15T12:00:35.000Z';
+
+      queryResults.set('SELECT COUNT(*)', { total: 1 });
+      queryResults.set('SELECT id, trigger_type, status', [
+        {
+          id: 'stage-posts-12345',
+          trigger_type: 'cron',
+          status: 'completed',
+          stage: 'posts',
+          result_status: 'Generowanie postów zakończone',
+          error_message: null,
+          neurons_used: 8500,
+          d1_rows_written: 14,
+          d1_rows_read: 42,
+          details: JSON.stringify({ message: 'Utworzono post z powodzeniem' }),
+          started_at: startIso,
+          finished_at: finishIso,
+        },
+      ]);
+
+      const service = new PipelineOrchestratorService(db, {} as any);
+      const activity = await service.getAutomationActivity({ period: '24h' });
+
+      expect(activity.items).toHaveLength(1);
+      const item = activity.items[0]!;
+
+      // Verify camelCase fields returned by backend
+      expect(item.startedAt).toBe(startIso);
+      expect(item.finishedAt).toBe(finishIso);
+      expect(item.durationSeconds).toBe(35); // 35 seconds difference
+      expect(item.neuronsUsed).toBe(8500);
+      expect(item.d1RowsWritten).toBe(14);
+      expect(item.d1RowsRead).toBe(42);
+      expect(item.summary).toBe('Utworzono post z powodzeniem');
+    });
+
+    it('correctly maps and normalizes Automation Activity fields in both camelCase and snake_case', () => {
+      // Helper function mirroring UI normalization logic in scripts.ts
+      const normalizeRunForUI = (run: any) => {
+        const rawStartedAt = run.startedAt || run.started_at;
+        const rawFinishedAt = run.finishedAt || run.finished_at;
+        const isRunning = run.status === 'RUNNING' || run.status === 'running';
+
+        let duration = isRunning ? 'Running' : '—';
+        const durSec = run.durationSeconds !== undefined && run.durationSeconds !== null ? run.durationSeconds : run.duration_seconds;
+        if (typeof durSec === 'number' && !isNaN(durSec) && durSec >= 0) {
+          duration = Math.round(durSec) + 's';
+        } else if (rawStartedAt && rawFinishedAt) {
+          const startMs = new Date(rawStartedAt).getTime();
+          const finishMs = new Date(rawFinishedAt).getTime();
+          if (!isNaN(startMs) && !isNaN(finishMs) && finishMs >= startMs) {
+            duration = Math.max(0, Math.round((finishMs - startMs) / 1000)) + 's';
+          }
+        }
+
+        const rawNeurons = run.neuronsUsed !== undefined && run.neuronsUsed !== null ? run.neuronsUsed : run.neurons_used;
+        const rawWrites = run.d1RowsWritten !== undefined && run.d1RowsWritten !== null ? run.d1RowsWritten : run.d1_rows_written;
+        const rawReads = run.d1RowsRead !== undefined && run.d1RowsRead !== null ? run.d1RowsRead : run.d1_rows_read;
+
+        const neurons = (typeof rawNeurons === 'number' && !isNaN(rawNeurons) && rawNeurons > 0)
+          ? `${Number(rawNeurons).toLocaleString()} AI neurons`
+          : null;
+        const d1Writes = (typeof rawWrites === 'number' && !isNaN(rawWrites) && rawWrites >= 0)
+          ? `${Number(rawWrites).toLocaleString()} D1 writes`
+          : null;
+        const d1Reads = (typeof rawReads === 'number' && !isNaN(rawReads) && rawReads >= 0)
+          ? `${Number(rawReads).toLocaleString()} D1 reads`
+          : null;
+
+        const summary = run.summary || run.result_status || run.errorMessage || run.error_message || 'Zakończono';
+
+        return {
+          startedAt: rawStartedAt || '—',
+          finishedAt: rawFinishedAt || (isRunning ? 'In progress' : '—'),
+          duration,
+          neurons,
+          d1Writes,
+          d1Reads,
+          summary,
+        };
+      };
+
+      // Case 1: Pure camelCase payload (backend standard)
+      const camelCasePayload = {
+        id: 'run-1',
+        startedAt: '2026-10-15T10:00:00.000Z',
+        finishedAt: '2026-10-15T10:00:18.000Z',
+        durationSeconds: 18,
+        neuronsUsed: 15400,
+        d1RowsWritten: 7,
+        d1RowsRead: 25,
+        summary: 'Znaleziono 5 tematów',
+      };
+      const normCamel = normalizeRunForUI(camelCasePayload);
+      expect(normCamel.startedAt).toBe('2026-10-15T10:00:00.000Z');
+      expect(normCamel.finishedAt).toBe('2026-10-15T10:00:18.000Z');
+      expect(normCamel.duration).toBe('18s');
+      expect(normCamel.neurons).toContain('15');
+      expect(normCamel.neurons).toContain('400 AI neurons');
+      expect(normCamel.d1Writes).toBe('7 D1 writes');
+      expect(normCamel.d1Reads).toBe('25 D1 reads');
+      expect(normCamel.summary).toBe('Znaleziono 5 tematów');
+
+      // Case 2: Legacy snake_case payload
+      const snakeCasePayload = {
+        id: 'run-2',
+        started_at: '2026-10-15T11:00:00.000Z',
+        finished_at: '2026-10-15T11:00:45.000Z',
+        duration_seconds: 45,
+        neurons_used: 0, // 0 neurons should be null, not displayed
+        d1_rows_written: 0, // 0 writes is a valid measurement
+        d1_rows_read: 10,
+        result_status: 'Weryfikacja zakończona',
+      };
+      const normSnake = normalizeRunForUI(snakeCasePayload);
+      expect(normSnake.startedAt).toBe('2026-10-15T11:00:00.000Z');
+      expect(normSnake.finishedAt).toBe('2026-10-15T11:00:45.000Z');
+      expect(normSnake.duration).toBe('45s');
+      expect(normSnake.neurons).toBeNull();
+      expect(normSnake.d1Writes).toBe('0 D1 writes');
+      expect(normSnake.d1Reads).toBe('10 D1 reads');
+      expect(normSnake.summary).toBe('Weryfikacja zakończona');
+
+      // Case 3: Missing telemetry and invalid dates (does not fabricate 0 or crash)
+      const emptyPayload = {
+        id: 'run-3',
+        status: 'RUNNING',
+      };
+      const normEmpty = normalizeRunForUI(emptyPayload);
+      expect(normEmpty.startedAt).toBe('—');
+      expect(normEmpty.finishedAt).toBe('In progress');
+      expect(normEmpty.duration).toBe('Running');
+      expect(normEmpty.neurons).toBeNull();
+      expect(normEmpty.d1Writes).toBeNull();
+      expect(normEmpty.d1Reads).toBeNull();
+      expect(normEmpty.summary).toBe('Zakończono');
     });
   });
 

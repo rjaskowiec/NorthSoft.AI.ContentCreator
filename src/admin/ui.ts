@@ -1128,7 +1128,7 @@ export function renderAdminHtml(): string {
 
         <div class="fb-rail-page-box">
           <div class="fb-rail-page-header">
-            <div id="fb-rail-avatar" class="fb-rail-avatar">NS</div>
+            <div id="fb-rail-avatar" class="fb-rail-avatar"><img src="https://northsoft.is/brand/logos/northsoft-symbol.svg" alt="NorthSoft" onerror="this.onerror=null;this.parentElement.textContent='NS';" /></div>
             <div>
               <div id="fb-rail-page-name" class="fb-rail-page-title">NorthSoft</div>
               <div id="fb-rail-page-id" class="fb-rail-page-sub">Page ID: 107455558114139</div>

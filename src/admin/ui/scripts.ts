@@ -3286,7 +3286,7 @@ export function getAdminScripts(): string {
 
             return '<div class="fb-rail-post-card">' +
               '<div class="fb-rail-post-header">' +
-                '<div class="fb-rail-post-avatar">NS</div>' +
+                '<div class="fb-rail-post-avatar"><img src="https://northsoft.is/brand/logos/northsoft-symbol.svg" alt="NorthSoft" onerror="this.onerror=null;this.parentElement.textContent=\\\'NS\\\';" /></div>' +
                 '<div style="flex:1; min-width:0;">' +
                   '<div class="fb-rail-post-name">' + escapeHtml(safeStr(data.pageInfo?.name, 'NorthSoft')) + '</div>' +
                   '<div class="fb-rail-post-time" title="' + escapeHtml(fullDate) + '">' + escapeHtml(timeAgo) + '</div>' +
@@ -3899,49 +3899,75 @@ export function getAdminScripts(): string {
         const rowsWritten = Number(d1.rowsWritten || 0);
         const rowsRead = Number(d1.rowsRead || 0);
         const limit = Number(d1.limit || 100000);
-        const pct = Math.min(100, Math.max(0, Math.round(Number(d1.percentage || (rowsWritten / limit) * 100))));
         const tier = d1.statusTier || 'NORMAL';
         const isVerified = Boolean(d1.isCloudflareVerified);
+        const isUnavailable = d1.telemetrySource === 'TELEMETRY_UNAVAILABLE' || d1.rowsWritten === null;
 
-        if (rowsWrittenEl) rowsWrittenEl.textContent = rowsWritten.toLocaleString() + ' / ' + limit.toLocaleString();
-        if (pctEl) pctEl.textContent = pct + '% of daily limit (' + (100 - pct) + '% remaining)';
-        if (rowsReadEl) rowsReadEl.textContent = rowsRead.toLocaleString();
-        if (queriesEl) queriesEl.textContent = (d1.writeQueries ? Number(d1.writeQueries).toLocaleString() : '0') + ' write queries';
+        if (isUnavailable) {
+          if (rowsWrittenEl) rowsWrittenEl.textContent = 'Unmeasured';
+          if (pctEl) pctEl.textContent = 'Telemetry API not configured — usage unmeasured';
+          if (rowsReadEl) rowsReadEl.textContent = '—';
+          if (queriesEl) queriesEl.textContent = 'Local counter inactive';
+          if (sourceEl) {
+            sourceEl.textContent = 'Telemetry Unavailable';
+            sourceEl.style.color = 'var(--text-muted)';
+          }
+          if (barEl) {
+            barEl.style.width = '0%';
+            barEl.style.background = 'var(--border-color)';
+          }
+          if (badgeEl) {
+            badgeEl.className = 'status-badge';
+            badgeEl.style.background = 'rgba(255,255,255,0.06)';
+            badgeEl.style.color = 'var(--text-muted)';
+            badgeEl.textContent = 'UNMEASURED';
+          }
+        } else {
+          const rowsWritten = Number(d1.rowsWritten || 0);
+          const rowsRead = Number(d1.rowsRead || 0);
+          const pct = Math.min(100, Math.max(0, Math.round(Number(d1.percentage !== null && d1.percentage !== undefined ? d1.percentage : (rowsWritten / limit) * 100))));
 
-        if (sourceEl) {
-          sourceEl.textContent = isVerified ? 'Cloudflare Analytics (Verified)' : 'Local Tracker (Aggregate)';
-          sourceEl.style.color = isVerified ? 'var(--accent-cyan)' : 'var(--accent-amber)';
-        }
-        if (updatedEl) {
-          updatedEl.textContent = d1.asOf ? 'Updated ' + formatTimeSafe(d1.asOf) : 'Live';
-        }
+          if (rowsWrittenEl) rowsWrittenEl.textContent = rowsWritten.toLocaleString() + ' / ' + limit.toLocaleString();
+          if (pctEl) pctEl.textContent = pct + '% of daily limit (' + (100 - pct) + '% remaining)';
+          if (rowsReadEl) rowsReadEl.textContent = rowsRead.toLocaleString();
+          if (queriesEl) queriesEl.textContent = (d1.writeQueries !== null && d1.writeQueries !== undefined ? Number(d1.writeQueries).toLocaleString() : '0') + ' write queries';
 
-        if (barEl) {
-          barEl.style.width = pct + '%';
-          if (pct >= 85) {
-            barEl.style.background = 'var(--accent-rose, #ef4444)';
-          } else if (pct >= 70) {
-            barEl.style.background = 'var(--accent-amber, #f59e0b)';
-          } else if (pct >= 50) {
-            barEl.style.background = '#eab308';
-          } else {
-            barEl.style.background = 'var(--accent-emerald, #10b981)';
+          if (sourceEl) {
+            sourceEl.textContent = isVerified ? 'Cloudflare Analytics (Verified)' : 'Local Tracker (Recorded)';
+            sourceEl.style.color = isVerified ? 'var(--accent-cyan)' : 'var(--accent-amber)';
+          }
+
+          if (barEl) {
+            barEl.style.width = pct + '%';
+            if (pct >= 85) {
+              barEl.style.background = 'var(--accent-rose, #ef4444)';
+            } else if (pct >= 70) {
+              barEl.style.background = 'var(--accent-amber, #f59e0b)';
+            } else if (pct >= 50) {
+              barEl.style.background = '#eab308';
+            } else {
+              barEl.style.background = 'var(--accent-emerald, #10b981)';
+            }
+          }
+
+          if (badgeEl) {
+            badgeEl.className = 'status-badge ' + (
+              tier === 'PROTECTIVE_MODE' ? 'status-alert' :
+              tier === 'ELEVATED_WARNING' ? 'status-alert' :
+              tier === 'WARNING' ? 'status-active' :
+              'status-healthy'
+            );
+            badgeEl.textContent = (
+              tier === 'PROTECTIVE_MODE' ? 'PROTECTIVE MODE' :
+              tier === 'ELEVATED_WARNING' ? 'ELEVATED WARNING (70%)' :
+              tier === 'WARNING' ? 'WARNING (50%)' :
+              'NORMAL (<50%)'
+            );
           }
         }
 
-        if (badgeEl) {
-          badgeEl.className = 'status-badge ' + (
-            tier === 'PROTECTIVE_MODE' ? 'status-alert' :
-            tier === 'ELEVATED_WARNING' ? 'status-alert' :
-            tier === 'WARNING' ? 'status-active' :
-            'status-healthy'
-          );
-          badgeEl.textContent = (
-            tier === 'PROTECTIVE_MODE' ? 'PROTECTIVE MODE' :
-            tier === 'ELEVATED_WARNING' ? 'ELEVATED WARNING (70%)' :
-            tier === 'WARNING' ? 'WARNING (50%)' :
-            'NORMAL (<50%)'
-          );
+        if (updatedEl) {
+          updatedEl.textContent = d1.asOf ? 'Updated ' + formatTimeSafe(d1.asOf) : 'Live';
         }
 
         if (bannerEl) {
@@ -3949,7 +3975,7 @@ export function getAdminScripts(): string {
             bannerEl.style.display = 'block';
             if (bannerTextEl) {
               bannerTextEl.textContent = d1.protectiveModeReason ||
-                'Non-critical background AI tasks (scout, writer) are deferred to protect Free tier D1 quota (' + pct + '% used). Publishing scheduled posts remains active.';
+                'Non-critical background AI tasks (scout, writer) are deferred to protect Free tier D1 quota. Publishing scheduled posts remains active.';
             }
           } else {
             bannerEl.style.display = 'none';
@@ -4043,17 +4069,40 @@ export function getAdminScripts(): string {
           const isRunning = status === 'RUNNING';
           const badgeClass = isSuccess ? 'status-healthy' : isRunning ? 'status-active' : 'status-alert';
           
-          const startedAt = run.started_at ? formatDateSafe(run.started_at) + ' ' + formatTimeSafe(run.started_at) : '—';
-          const finishedAt = run.finished_at ? formatTimeSafe(run.finished_at) : (isRunning ? 'In progress' : '—');
-          const duration = run.started_at && run.finished_at ?
-            Math.max(0, Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)) + 's' :
-            (isRunning ? 'Running' : '—');
+          const rawStartedAt = run.startedAt || run.started_at;
+          const rawFinishedAt = run.finishedAt || run.finished_at;
+          const startedAt = rawStartedAt ? formatDateSafe(rawStartedAt) + ' ' + formatTimeSafe(rawStartedAt) : '—';
+          const finishedAt = rawFinishedAt ? formatTimeSafe(rawFinishedAt) : (isRunning ? 'In progress' : '—');
 
-          const neurons = run.neurons_used ? Number(run.neurons_used).toLocaleString() + ' AI neurons' : null;
-          const d1Writes = run.d1_rows_written ? Number(run.d1_rows_written).toLocaleString() + ' D1 writes' : null;
-          const d1Reads = run.d1_rows_read ? Number(run.d1_rows_read).toLocaleString() + ' D1 reads' : null;
+          // Duration calculation: respect durationSeconds / duration_seconds first, fallback to parsed dates if valid
+          let duration = isRunning ? 'Running' : '—';
+          const durSec = run.durationSeconds !== undefined && run.durationSeconds !== null ? run.durationSeconds : run.duration_seconds;
+          if (typeof durSec === 'number' && !isNaN(durSec) && durSec >= 0) {
+            duration = Math.round(durSec) + 's';
+          } else if (rawStartedAt && rawFinishedAt) {
+            const startMs = new Date(rawStartedAt).getTime();
+            const finishMs = new Date(rawFinishedAt).getTime();
+            if (!isNaN(startMs) && !isNaN(finishMs) && finishMs >= startMs) {
+              duration = Math.max(0, Math.round((finishMs - startMs) / 1000)) + 's';
+            }
+          }
 
-          const summary = escapeHtml(safeStr(run.result_status || run.error_message || 'Zakończono'));
+          // Telemetry metrics: distinguish absence (null / undefined) from real measured 0
+          const rawNeurons = run.neuronsUsed !== undefined && run.neuronsUsed !== null ? run.neuronsUsed : run.neurons_used;
+          const rawWrites = run.d1RowsWritten !== undefined && run.d1RowsWritten !== null ? run.d1RowsWritten : run.d1_rows_written;
+          const rawReads = run.d1RowsRead !== undefined && run.d1RowsRead !== null ? run.d1RowsRead : run.d1_rows_read;
+
+          const neurons = (typeof rawNeurons === 'number' && !isNaN(rawNeurons) && rawNeurons > 0)
+            ? Number(rawNeurons).toLocaleString() + ' AI neurons'
+            : null;
+          const d1Writes = (typeof rawWrites === 'number' && !isNaN(rawWrites) && rawWrites >= 0)
+            ? Number(rawWrites).toLocaleString() + ' D1 writes'
+            : null;
+          const d1Reads = (typeof rawReads === 'number' && !isNaN(rawReads) && rawReads >= 0)
+            ? Number(rawReads).toLocaleString() + ' D1 reads'
+            : null;
+
+          const summary = escapeHtml(safeStr(run.summary || run.result_status || run.errorMessage || run.error_message || 'Zakończono'));
           const details = run.details || {};
 
           // Counts badge pills

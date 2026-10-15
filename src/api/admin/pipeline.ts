@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono';
+import { AppError } from '../../core/errors';
 import type { AppEnv } from '../../core/types';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ContentOrchestrator } from '../../services/content/content-orchestrator';
@@ -40,14 +41,18 @@ pipelineRouter.post('/pipeline/stage/:name', csrfProtection, async (c) => {
     const result = await service.runStage(stageName, 'admin');
     return c.json({ success: result.success, result });
   } catch (err: unknown) {
+    if (err instanceof AppError) {
+      return c.json({ success: false, error: err.message, code: err.code }, err.statusCode as 409);
+    }
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const isConflict = errorMsg.startsWith('PIPELINE_ALREADY_RUNNING');
     return c.json(
       {
         success: false,
         error: errorMsg,
-        code: errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 'PIPELINE_ALREADY_RUNNING' : 'STAGE_FAILED',
+        code: isConflict ? 'PIPELINE_ALREADY_RUNNING' : 'STAGE_FAILED',
       },
-      errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 409 : 500,
+      isConflict ? 409 : 500,
     );
   }
 });
@@ -65,14 +70,18 @@ pipelineRouter.post('/pipeline/run-all', csrfProtection, async (c) => {
     const allSuccessful = steps.every((s) => s.success);
     return c.json({ success: allSuccessful, steps });
   } catch (err: unknown) {
+    if (err instanceof AppError) {
+      return c.json({ success: false, error: err.message, code: err.code }, err.statusCode as 409);
+    }
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const isConflict = errorMsg.startsWith('PIPELINE_ALREADY_RUNNING');
     return c.json(
       {
         success: false,
         error: errorMsg,
-        code: errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 'PIPELINE_ALREADY_RUNNING' : 'PIPELINE_FAILED',
+        code: isConflict ? 'PIPELINE_ALREADY_RUNNING' : 'PIPELINE_FAILED',
       },
-      errorMsg.startsWith('PIPELINE_ALREADY_RUNNING') ? 409 : 500,
+      isConflict ? 409 : 500,
     );
   }
 });
@@ -255,6 +264,7 @@ pipelineRouter.get('/pipeline/d1-usage', async (c) => {
       statusTier: status.tier,
       protectiveModeActive: status.isProtectiveModeActive,
       protectiveModeReason: status.reason,
+      telemetrySource: status.telemetrySource,
       isCloudflareVerified: status.telemetrySource === 'CLOUDFLARE_VERIFIED',
       asOf: status.lastUpdated,
     },

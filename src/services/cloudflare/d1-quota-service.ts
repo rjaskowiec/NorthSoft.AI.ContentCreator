@@ -36,13 +36,13 @@ export const DEFAULT_D1_CONFIG: D1ProtectionConfig = {
 
 export interface D1UsageTelemetryStatus {
   tier: D1ProtectionTier;
-  telemetrySource: 'CLOUDFLARE_VERIFIED' | 'LOCAL_MEASURED' | 'ESTIMATED_FALLBACK';
-  rowsWritten: number;
-  rowsRead: number;
-  writeQueries: number;
-  readQueries: number;
+  telemetrySource: 'CLOUDFLARE_VERIFIED' | 'LOCAL_MEASURED' | 'TELEMETRY_UNAVAILABLE' | 'ESTIMATED_FALLBACK';
+  rowsWritten: number | null;
+  rowsRead: number | null;
+  writeQueries: number | null;
+  readQueries: number | null;
   dailyWriteLimit: number;
-  usagePercentage: number;
+  usagePercentage: number | null;
   isProtectiveModeActive: boolean;
   reason: string;
   config: D1ProtectionConfig;
@@ -174,6 +174,7 @@ export class D1QuotaService {
     }
 
     // 2. Query local persistent usage from D1
+    let localDbFound = false;
     let localRowsWritten = localBuffer.rowsWritten;
     let localRowsRead = localBuffer.rowsRead;
     let localWriteQueries = localBuffer.writeQueries;
@@ -186,6 +187,7 @@ export class D1QuotaService {
         .first<{ rows_written: number; rows_read: number; write_queries: number; read_queries: number }>();
 
       if (dbRow) {
+        localDbFound = true;
         localRowsWritten = Math.max(localRowsWritten, dbRow.rows_written + localBuffer.unflushedWrites);
         localRowsRead = Math.max(localRowsRead, dbRow.rows_read);
         localWriteQueries = Math.max(localWriteQueries, dbRow.write_queries);
@@ -195,11 +197,11 @@ export class D1QuotaService {
       // Local query fallback
     }
 
-    // 3. Determine primary telemetry source
-    let effectiveWritten: number;
-    let effectiveRead: number;
-    let effectiveWriteQueries: number;
-    let effectiveReadQueries: number;
+    // 3. Determine primary telemetry source & authenticity
+    let effectiveWritten: number | null = null;
+    let effectiveRead: number | null = null;
+    let effectiveWriteQueries: number | null = null;
+    let effectiveReadQueries: number | null = null;
     let telemetrySource: D1UsageTelemetryStatus['telemetrySource'];
 
     if (cfTelemetry && cfTelemetry.status === 'VERIFIED' && cfTelemetry.rowsWritten !== null) {
@@ -208,31 +210,43 @@ export class D1QuotaService {
       effectiveWriteQueries = cfTelemetry.writeQueries ?? localWriteQueries;
       effectiveReadQueries = cfTelemetry.readQueries ?? localReadQueries;
       telemetrySource = 'CLOUDFLARE_VERIFIED';
-    } else {
+    } else if (localDbFound || localBuffer.rowsWritten > 0 || localBuffer.rowsRead > 0) {
+      // Only treat as LOCAL_MEASURED if we actually have recorded measurements in D1 or buffer
       effectiveWritten = localRowsWritten;
       effectiveRead = localRowsRead;
       effectiveWriteQueries = localWriteQueries;
       effectiveReadQueries = localReadQueries;
       telemetrySource = 'LOCAL_MEASURED';
+    } else {
+      // Neither Cloudflare API nor local counter has active measurement
+      telemetrySource = 'TELEMETRY_UNAVAILABLE';
     }
 
-    const usagePct = Number(((effectiveWritten / this.config.dailyWriteLimit) * 100).toFixed(1));
-
-    // 4. Determine protection tier
+    // 4. Calculate usage percentage and protection tier
+    let usagePct: number | null = null;
     let tier: D1ProtectionTier = 'NORMAL';
     let isProtectiveModeActive = false;
-    let reason = `D1 usage is within normal operational limits (${usagePct}% of daily allocation).`;
+    let reason: string;
 
-    if (usagePct >= this.config.protectiveModeThresholdPct) {
-      tier = 'PROTECTIVE_MODE';
-      isProtectiveModeActive = true;
-      reason = `Protective Mode Active: ${effectiveWritten.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Non-critical background generation paused to preserve free tier quota.`;
-    } else if (usagePct >= this.config.elevatedWarningThresholdPct) {
-      tier = 'ELEVATED_WARNING';
-      reason = `Elevated Warning: ${effectiveWritten.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Nearing daily budget ceiling.`;
-    } else if (usagePct >= this.config.warningThresholdPct) {
-      tier = 'WARNING';
-      reason = `Warning: ${effectiveWritten.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Moderate write activity.`;
+    if (telemetrySource === 'TELEMETRY_UNAVAILABLE') {
+      // Telemetry unavailable: do not fabricate 0 / 100,000 (0%). State clearly that usage is unmeasured.
+      reason = 'D1 telemetry is currently unavailable. Cloudflare Analytics API is not configured or returning data, and local telemetry has no recorded writes today. Actual usage is unmeasured.';
+    } else {
+      const written = effectiveWritten ?? 0;
+      usagePct = Number(((written / this.config.dailyWriteLimit) * 100).toFixed(1));
+      reason = `D1 usage is within normal operational limits (${usagePct}% of daily allocation).`;
+
+      if (usagePct >= this.config.protectiveModeThresholdPct) {
+        tier = 'PROTECTIVE_MODE';
+        isProtectiveModeActive = true;
+        reason = `Protective Mode Active: ${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Heavy batch tasks (runAllStages, topics, posts) are paused to preserve free tier quota.`;
+      } else if (usagePct >= this.config.elevatedWarningThresholdPct) {
+        tier = 'ELEVATED_WARNING';
+        reason = `Elevated Warning: ${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Nearing daily budget ceiling.`;
+      } else if (usagePct >= this.config.warningThresholdPct) {
+        tier = 'WARNING';
+        reason = `Warning: ${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Moderate write activity.`;
+      }
     }
 
     return {
@@ -254,31 +268,32 @@ export class D1QuotaService {
 
   /**
    * Decides whether a given pipeline stage should be deferred in protective mode.
-   * Manual admin requests are never blocked.
+   * Enforces strict safety:
+   *  - When isProtectiveModeActive is true, heavy batch stages ('topics', 'posts', 'images', 'runAllStages')
+   *    are BLOCKED even if triggered manually (isManual = true) to prevent accidental quota exhaustion.
+   *  - Critical publishing and scheduling tasks ('scheduling', 'publishing') are ALWAYS permitted.
    */
   public shouldDeferStage(
-    stage: 'topics' | 'posts' | 'images' | 'scheduling' | 'facebook_sync',
+    stage: 'topics' | 'posts' | 'images' | 'scheduling' | 'facebook_sync' | 'runAllStages',
     status: D1UsageTelemetryStatus,
-    isManual = false,
+    _isManual = false,
   ): { defer: boolean; reason?: string } {
-    if (isManual) {
+    // 1. Critical time-sensitive publishing and scheduling operations are NEVER deferred
+    if (stage === 'scheduling' || (stage as string) === 'publishing') {
       return { defer: false };
     }
 
-    if (!status.isProtectiveModeActive) {
-      return { defer: false };
+    // 2. If protective mode is active, block heavy batch generation tasks regardless of actor or manual flag
+    if (status.isProtectiveModeActive) {
+      const writtenStr = status.rowsWritten !== null ? status.rowsWritten.toLocaleString() : 'high';
+      const pctStr = status.usagePercentage !== null ? `${status.usagePercentage}%` : '>85%';
+      return {
+        defer: true,
+        reason: `Stage '${stage}' blocked by D1 Protective Mode (${writtenStr} / ${status.dailyWriteLimit.toLocaleString()} rows written, ${pctStr}). Manual and automated heavy batch tasks are paused to protect database quota. Scheduled publishing remains active.`,
+      };
     }
 
-    // Critical time-sensitive publishing/scheduling operations are never deferred
-    if (stage === 'scheduling') {
-      return { defer: false };
-    }
-
-    // Heavy background generation/scouting tasks are deferred in protective mode
-    return {
-      defer: true,
-      reason: `Automated ${stage} stage deferred: D1 Protective Mode Active (${status.rowsWritten.toLocaleString()} / ${status.dailyWriteLimit.toLocaleString()} rows written, ${status.usagePercentage}%).`,
-    };
+    return { defer: false };
   }
 
   /**

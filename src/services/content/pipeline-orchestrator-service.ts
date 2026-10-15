@@ -19,6 +19,7 @@
  */
 
 import { getAIProvider } from '../../ai/factory';
+import { AppError } from '../../core/errors';
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import {
   AI_BACKGROUND_WINDOW,
@@ -608,6 +609,17 @@ export class PipelineOrchestratorService {
   // ---------------------------------------------------------------------------
 
   async runStage(stage: PipelineStage, actor: PipelineActor = 'admin'): Promise<StageRunResult> {
+    // Execution-layer protective mode enforcement: check quota before running expensive stages
+    if (stage !== 'scheduling') {
+      const d1QuotaService = new D1QuotaService();
+      const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
+      const deferCheck = d1QuotaService.shouldDeferStage(stage, d1Status, actor === 'admin');
+      if (deferCheck.defer) {
+        const errorMsg = deferCheck.reason || `Stage '${stage}' blocked: D1 Protective Mode Active.`;
+        throw new AppError(errorMsg, 409, 'PROTECTIVE_MODE_ACTIVE');
+      }
+    }
+
     const triggerType = actor === 'admin' ? 'manual' : 'cron';
     const runId = newRunId(`stage-${stage}`);
     await this.recordRunStart(runId, triggerType, stage);
@@ -726,6 +738,15 @@ export class PipelineOrchestratorService {
    * Never publishes directly; publication happens at the scheduled time.
    */
   async runAllStages(actor: PipelineActor = 'admin'): Promise<StageRunResult[]> {
+    // Check protective mode upfront before starting any batch stage
+    const d1QuotaService = new D1QuotaService();
+    const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
+    const deferCheck = d1QuotaService.shouldDeferStage('runAllStages', d1Status, actor === 'admin');
+    if (deferCheck.defer) {
+      const errorMsg = deferCheck.reason || 'Batch pipeline blocked: D1 Protective Mode Active.';
+      throw new AppError(errorMsg, 409, 'PROTECTIVE_MODE_ACTIVE');
+    }
+
     const config = await this.getSchedulerConfig();
     const counts = await this.getCounts();
     const steps: StageRunResult[] = [];

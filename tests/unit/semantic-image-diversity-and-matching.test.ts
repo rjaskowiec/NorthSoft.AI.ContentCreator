@@ -113,7 +113,7 @@ describe('Semantic Diversity & Intelligent Post-Image Matching Suite', () => {
       expect(dominant.some((t) => t.includes('Reviewing bar charts, analytics graphs'))).toBe(true);
     });
 
-    it('rejects candidate concept that repeats team at screen discussing UX even with different phrasing', () => {
+    it('rejects candidate concept that replicates an existing library situation directly', () => {
       const history: CategoryHistoryItem[] = [
         {
           id: 'hist-screen-1',
@@ -122,13 +122,14 @@ describe('Semantic Diversity & Intelligent Post-Image Matching Suite', () => {
           status: 'PUBLISHED',
           usageCount: 2,
           publishedCount: 1,
+          situation: 'Colleagues gathered around monitor reviewing landing page wireframes',
+          action: 'pointing at the monitor screen while coworker takes notes',
         },
       ];
 
-      // Proposed candidate uses different words: "team of designers", "display panel", "collaborative UX evaluation"
-      const candidateRepeatingScreen: GeneratedSceneConcept = {
+      const candidateReplicating: GeneratedSceneConcept = {
         id: 'cand-1',
-        situation: 'Team of colleagues standing near display discussing UX audit notes and charts',
+        situation: 'Colleagues gathered around monitor reviewing landing page wireframes',
         action: 'pointing at the monitor screen while coworker takes notes',
         relationship: 'group collaboration',
         businessNeed: 'UI review',
@@ -136,12 +137,12 @@ describe('Semantic Diversity & Intelligent Post-Image Matching Suite', () => {
         visualMotif: 'large monitor display',
         promptDescription: 'team of creative colleagues gathered around large screen discussing UX interface wireframes',
         compositionGuidance: 'medium shot with warm office light',
-        rationale: 'Tried to change the phrasing',
+        rationale: 'Reviewing wireframes',
       };
 
-      const result = isSemanticallyDistinct(candidateRepeatingScreen, history);
+      const result = isSemanticallyDistinct(candidateReplicating, history);
       expect(result.distinct).toBe(false);
-      expect(result.conflictReason).toContain('overused motif: team gathered at a screen');
+      expect(result.conflictReason).toContain('directly replicates historical entry');
     });
 
     it('accepts genuinely novel concept that changes the core situation to tangible multi-device layout', () => {

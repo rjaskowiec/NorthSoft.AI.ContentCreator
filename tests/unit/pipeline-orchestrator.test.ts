@@ -121,4 +121,42 @@ describe('PipelineOrchestratorService Unit Tests', () => {
     expect(updated.targetCoverageDays).toBe(21);
     expect(updated.maxPostsPerNight).toBe(2);
   });
+
+  it('blocks heavy stages (topics, posts, images, runAllStages) in execution layer when protective mode is active, even for admin', async () => {
+    // Mock DB returning protective mode tier (>85% D1 usage)
+    const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes('SELECT rows_written, rows_read')) {
+        return {
+          bind: vi.fn().mockReturnValue({
+            first: vi.fn().mockResolvedValue({
+              rows_written: 90000,
+              rows_read: 50000,
+              write_queries: 400,
+              read_queries: 1000,
+            }),
+          }),
+        };
+      }
+      return {
+        bind: vi.fn().mockReturnValue({
+          run: vi.fn().mockResolvedValue({ success: true }),
+          first: vi.fn().mockResolvedValue(null),
+        }),
+        run: vi.fn().mockResolvedValue({ success: true }),
+      };
+    });
+
+    const mockDb = { prepare: prepareMock } as unknown as D1Database;
+    const mockEnv = {} as Env;
+    const service = new PipelineOrchestratorService(mockDb, mockEnv);
+
+    // 1. topics stage must be rejected with 409 PROTECTIVE_MODE_ACTIVE even for admin
+    await expect(service.runStage('topics', 'admin')).rejects.toThrow(/D1 Protective Mode/);
+
+    // 2. posts stage must be rejected with 409 PROTECTIVE_MODE_ACTIVE even for admin
+    await expect(service.runStage('posts', 'admin')).rejects.toThrow(/D1 Protective Mode/);
+
+    // 3. runAllStages must be rejected upfront
+    await expect(service.runAllStages('admin')).rejects.toThrow(/D1 Protective Mode/);
+  });
 });

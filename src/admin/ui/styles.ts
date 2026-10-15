@@ -811,7 +811,8 @@ export function getAdminCss(): string {
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #1877f2, #0056b3);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -819,6 +820,17 @@ export function getAdminCss(): string {
       color: white;
       font-size: 0.85rem;
       flex-shrink: 0;
+      overflow: hidden;
+      padding: 2px;
+      box-sizing: border-box;
+    }
+
+    .fb-rail-avatar img,
+    .fb-rail-post-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
     }
 
     .fb-rail-page-title {
@@ -903,7 +915,8 @@ export function getAdminCss(): string {
       width: 28px;
       height: 28px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #1877f2, #0056b3);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -911,6 +924,9 @@ export function getAdminCss(): string {
       color: white;
       font-size: 0.7rem;
       flex-shrink: 0;
+      overflow: hidden;
+      padding: 2px;
+      box-sizing: border-box;
     }
 
     .fb-rail-post-name {
