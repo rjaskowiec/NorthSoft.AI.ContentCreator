@@ -26,6 +26,11 @@ class MockD1Statement {
       } as unknown as T;
     }
 
+    if (this.sql.includes('SELECT COUNT(*) as cnt') && this.sql.includes('schedules')) {
+      if (this.mockData.emptySchedules) return { cnt: 0 } as unknown as T;
+      return { cnt: 2 } as unknown as T;
+    }
+
     if (this.sql.includes('FROM schedules s')) {
       if (this.mockData.emptySchedules) return null;
       return {
@@ -34,11 +39,6 @@ class MockD1Statement {
         scheduled_at: this.mockData.scheduledAt || '2026-10-02T10:00:00.000Z',
         post_title: 'Is Your Email Marketing Reaching Its Full Potential?',
       } as unknown as T;
-    }
-
-    if (this.sql.includes('status = \'pending\'')) {
-      if (this.mockData.emptySchedules) return { cnt: 0 } as unknown as T;
-      return { cnt: 2 } as unknown as T;
     }
 
     if (this.sql.includes('status = \'published\'')) {

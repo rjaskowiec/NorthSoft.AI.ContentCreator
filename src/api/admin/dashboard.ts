@@ -105,6 +105,13 @@ dashboardRouter.get('/dashboard', async (c) => {
            FROM schedules s
            JOIN posts p ON s.post_id = p.id
            WHERE s.status IN ('pending', 'publishing')
+             AND p.status != 'published'
+             AND NOT EXISTS (
+               SELECT 1 FROM publications pub 
+               WHERE pub.post_id = s.post_id 
+                 AND pub.status = 'published' 
+                 AND pub.fb_deleted_at IS NULL
+             )
            ORDER BY s.scheduled_at ASC
            LIMIT 1`,
         )
@@ -116,7 +123,19 @@ dashboardRouter.get('/dashboard', async (c) => {
         const isOverdue = !isNaN(schedMs) && schedMs <= nowMs;
 
         const countRes = await db
-          .prepare(`SELECT COUNT(*) as cnt FROM schedules WHERE status = 'pending'`)
+          .prepare(
+            `SELECT COUNT(*) as cnt 
+             FROM schedules s
+             JOIN posts p ON s.post_id = p.id
+             WHERE s.status = 'pending'
+               AND p.status != 'published'
+               AND NOT EXISTS (
+                 SELECT 1 FROM publications pub 
+                 WHERE pub.post_id = s.post_id 
+                   AND pub.status = 'published' 
+                   AND pub.fb_deleted_at IS NULL
+               )`,
+          )
           .first<{ cnt: number }>();
 
         nextPublication = {
