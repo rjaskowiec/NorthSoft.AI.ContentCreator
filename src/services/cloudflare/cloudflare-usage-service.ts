@@ -22,12 +22,26 @@ export interface CloudflareVerifiedUsage {
   dashboardUrl: string;
 }
 
-interface CacheEntry {
-  data: CloudflareVerifiedUsage;
+export interface CloudflareD1Usage {
+  status: 'VERIFIED' | 'NOT_CONFIGURED' | 'API_ERROR' | 'DATA_DELAYED';
+  rowsWritten: number | null;
+  rowsRead: number | null;
+  writeQueries: number | null;
+  readQueries: number | null;
+  period: string;
+  lastUpdated: string | null;
+  source: string;
+  reason?: string;
+  dashboardUrl: string;
+}
+
+interface CacheEntry<T> {
+  data: T;
   cachedAt: number;
 }
 
-let usageCache: CacheEntry | null = null;
+let usageCache: CacheEntry<CloudflareVerifiedUsage> | null = null;
+let d1UsageCache: CacheEntry<CloudflareD1Usage> | null = null;
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds cache
 
 export class CloudflareUsageService {
@@ -213,9 +227,186 @@ export class CloudflareUsageService {
   }
 
   /**
+   * Fetches official Cloudflare D1 database usage telemetry from GraphQL Analytics API.
+   * Tracks rowsWritten, rowsRead, and query counts for today (UTC).
+   */
+  async getVerifiedD1Usage(options?: { forceRefresh?: boolean }): Promise<CloudflareD1Usage> {
+    const now = Date.now();
+    const dashboardUrl = 'https://dash.cloudflare.com/';
+
+    // 1. Check in-memory cache
+    if (!options?.forceRefresh && d1UsageCache && now - d1UsageCache.cachedAt < CACHE_TTL_MS) {
+      return d1UsageCache.data;
+    }
+
+    // 2. Validate configuration
+    if (!this.accountId || !this.apiToken) {
+      const result: CloudflareD1Usage = {
+        status: 'NOT_CONFIGURED',
+        rowsWritten: null,
+        rowsRead: null,
+        writeQueries: null,
+        readQueries: null,
+        period: 'Today (UTC)',
+        lastUpdated: null,
+        source: 'Not Configured',
+        reason:
+          'Cloudflare API Token or Account ID missing in environment secrets (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID). Official D1 telemetry unavailable via API.',
+        dashboardUrl,
+      };
+      d1UsageCache = { data: result, cachedAt: now };
+      return result;
+    }
+
+    // 3. Prepare GraphQL query for today's UTC D1 telemetry
+    const todayStr = new Date().toISOString().split('T')[0] ?? '';
+    const startUtcIso = `${todayStr}T00:00:00Z`;
+
+    const query = `
+      query GetD1Usage($accountTag: String!, $start: String!) {
+        viewer {
+          accounts(filter: { accountTag: $accountTag }) {
+            d1AnalyticsAdaptiveGroups(
+              limit: 1000
+              filter: { datetime_geq: $start }
+            ) {
+              sum {
+                rowsWritten
+                rowsRead
+                writeQueries
+                readQueries
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await this.fetchFn('https://api.cloudflare.com/client/v4/graphql', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          variables: {
+            accountTag: this.accountId,
+            start: startUtcIso,
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        const result: CloudflareD1Usage = {
+          status: 'API_ERROR',
+          rowsWritten: null,
+          rowsRead: null,
+          writeQueries: null,
+          readQueries: null,
+          period: 'Today (UTC)',
+          lastUpdated: new Date().toISOString(),
+          source: 'Cloudflare Analytics API (Error)',
+          reason: `Cloudflare API returned status ${response.status}: ${errText.substring(0, 150)}`,
+          dashboardUrl,
+        };
+        return result;
+      }
+
+      const json = (await response.json()) as {
+        data?: {
+          viewer?: {
+            accounts?: Array<{
+              d1AnalyticsAdaptiveGroups?: Array<{
+                sum?: {
+                  rowsWritten?: number;
+                  rowsRead?: number;
+                  writeQueries?: number;
+                  readQueries?: number;
+                };
+              }>;
+            }>;
+          };
+        };
+        errors?: Array<{ message: string }>;
+      };
+
+      if (json.errors && json.errors.length > 0) {
+        const errMsg = json.errors.map((e) => e.message).join('; ');
+        const result: CloudflareD1Usage = {
+          status: 'API_ERROR',
+          rowsWritten: null,
+          rowsRead: null,
+          writeQueries: null,
+          readQueries: null,
+          period: 'Today (UTC)',
+          lastUpdated: new Date().toISOString(),
+          source: 'Cloudflare Analytics API (Error)',
+          reason: `GraphQL error from Cloudflare API: ${errMsg.substring(0, 150)}`,
+          dashboardUrl,
+        };
+        return result;
+      }
+
+      const groups = json.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || [];
+
+      let totalWritten = 0;
+      let totalRead = 0;
+      let totalWriteQueries = 0;
+      let totalReadQueries = 0;
+
+      for (const group of groups) {
+        totalWritten += group.sum?.rowsWritten || 0;
+        totalRead += group.sum?.rowsRead || 0;
+        totalWriteQueries += group.sum?.writeQueries || 0;
+        totalReadQueries += group.sum?.readQueries || 0;
+      }
+
+      const result: CloudflareD1Usage = {
+        status: 'VERIFIED',
+        rowsWritten: Math.round(totalWritten),
+        rowsRead: Math.round(totalRead),
+        writeQueries: totalWriteQueries,
+        readQueries: totalReadQueries,
+        period: 'Today (UTC)',
+        lastUpdated: new Date().toISOString(),
+        source: 'Cloudflare Analytics GraphQL API',
+        dashboardUrl,
+      };
+
+      d1UsageCache = { data: result, cachedAt: now };
+      return result;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const result: CloudflareD1Usage = {
+        status: 'API_ERROR',
+        rowsWritten: null,
+        rowsRead: null,
+        writeQueries: null,
+        readQueries: null,
+        period: 'Today (UTC)',
+        lastUpdated: new Date().toISOString(),
+        source: 'Cloudflare Analytics API (Failed)',
+        reason: `Network/API connection failure: ${errMsg}`,
+        dashboardUrl,
+      };
+      return result;
+    }
+  }
+
+  /**
    * Resets internal cache (useful for testing).
    */
   static resetCache(): void {
     usageCache = null;
+    d1UsageCache = null;
   }
 }

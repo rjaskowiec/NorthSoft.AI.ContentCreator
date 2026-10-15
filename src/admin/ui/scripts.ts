@@ -3867,6 +3867,332 @@ export function getAdminScripts(): string {
       } catch (err) {
         console.error('Failed to load pipeline execution history:', err);
       }
+
+      await Promise.allSettled([
+        loadD1UsageTelemetry(),
+        loadAutomationActivity(true)
+      ]);
+    }
+
+    let activityPaginationOffset = 0;
+    const ACTIVITY_PAGE_LIMIT = 20;
+
+    async function loadD1UsageTelemetry(forceRefresh = false) {
+      try {
+        const url = '/api/admin/pipeline/d1-usage' + (forceRefresh ? '?refresh=true' : '');
+        const res = await guardedFetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        const d1 = data.d1 || {};
+
+        const rowsWrittenEl = document.getElementById('d1-stat-rows-written');
+        const rowsReadEl = document.getElementById('d1-stat-rows-read');
+        const pctEl = document.getElementById('d1-stat-pct');
+        const queriesEl = document.getElementById('d1-stat-queries');
+        const sourceEl = document.getElementById('d1-stat-source');
+        const updatedEl = document.getElementById('d1-stat-updated');
+        const badgeEl = document.getElementById('d1-quota-tier-badge');
+        const barEl = document.getElementById('d1-usage-progress-bar');
+        const bannerEl = document.getElementById('d1-protection-banner');
+        const bannerTextEl = document.getElementById('d1-protection-banner-text');
+
+        const rowsWritten = Number(d1.rowsWritten || 0);
+        const rowsRead = Number(d1.rowsRead || 0);
+        const limit = Number(d1.limit || 100000);
+        const pct = Math.min(100, Math.max(0, Math.round(Number(d1.percentage || (rowsWritten / limit) * 100))));
+        const tier = d1.statusTier || 'NORMAL';
+        const isVerified = Boolean(d1.isCloudflareVerified);
+
+        if (rowsWrittenEl) rowsWrittenEl.textContent = rowsWritten.toLocaleString() + ' / ' + limit.toLocaleString();
+        if (pctEl) pctEl.textContent = pct + '% of daily limit (' + (100 - pct) + '% remaining)';
+        if (rowsReadEl) rowsReadEl.textContent = rowsRead.toLocaleString();
+        if (queriesEl) queriesEl.textContent = (d1.writeQueries ? Number(d1.writeQueries).toLocaleString() : '0') + ' write queries';
+
+        if (sourceEl) {
+          sourceEl.textContent = isVerified ? 'Cloudflare Analytics (Verified)' : 'Local Tracker (Aggregate)';
+          sourceEl.style.color = isVerified ? 'var(--accent-cyan)' : 'var(--accent-amber)';
+        }
+        if (updatedEl) {
+          updatedEl.textContent = d1.asOf ? 'Updated ' + formatTimeSafe(d1.asOf) : 'Live';
+        }
+
+        if (barEl) {
+          barEl.style.width = pct + '%';
+          if (pct >= 85) {
+            barEl.style.background = 'var(--accent-rose, #ef4444)';
+          } else if (pct >= 70) {
+            barEl.style.background = 'var(--accent-amber, #f59e0b)';
+          } else if (pct >= 50) {
+            barEl.style.background = '#eab308';
+          } else {
+            barEl.style.background = 'var(--accent-emerald, #10b981)';
+          }
+        }
+
+        if (badgeEl) {
+          badgeEl.className = 'status-badge ' + (
+            tier === 'PROTECTIVE_MODE' ? 'status-alert' :
+            tier === 'ELEVATED_WARNING' ? 'status-alert' :
+            tier === 'WARNING' ? 'status-active' :
+            'status-healthy'
+          );
+          badgeEl.textContent = (
+            tier === 'PROTECTIVE_MODE' ? 'PROTECTIVE MODE' :
+            tier === 'ELEVATED_WARNING' ? 'ELEVATED WARNING (70%)' :
+            tier === 'WARNING' ? 'WARNING (50%)' :
+            'NORMAL (<50%)'
+          );
+        }
+
+        if (bannerEl) {
+          if (tier === 'PROTECTIVE_MODE' || d1.protectiveModeActive) {
+            bannerEl.style.display = 'block';
+            if (bannerTextEl) {
+              bannerTextEl.textContent = d1.protectiveModeReason ||
+                'Non-critical background AI tasks (scout, writer) are deferred to protect Free tier D1 quota (' + pct + '% used). Publishing scheduled posts remains active.';
+            }
+          } else {
+            bannerEl.style.display = 'none';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load D1 usage telemetry:', err);
+      }
+    }
+
+    function handleActivityPeriodChange(period) {
+      const customWrap = document.getElementById('activity-custom-dates');
+      if (customWrap) {
+        customWrap.style.display = period === 'custom' ? 'flex' : 'none';
+      }
+      if (period !== 'custom') {
+        loadAutomationActivity(true);
+      }
+    }
+
+    async function loadAutomationActivity(reset = false) {
+      const listEl = document.getElementById('automation-activity-list');
+      const totalCountEl = document.getElementById('activity-total-count');
+      const paginationEl = document.getElementById('activity-pagination');
+      const loadMoreBtn = document.getElementById('activity-load-more-btn');
+
+      if (!listEl) return;
+
+      if (reset) {
+        activityPaginationOffset = 0;
+        listEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:1.5rem;">Loading activity events...</div>';
+      }
+
+      const period = document.getElementById('activity-period-filter')?.value || '24h';
+      const stage = document.getElementById('activity-stage-filter')?.value || 'all';
+      const customStart = document.getElementById('activity-custom-start')?.value;
+      const customEnd = document.getElementById('activity-custom-end')?.value;
+
+      const params = new URLSearchParams({
+        period,
+        stage,
+        limit: String(ACTIVITY_PAGE_LIMIT),
+        offset: String(activityPaginationOffset)
+      });
+
+      if (period === 'custom') {
+        if (customStart) params.set('startDate', new Date(customStart).toISOString());
+        if (customEnd) params.set('endDate', new Date(customEnd).toISOString());
+      }
+
+      try {
+        const res = await guardedFetch('/api/admin/pipeline/activity?' + params.toString());
+        if (!res.ok) {
+          if (reset) listEl.innerHTML = '<div style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to load activity logs.</div>';
+          return;
+        }
+
+        const data = await res.json();
+        const runs = data.runs || [];
+        const total = Number(data.total || runs.length);
+
+        if (totalCountEl) totalCountEl.textContent = total.toLocaleString();
+
+        if (reset) {
+          listEl.innerHTML = '';
+        }
+
+        if (runs.length === 0 && activityPaginationOffset === 0) {
+          listEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:2rem; background:rgba(255,255,255,0.02); border-radius:8px; border:1px dashed var(--border-color);">' +
+            'No automation events logged in this period.' +
+          '</div>';
+          if (paginationEl) paginationEl.style.display = 'none';
+          return;
+        }
+
+        const stagePolishLabels = {
+          topics: 'Wyszukiwanie tematów',
+          posts: 'Generowanie postów',
+          images: 'Ilustracje',
+          scheduling: 'Planowanie publikacji',
+          full_pipeline: 'Pełny cykl automatu',
+          maintenance: 'Konserwacja'
+        };
+
+        const cardsHtml = runs.map(run => {
+          const runId = escapeHtml(String(run.id));
+          const stageKey = run.stage || 'full_pipeline';
+          const stageLabel = stagePolishLabels[stageKey] || safeUpper(stageKey, 'AUTOMATION');
+          const status = safeUpper(run.status, 'UNKNOWN');
+          const isSuccess = status === 'COMPLETED' || status === 'SUCCESS';
+          const isRunning = status === 'RUNNING';
+          const badgeClass = isSuccess ? 'status-healthy' : isRunning ? 'status-active' : 'status-alert';
+          
+          const startedAt = run.started_at ? formatDateSafe(run.started_at) + ' ' + formatTimeSafe(run.started_at) : '—';
+          const finishedAt = run.finished_at ? formatTimeSafe(run.finished_at) : (isRunning ? 'In progress' : '—');
+          const duration = run.started_at && run.finished_at ?
+            Math.max(0, Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)) + 's' :
+            (isRunning ? 'Running' : '—');
+
+          const neurons = run.neurons_used ? Number(run.neurons_used).toLocaleString() + ' AI neurons' : null;
+          const d1Writes = run.d1_rows_written ? Number(run.d1_rows_written).toLocaleString() + ' D1 writes' : null;
+          const d1Reads = run.d1_rows_read ? Number(run.d1_rows_read).toLocaleString() + ' D1 reads' : null;
+
+          const summary = escapeHtml(safeStr(run.result_status || run.error_message || 'Zakończono'));
+          const details = run.details || {};
+
+          // Counts badge pills
+          let countsHtml = '';
+          if (details.found !== undefined || details.accepted !== undefined || details.rejected !== undefined) {
+            countsHtml = '<div style="display:flex; gap:0.4rem; font-size:0.75rem; flex-wrap:wrap; margin-top:0.35rem;">';
+            if (details.found !== undefined) {
+              countsHtml += '<span style="background:rgba(255,255,255,0.06); padding:0.15rem 0.45rem; border-radius:4px; color:var(--text-muted);">' +
+                'Znaleziono: <strong style="color:var(--text-main);">' + Number(details.found) + '</strong></span>';
+            }
+            if (details.accepted !== undefined) {
+              countsHtml += '<span style="background:rgba(16,185,129,0.12); padding:0.15rem 0.45rem; border-radius:4px; color:#6ee7b7;">' +
+                'Zaakceptowano: <strong>' + Number(details.accepted) + '</strong></span>';
+            }
+            if (details.rejected !== undefined) {
+              countsHtml += '<span style="background:rgba(239,68,68,0.12); padding:0.15rem 0.45rem; border-radius:4px; color:#fca5a5;">' +
+                'Odrzucono: <strong>' + Number(details.rejected) + '</strong></span>';
+            }
+            countsHtml += '</div>';
+          }
+
+          // Entity chips (Topics / Posts / Images)
+          let entitiesHtml = '';
+          const topics = Array.isArray(details.topics) ? details.topics : [];
+          const posts = Array.isArray(details.posts) ? details.posts : [];
+          const images = Array.isArray(details.images) ? details.images : [];
+          const schedules = Array.isArray(details.schedules) ? details.schedules : [];
+
+          if (topics.length > 0 || posts.length > 0 || images.length > 0 || schedules.length > 0) {
+            entitiesHtml += '<div style="display:flex; flex-direction:column; gap:0.3rem; margin-top:0.5rem;">';
+            
+            topics.slice(0, 4).forEach(t => {
+              const tTitle = escapeHtml(safeStr(t.title || t.topic_id || 'Temat'));
+              const tStatus = escapeHtml(safeStr(t.status || 'NEW'));
+              entitiesHtml += '<div style="font-size:0.78rem; display:flex; align-items:center; gap:0.4rem; color:var(--text-muted);">' +
+                '<span style="font-family:monospace; font-size:0.7rem; color:var(--accent-cyan);">' + (t.id ? '#' + escapeHtml(String(t.id).substring(0, 6)) : 'TOPIC') + '</span> ' +
+                '<span style="color:var(--text-main); font-weight:500;">' + tTitle + '</span> ' +
+                '<span style="font-size:0.7rem; padding:0.1rem 0.35rem; border-radius:3px; background:rgba(255,255,255,0.05);">' + tStatus + '</span>' +
+              '</div>';
+            });
+
+            posts.slice(0, 4).forEach(p => {
+              const pTitle = escapeHtml(safeStr(p.title || p.hook || p.post_id || 'Post'));
+              const pStatus = escapeHtml(safeStr(p.status || 'DRAFT'));
+              entitiesHtml += '<div style="font-size:0.78rem; display:flex; align-items:center; gap:0.4rem; color:var(--text-muted);">' +
+                '<span style="font-family:monospace; font-size:0.7rem; color:var(--accent-emerald);">' + (p.id ? '#' + escapeHtml(String(p.id).substring(0, 6)) : 'POST') + '</span> ' +
+                '<span style="color:var(--text-main); font-weight:500;">' + pTitle + '</span> ' +
+                '<span style="font-size:0.7rem; padding:0.1rem 0.35rem; border-radius:3px; background:rgba(255,255,255,0.05);">' + pStatus + '</span>' +
+              '</div>';
+            });
+
+            schedules.slice(0, 4).forEach(s => {
+              const sDate = s.publish_at ? formatDateSafe(s.publish_at) + ' ' + formatTimeSafe(s.publish_at) : 'Planowana publikacja';
+              const sStatus = escapeHtml(safeStr(s.status || 'SCHEDULED'));
+              entitiesHtml += '<div style="font-size:0.78rem; display:flex; align-items:center; gap:0.4rem; color:var(--text-muted);">' +
+                '<span style="font-family:monospace; font-size:0.7rem; color:var(--accent-blue);">' + (s.post_id ? '#' + escapeHtml(String(s.post_id).substring(0, 6)) : 'SCHED') + '</span> ' +
+                '<span style="color:var(--text-main); font-weight:500;">' + sDate + '</span> ' +
+                '<span style="font-size:0.7rem; padding:0.1rem 0.35rem; border-radius:3px; background:rgba(59,130,246,0.15); color:#93c5fd;">' + sStatus + '</span>' +
+              '</div>';
+            });
+
+            entitiesHtml += '</div>';
+          }
+
+          // Error / retry alert box
+          let errorAlertHtml = '';
+          if (run.error_message || status === 'FAILED' || details.error) {
+            const errText = escapeHtml(safeStr(run.error_message || details.error || 'Wystąpił błąd podczas przetwarzania etapu.'));
+            const retryInfo = details.retry ? ' | Ponowienie: ' + escapeHtml(String(details.retry)) : '';
+            errorAlertHtml = '<div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:6px; padding:0.5rem 0.75rem; margin-top:0.5rem; color:#fca5a5; font-size:0.78rem;">' +
+              '<strong>Błąd:</strong> ' + errText + retryInfo +
+            '</div>';
+          }
+
+          // Technical raw details inside collapsible accordion
+          const rawJson = escapeHtml(JSON.stringify(details, null, 2));
+
+          return '<div class="card" style="padding:1rem; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.015);">' +
+            '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">' +
+              '<div>' +
+                '<div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
+                  '<span class="status-badge ' + badgeClass + '">' + status + '</span>' +
+                  '<strong style="font-size:0.9rem; color:var(--text-main);">' + stageLabel + '</strong>' +
+                  '<span style="font-size:0.75rem; color:var(--text-muted);">' + startedAt + ' &rarr; ' + finishedAt + ' (' + duration + ')</span>' +
+                '</div>' +
+                '<div style="font-size:0.85rem; color:var(--text-main); margin-top:0.35rem; line-height:1.4;">' + summary + '</div>' +
+                countsHtml +
+                entitiesHtml +
+                errorAlertHtml +
+              '</div>' +
+              '<div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem; text-align:right;">' +
+                (neurons ? '<span style="font-size:0.75rem; color:var(--accent-cyan); font-weight:600;">' + neurons + '</span>' : '') +
+                (d1Writes ? '<span style="font-size:0.75rem; color:var(--text-muted);">' + d1Writes + '</span>' : '') +
+                (d1Reads ? '<span style="font-size:0.7rem; color:var(--text-muted);">' + d1Reads + '</span>' : '') +
+                '<button type="button" class="btn-secondary" style="font-size:0.72rem; padding:0.2rem 0.5rem; margin-top:0.25rem;" onclick="toggleActivityDetails(' + "'" + runId + "'" + ')">' +
+                  'Szczegóły' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+            '<div id="activity-details-' + runId + '" style="display:none; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border-color);">' +
+              '<div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.3rem;">Szczegóły zdarzenia / Metadane D1</div>' +
+              '<pre style="background:#090d16; color:#94a3b8; padding:0.6rem; border-radius:6px; font-size:0.72rem; font-family:monospace; max-height:180px; overflow-y:auto; margin:0; white-space:pre-wrap; word-break:break-word;">' + rawJson + '</pre>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        if (reset) {
+          listEl.innerHTML = cardsHtml;
+        } else {
+          listEl.insertAdjacentHTML('beforeend', cardsHtml);
+        }
+
+        activityPaginationOffset += runs.length;
+
+        if (paginationEl) {
+          if (activityPaginationOffset < total) {
+            paginationEl.style.display = 'flex';
+            if (loadMoreBtn) loadMoreBtn.disabled = false;
+          } else {
+            paginationEl.style.display = 'none';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load automation activity:', err);
+        if (reset) listEl.innerHTML = '<div style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Network error loading activity.</div>';
+      }
+    }
+
+    function loadMoreAutomationActivity() {
+      const loadMoreBtn = document.getElementById('activity-load-more-btn');
+      if (loadMoreBtn) loadMoreBtn.disabled = true;
+      loadAutomationActivity(false);
+    }
+
+    function toggleActivityDetails(runId) {
+      const el = document.getElementById('activity-details-' + runId);
+      if (el) {
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      }
     }
 
     async function runStageNow(stageName) {
@@ -6885,5 +7211,11 @@ export function getAdminScripts(): string {
     window.handleModalViewIdea = handleModalViewIdea;
     window.handleModalDelete = handleModalDelete;
     window.removeDraftIllustration = removeDraftIllustration;
+
+    window.loadD1UsageTelemetry = loadD1UsageTelemetry;
+    window.loadAutomationActivity = loadAutomationActivity;
+    window.loadMoreAutomationActivity = loadMoreAutomationActivity;
+    window.handleActivityPeriodChange = handleActivityPeriodChange;
+    window.toggleActivityDetails = toggleActivityDetails;
   `;
 }

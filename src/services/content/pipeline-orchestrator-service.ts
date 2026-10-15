@@ -27,6 +27,7 @@ import {
   isWithinAiBackgroundWindow,
 } from '../../core/ai-window-policy';
 import { CloudflareUsageService } from '../cloudflare/cloudflare-usage-service';
+import { D1QuotaService } from '../cloudflare/d1-quota-service';
 import { IntelligentSchedulingService } from '../publishing/intelligent-scheduler-service';
 import { ResearchService } from '../research/research-service';
 import { ContentPlannerService } from './content-planner-service';
@@ -571,29 +572,27 @@ export class PipelineOrchestratorService {
     const metadataJson = decisionMetadata ? JSON.stringify(decisionMetadata) : null;
     const existing = await this.db.prepare('SELECT id FROM schedules WHERE post_id = ?').bind(postId).first<{ id: string }>();
 
-    if (existing) {
-      await this.db
-        .prepare("UPDATE schedules SET scheduled_at = ?, status = 'pending', decision_metadata = ?, updated_at = ? WHERE post_id = ?")
-        .bind(scheduledAtIso, metadataJson, nowIso, postId)
-        .run();
-    } else {
-      await this.db
-        .prepare(
-          `INSERT INTO schedules (id, post_id, scheduled_at, timezone, status, decision_metadata, created_at, updated_at)
-           VALUES (?, ?, ?, 'UTC', 'pending', ?, ?, ?)`,
-        )
-        .bind(crypto.randomUUID(), postId, scheduledAtIso, metadataJson, nowIso, nowIso)
-        .run();
-    }
+    const scheduleStmt = existing
+      ? this.db
+          .prepare("UPDATE schedules SET scheduled_at = ?, status = 'pending', decision_metadata = ?, updated_at = ? WHERE post_id = ?")
+          .bind(scheduledAtIso, metadataJson, nowIso, postId)
+      : this.db
+          .prepare(
+            `INSERT INTO schedules (id, post_id, scheduled_at, timezone, status, decision_metadata, created_at, updated_at)
+             VALUES (?, ?, ?, 'UTC', 'pending', ?, ?, ?)`,
+          )
+          .bind(crypto.randomUUID(), postId, scheduledAtIso, metadataJson, nowIso, nowIso);
 
-    await this.db.prepare("UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ?").bind(nowIso, postId).run();
-    await this.db
+    const postStmt = this.db.prepare("UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ?").bind(nowIso, postId);
+    const ideaStmt = this.db
       .prepare(
         `UPDATE content_ideas SET status = 'scheduled', updated_at = ?
          WHERE id = (SELECT idea_id FROM posts WHERE id = ?)`,
       )
-      .bind(nowIso, postId)
-      .run();
+      .bind(nowIso, postId);
+
+    // Atomically commit schedule, post status, and content_idea in one batch
+    await this.db.batch([scheduleStmt, postStmt, ideaStmt]);
 
     await this.auditLogger.log({
       eventType: 'POST_SCHEDULED',
@@ -611,15 +610,36 @@ export class PipelineOrchestratorService {
   async runStage(stage: PipelineStage, actor: PipelineActor = 'admin'): Promise<StageRunResult> {
     const triggerType = actor === 'admin' ? 'manual' : 'cron';
     const runId = newRunId(`stage-${stage}`);
-    await this.recordRunStart(runId, triggerType);
+    await this.recordRunStart(runId, triggerType, stage);
 
     try {
       let res: StageRunResult;
       switch (stage) {
         case 'topics': {
           const r = await this.runDiscovery(actor);
-          res = { stage, success: true, result: r, summary: `Nowe tematy: ${r.newProposalsCount}` };
-          await this.recordRunEnd(runId, 'completed', 'topics', { topicsDiscovered: r.newProposalsCount, message: res.summary });
+          const found = r.rawItemsDiscovered;
+          const accepted = r.newProposalsCount;
+          const rejected = r.rejectedCount + r.duplicatesFound + r.noUsefulAngleCount;
+          res = {
+            stage,
+            success: true,
+            result: r,
+            summary: `Znaleziono ${found} tematów, odrzucono ${rejected}, zaakceptowano ${accepted}`,
+          };
+          await this.recordRunEnd(runId, 'completed', 'topics', {
+            topicsDiscovered: accepted,
+            message: res.summary,
+            neuronsUsed: r.cloudflareVerifiedNeurons ?? 0,
+            details: {
+              itemsFound: found,
+              itemsAccepted: accepted,
+              itemsRejected: rejected,
+              duplicates: r.duplicatesFound,
+              proposals: r.proposals.map((p) => ({ id: p.id, title: p.title, pillar: p.contentPillar, status: 'accepted' })),
+              sourcesChecked: r.sourcesChecked,
+              aiRequests: r.aiInferenceRequests,
+            },
+          });
           break;
         }
         case 'posts': {
@@ -635,19 +655,38 @@ export class PipelineOrchestratorService {
             postId: r.postId,
             topicsSelected: 1,
             message: res.summary,
+            details: {
+              postId: r.postId,
+              ideaId: r.ideaId,
+              title: r.title,
+              finalDecision: r.finalDecision,
+              qualityScore: r.qualityScore,
+              rejectionReason: r.rejectionReason,
+              classification: r.classification,
+            },
           });
           break;
         }
         case 'images': {
           const r = await this.runImagesStage(actor);
-          const assigned = r.assignedFromLibrary + r.assignedFromOpenverse;
+          const assigned = r.assignedFromLibrary + r.assignedFromOpenverse + r.generatedFromAi;
           res = {
             stage,
             success: true,
             result: r,
-            summary: `Obrazy: przypisano ${assigned} (biblioteka ${r.assignedFromLibrary}, Openverse ${r.assignedFromOpenverse}), brak ${r.notFound}`,
+            summary: `Ilustracje: przetworzono ${r.processed}, przypisano ${assigned} (biblioteka ${r.assignedFromLibrary}, Openverse ${r.assignedFromOpenverse}), brak ${r.notFound}`,
           };
-          await this.recordRunEnd(runId, 'completed', 'images', { message: res.summary });
+          await this.recordRunEnd(runId, 'completed', 'images', {
+            message: res.summary,
+            details: {
+              processed: r.processed,
+              assignedFromLibrary: r.assignedFromLibrary,
+              assignedFromOpenverse: r.assignedFromOpenverse,
+              generatedFromAi: r.generatedFromAi,
+              notFound: r.notFound,
+              assignedDetails: r.details,
+            },
+          });
           break;
         }
         case 'scheduling': {
@@ -658,7 +697,14 @@ export class PipelineOrchestratorService {
             result: r,
             summary: `Zaplanowano ${r.scheduledCount} post(ów)` + (r.skippedWithoutImage ? `, ${r.skippedWithoutImage} czeka na obraz` : ''),
           };
-          await this.recordRunEnd(runId, 'completed', 'scheduling', { message: res.summary });
+          await this.recordRunEnd(runId, 'completed', 'scheduling', {
+            message: res.summary,
+            details: {
+              scheduledCount: r.scheduledCount,
+              skippedWithoutImage: r.skippedWithoutImage,
+              slots: r.slots.map((s) => ({ postId: s.postId, title: s.postTitle, scheduledAt: s.scheduledAtIso, reason: s.reason })),
+            },
+          });
           break;
         }
         default:
@@ -667,7 +713,10 @@ export class PipelineOrchestratorService {
       return res;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      await this.recordRunEnd(runId, 'failed', stage, { message });
+      await this.recordRunEnd(runId, 'failed', stage, {
+        message,
+        details: { error: message, stage },
+      });
       return { stage, success: false, summary: message, error: message };
     }
   }
@@ -715,6 +764,9 @@ export class PipelineOrchestratorService {
       const counts = await this.getCounts(now);
       const needs = this.evaluateNeeds(config, counts);
 
+      const d1QuotaService = new D1QuotaService();
+      const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
+
       if (isWithinAiBackgroundWindow(now)) {
         let aiStage: PipelineStage | null = null;
         if (needs.images) aiStage = 'images';
@@ -722,7 +774,17 @@ export class PipelineOrchestratorService {
         else if (needs.posts) aiStage = 'posts';
 
         if (aiStage) {
-          steps.push(await this.runStage(aiStage, 'system'));
+          const deferCheck = d1QuotaService.shouldDeferStage(aiStage, d1Status, false);
+          if (deferCheck.defer) {
+            steps.push({
+              stage: aiStage,
+              success: false,
+              summary: deferCheck.reason || 'Deferred by D1 Protective Mode',
+              error: deferCheck.reason,
+            });
+          } else {
+            steps.push(await this.runStage(aiStage, 'system'));
+          }
         }
       }
 
@@ -832,21 +894,33 @@ export class PipelineOrchestratorService {
   }
 
   // ---------------------------------------------------------------------------
-  // Run history (orchestrator_runs)
+  // Run history (orchestrator_runs & Automation Activity)
   // ---------------------------------------------------------------------------
 
-  private async recordRunStart(runId: string, triggerType: 'manual' | 'cron'): Promise<void> {
+  private async recordRunStart(runId: string, triggerType: 'manual' | 'cron', stage?: PipelineStage): Promise<void> {
     try {
       const nowIso = new Date().toISOString();
       await this.db
         .prepare(
-          `INSERT INTO orchestrator_runs (id, trigger_type, status, started_at, created_at)
-           VALUES (?, ?, 'running', ?, ?)`,
+          `INSERT INTO orchestrator_runs (id, trigger_type, status, stage, started_at, created_at)
+           VALUES (?, ?, 'running', ?, ?, ?)`,
         )
-        .bind(runId, triggerType, nowIso, nowIso)
+        .bind(runId, triggerType, stage || null, nowIso, nowIso)
         .run();
     } catch {
-      // history is best-effort
+      // Fallback for older schemas missing stage column
+      try {
+        const nowIso = new Date().toISOString();
+        await this.db
+          .prepare(
+            `INSERT INTO orchestrator_runs (id, trigger_type, status, started_at, created_at)
+             VALUES (?, ?, 'running', ?, ?)`,
+          )
+          .bind(runId, triggerType, nowIso, nowIso)
+          .run();
+      } catch {
+        // history is best-effort
+      }
     }
   }
 
@@ -854,28 +928,66 @@ export class PipelineOrchestratorService {
     runId: string,
     status: 'completed' | 'failed' | 'deferred',
     stage: PipelineStage,
-    extra: { postId?: string; topicsDiscovered?: number; topicsSelected?: number; message?: string },
+    extra: {
+      postId?: string;
+      topicsDiscovered?: number;
+      topicsSelected?: number;
+      message?: string;
+      neuronsUsed?: number;
+      d1RowsWritten?: number;
+      d1RowsRead?: number;
+      details?: Record<string, unknown>;
+    },
   ): Promise<void> {
     try {
+      const detailsJson = extra.details ? JSON.stringify(extra.details) : null;
       await this.db
         .prepare(
           `UPDATE orchestrator_runs
-           SET status = ?, finished_at = ?, result_status = ?, post_id = ?, topics_discovered = ?, topics_selected = ?, error_message = ?
+           SET status = ?, finished_at = ?, stage = ?, result_status = ?, post_id = ?,
+               topics_discovered = ?, topics_selected = ?, error_message = ?,
+               neurons_used = ?, d1_rows_written = ?, d1_rows_read = ?, details = ?
            WHERE id = ?`,
         )
         .bind(
           status,
           new Date().toISOString(),
           stage,
+          stage,
           extra.postId || null,
           extra.topicsDiscovered ?? 0,
           extra.topicsSelected ?? 0,
           extra.message ? extra.message.substring(0, 500) : null,
+          extra.neuronsUsed ?? 0,
+          extra.d1RowsWritten ?? 0,
+          extra.d1RowsRead ?? 0,
+          detailsJson,
           runId,
         )
         .run();
     } catch {
-      // history is best-effort
+      // Fallback for older schema without new columns
+      try {
+        await this.db
+          .prepare(
+            `UPDATE orchestrator_runs
+             SET status = ?, finished_at = ?, result_status = ?, post_id = ?, topics_discovered = ?, topics_selected = ?, error_message = ?
+             WHERE id = ?`,
+          )
+          .bind(
+            status,
+            new Date().toISOString(),
+            stage,
+            extra.postId || null,
+            extra.topicsDiscovered ?? 0,
+            extra.topicsSelected ?? 0,
+            extra.message ? extra.message.substring(0, 500) : null,
+            runId,
+          )
+          .run();
+      } catch {
+        // history is best-effort
+      }
     }
   }
 
@@ -955,5 +1067,202 @@ export class PipelineOrchestratorService {
     });
 
     return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Automation Activity Query Engine
+  // ---------------------------------------------------------------------------
+
+  async getAutomationActivity(filters: {
+    period?: '1h' | '6h' | '24h' | '7d' | '30d' | 'custom';
+    startDate?: string;
+    endDate?: string;
+    stage?: 'all' | 'topics' | 'posts' | 'images' | 'scheduling' | 'errors';
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    items: Array<{
+      id: string;
+      runId: string;
+      triggerType: 'manual' | 'cron';
+      status: 'completed' | 'failed' | 'deferred' | 'running';
+      stage: PipelineStage | 'unknown';
+      startedAt: string;
+      finishedAt: string | null;
+      durationSeconds: number | null;
+      summary: string;
+      errorMessage?: string | null;
+      neuronsUsed: number;
+      d1RowsWritten: number;
+      d1RowsRead: number;
+      details?: Record<string, unknown>;
+    }>;
+    total: number;
+  }> {
+    const period = filters.period || '24h';
+    const limit = Math.min(Math.max(1, filters.limit || 20), 100);
+    const offset = Math.max(0, filters.offset || 0);
+
+    const now = Date.now();
+    let startTimeIso: string;
+
+    if (period === '1h') {
+      startTimeIso = new Date(now - 60 * 60 * 1000).toISOString();
+    } else if (period === '6h') {
+      startTimeIso = new Date(now - 6 * 60 * 60 * 1000).toISOString();
+    } else if (period === '24h') {
+      startTimeIso = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    } else if (period === '7d') {
+      startTimeIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (period === '30d') {
+      startTimeIso = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (period === 'custom' && filters.startDate) {
+      startTimeIso = new Date(filters.startDate).toISOString();
+    } else {
+      startTimeIso = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    const whereClauses: string[] = ['created_at >= ?'];
+    const bindings: unknown[] = [startTimeIso];
+
+    if (period === 'custom' && filters.endDate) {
+      whereClauses.push('created_at <= ?');
+      bindings.push(new Date(filters.endDate).toISOString());
+    }
+
+    if (filters.stage && filters.stage !== 'all') {
+      if (filters.stage === 'errors') {
+        whereClauses.push("status = 'failed'");
+      } else {
+        whereClauses.push('(stage = ? OR result_status = ?)');
+        bindings.push(filters.stage, filters.stage);
+      }
+    }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    let countRow: { total: number } | null;
+    let rowsRes: { results?: Array<Record<string, unknown>> };
+
+    try {
+      countRow = await this.db
+        .prepare(`SELECT COUNT(*) as total FROM orchestrator_runs WHERE ${whereSql}`)
+        .bind(...bindings)
+        .first<{ total: number }>();
+
+      rowsRes = await this.db
+        .prepare(
+          `SELECT id, trigger_type, status, stage, started_at, finished_at,
+                  topics_discovered, topics_eligible, topics_selected,
+                  writer_calls, qa_calls, policy_calls, regenerations,
+                  neurons_used, result_status, post_id, error_message,
+                  d1_rows_written, d1_rows_read, details, created_at
+           FROM orchestrator_runs
+           WHERE ${whereSql}
+           ORDER BY created_at DESC
+           LIMIT ? OFFSET ?`,
+        )
+        .bind(...bindings, limit, offset)
+        .all<Record<string, unknown>>();
+    } catch {
+      // Fallback if migration columns are not yet present in some environment
+      countRow = await this.db
+        .prepare(`SELECT COUNT(*) as total FROM orchestrator_runs WHERE created_at >= ?`)
+        .bind(startTimeIso)
+        .first<{ total: number }>()
+        .catch(() => ({ total: 0 }));
+
+      rowsRes = await this.db
+        .prepare(
+          `SELECT id, trigger_type, status, started_at, finished_at,
+                  topics_discovered, topics_eligible, topics_selected,
+                  neurons_used, result_status, post_id, error_message, created_at
+           FROM orchestrator_runs
+           WHERE created_at >= ?
+           ORDER BY created_at DESC
+           LIMIT ? OFFSET ?`,
+        )
+        .bind(startTimeIso, limit, offset)
+        .all<Record<string, unknown>>()
+        .catch(() => ({ results: [] }));
+    }
+
+    const items = (rowsRes.results || []).map((row) => {
+      const id = String(row.id || '');
+      const triggerType = (row.trigger_type === 'manual' ? 'manual' : 'cron') as 'manual' | 'cron';
+      const status = (String(row.status || 'completed')) as 'completed' | 'failed' | 'deferred' | 'running';
+
+      let rawStage = String(row.stage || row.result_status || '').toLowerCase();
+      if (!['topics', 'posts', 'images', 'scheduling'].includes(rawStage)) {
+        if (id.includes('topics') || id.includes('discovery')) rawStage = 'topics';
+        else if (id.includes('posts') || id.includes('generate')) rawStage = 'posts';
+        else if (id.includes('images')) rawStage = 'images';
+        else if (id.includes('scheduling')) rawStage = 'scheduling';
+        else rawStage = 'unknown';
+      }
+      const stage = rawStage as PipelineStage | 'unknown';
+
+      const startedAt = String(row.started_at || row.created_at || new Date().toISOString());
+      const finishedAt = row.finished_at ? String(row.finished_at) : null;
+      let durationSeconds: number | null = null;
+      if (startedAt && finishedAt) {
+        durationSeconds = Math.max(0, Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000));
+      }
+
+      let parsedDetails: Record<string, unknown> | undefined;
+      if (row.details && typeof row.details === 'string') {
+        try {
+          parsedDetails = JSON.parse(row.details);
+        } catch {
+          parsedDetails = undefined;
+        }
+      }
+
+      // Generate human-friendly summary
+      let summary = String(row.error_message || '');
+      if (parsedDetails && parsedDetails.message) {
+        summary = String(parsedDetails.message);
+      } else if (!summary || summary === 'null') {
+        switch (stage) {
+          case 'topics':
+            summary = `Wyszukiwanie tematów: znaleziono ${(row.topics_discovered as number) || 0} nowych propozycji`;
+            break;
+          case 'posts':
+            summary = row.post_id ? `Utworzono post (ID: ${String(row.post_id).substring(0, 8)})` : 'Generowanie postów zakończone';
+            break;
+          case 'images':
+            summary = 'Dopasowanie i weryfikacja ilustracji';
+            break;
+          case 'scheduling':
+            summary = 'Planowanie publikacji gotowych postów';
+            break;
+          default:
+            summary = `Uruchomienie etapu: ${stage} (${status})`;
+            break;
+        }
+      }
+
+      return {
+        id,
+        runId: id,
+        triggerType,
+        status,
+        stage,
+        startedAt,
+        finishedAt,
+        durationSeconds,
+        summary,
+        errorMessage: row.error_message ? String(row.error_message) : null,
+        neuronsUsed: Number(row.neurons_used || 0),
+        d1RowsWritten: Number(row.d1_rows_written || 0),
+        d1RowsRead: Number(row.d1_rows_read || 0),
+        details: parsedDetails,
+      };
+    });
+
+    return {
+      items,
+      total: countRow?.total || items.length,
+    };
   }
 }

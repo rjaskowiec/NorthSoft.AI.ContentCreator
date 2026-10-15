@@ -424,6 +424,67 @@ export class PerformanceEngineService {
     const shares = Math.max(0, input.shares || 0);
     const clicks = Math.max(0, input.clicks || 0);
 
+    // D1 Optimization: Check if latest snapshot for this post already has identical metrics within last 6 hours
+    const latestSnapshot = await db
+      .prepare(
+        `SELECT id, measured_at, views, unique_views, reactions, comments, shares, clicks,
+                engagement_rate, performance_score, relative_performance, classification, created_at
+         FROM post_performance_metrics
+         WHERE post_id = ?
+         ORDER BY measured_at DESC LIMIT 1`,
+      )
+      .bind(input.postId)
+      .first<{
+        id: string;
+        measured_at: string;
+        views: number;
+        unique_views: number;
+        reactions: number;
+        comments: number;
+        shares: number;
+        clicks: number;
+        engagement_rate: number;
+        performance_score: number;
+        relative_performance: number;
+        classification: PerformanceClassification;
+        created_at: string;
+      }>();
+
+    if (latestSnapshot) {
+      const isIdentical =
+        latestSnapshot.views === views &&
+        latestSnapshot.unique_views === uniqueViews &&
+        latestSnapshot.reactions === reactions &&
+        latestSnapshot.comments === comments &&
+        latestSnapshot.shares === shares &&
+        latestSnapshot.clicks === clicks;
+
+      const snapshotAgeMs = Date.now() - new Date(latestSnapshot.measured_at).getTime();
+      const sixHoursMs = 6 * 60 * 60 * 1000;
+
+      // Skip redundant DB insert if metrics haven't changed and snapshot is recent
+      if (isIdentical && snapshotAgeMs < sixHoursMs) {
+        return {
+          id: latestSnapshot.id,
+          postId: input.postId,
+          publicationId: input.publicationId,
+          facebookPostId: input.facebookPostId,
+          measuredAt: latestSnapshot.measured_at,
+          views: latestSnapshot.views,
+          uniqueViews: latestSnapshot.unique_views,
+          reactions: latestSnapshot.reactions,
+          comments: latestSnapshot.comments,
+          shares: latestSnapshot.shares,
+          clicks: latestSnapshot.clicks,
+          engagementRate: latestSnapshot.engagement_rate,
+          performanceScore: latestSnapshot.performance_score,
+          relativePerformance: latestSnapshot.relative_performance,
+          classification: latestSnapshot.classification,
+          createdAt: latestSnapshot.created_at,
+        };
+      }
+    }
+
     const weightedEng = PerformanceEngineService.computeWeightedEngagement(
       reactions,
       comments,

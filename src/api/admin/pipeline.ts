@@ -7,6 +7,8 @@ import type { AppEnv } from '../../core/types';
 import { csrfProtection } from '../../core/auth/csrf';
 import { ContentOrchestrator } from '../../services/content/content-orchestrator';
 import { PipelineOrchestratorService } from '../../services/content/pipeline-orchestrator-service';
+import { CloudflareUsageService } from '../../services/cloudflare/cloudflare-usage-service';
+import { D1QuotaService } from '../../services/cloudflare/d1-quota-service';
 
 export const pipelineRouter = new Hono<AppEnv>();
 
@@ -193,6 +195,87 @@ pipelineRouter.post('/pipeline/scheduler', csrfProtection, async (c) => {
 
   const updated = await service.updateSchedulerConfig(body);
   return c.json({ success: true, config: updated });
+});
+
+/**
+ * GET /api/admin/pipeline/activity
+ * Filterable, categorized automation activity log for the Automation Activity panel.
+ */
+pipelineRouter.get('/pipeline/activity', async (c) => {
+  const db = c.env.DB;
+  const period = c.req.query('period') as '1h' | '6h' | '24h' | '7d' | '30d' | 'custom' | undefined;
+  const stage = c.req.query('stage') as 'all' | 'topics' | 'posts' | 'images' | 'scheduling' | 'errors' | undefined;
+  const startDate = c.req.query('startDate');
+  const endDate = c.req.query('endDate');
+  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : 25;
+  const offset = c.req.query('offset') ? parseInt(c.req.query('offset')!, 10) : 0;
+
+  const service = new PipelineOrchestratorService(db, c.env);
+  const result = await service.getAutomationActivity({
+    period,
+    stage,
+    startDate,
+    endDate,
+    limit,
+    offset,
+  });
+
+  return c.json({
+    success: true,
+    items: result.items,
+    runs: result.items,
+    total: result.total,
+    period: period || '24h',
+    stage: stage || 'all',
+  });
+});
+
+/**
+ * GET /api/admin/pipeline/d1-usage
+ * Returns current Cloudflare D1 usage metrics, protection thresholds, and telemetry source.
+ */
+pipelineRouter.get('/pipeline/d1-usage', async (c) => {
+  const db = c.env.DB;
+  const forceRefresh = c.req.query('refresh') === '1' || c.req.query('refresh') === 'true';
+
+  const cfUsageService = CloudflareUsageService.fromEnv(c.env);
+  const d1QuotaService = new D1QuotaService();
+
+  const status = await d1QuotaService.getD1UsageStatus(db, cfUsageService, { forceRefresh });
+  return c.json({
+    success: true,
+    telemetry: status,
+    d1: {
+      rowsWritten: status.rowsWritten,
+      rowsRead: status.rowsRead,
+      writeQueries: status.writeQueries,
+      readQueries: status.readQueries,
+      limit: status.dailyWriteLimit,
+      percentage: status.usagePercentage,
+      statusTier: status.tier,
+      protectiveModeActive: status.isProtectiveModeActive,
+      protectiveModeReason: status.reason,
+      isCloudflareVerified: status.telemetrySource === 'CLOUDFLARE_VERIFIED',
+      asOf: status.lastUpdated,
+    },
+  });
+});
+
+/**
+ * POST /api/admin/pipeline/d1-purge
+ * Purges old automation activity runs and D1 daily telemetry older than retentionDays (default 30).
+ */
+pipelineRouter.post('/pipeline/d1-purge', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const body = (await c.req.json().catch(() => ({}))) as { retentionDays?: number };
+  const retentionDays = Math.max(7, Math.min(365, Number(body.retentionDays) || 30));
+
+  const result = await D1QuotaService.purgeRetentionLogs(db, retentionDays);
+  return c.json({
+    success: true,
+    purged: result,
+    retentionDays,
+  });
 });
 
 /**

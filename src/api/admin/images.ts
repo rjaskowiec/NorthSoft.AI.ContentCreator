@@ -343,14 +343,16 @@ imagesRouter.post('/images/generate', csrfProtection, async (c) => {
     category?: string;
     postContext?: string;
     force?: boolean;
+    sceneConcept?: import('../../services/content/ai-image-generator').GeneratedSceneConcept;
   };
 
   const description = (body.description || '').trim();
   const category = (body.category || 'General').trim();
   const postContext = (body.postContext || '').trim();
   const force = Boolean(body.force);
+  const sceneConcept = body.sceneConcept;
 
-  if (!description) {
+  if (!description && !sceneConcept) {
     return c.json({ success: false, error: 'Image search description or prompt is required for AI generation.' }, 400);
   }
 
@@ -363,6 +365,7 @@ imagesRouter.post('/images/generate', csrfProtection, async (c) => {
       category,
       postContext: postContext || undefined,
       force,
+      sceneConcept,
     });
 
     return c.json({

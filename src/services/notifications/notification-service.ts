@@ -237,13 +237,19 @@ Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for deta
     mailClient: IMailGatewayClient,
     options?: { force?: boolean; targetWeekKey?: string },
   ): Promise<WeeklyDigestResult> {
+    // 0. Time Window Check: Weekly digest should only run on Monday morning (08:00–10:00 UTC) unless explicitly forced or targeting a specific week
+    const now = new Date();
+    const isExplicitRun = options?.force || Boolean(options?.targetWeekKey);
+    if (!isExplicitRun && (now.getUTCDay() !== 1 || now.getUTCHours() < 8 || now.getUTCHours() > 10)) {
+      return { success: true, skipped: true, reportKey: 'outside_weekly_window' };
+    }
+
     const recipient = await this.getAdminRecipientEmail(db);
     if (!recipient) {
       return { success: false, error: 'No admin recipient email configured in database.' };
     }
 
     // 1. Determine Previous Full Calendar Week (Monday 00:00:00 UTC to Sunday 23:59:59 UTC)
-    const now = new Date();
     const currentDayUtc = now.getUTCDay(); // 0 is Sunday, 1 is Monday
     const daysSinceLastMonday = currentDayUtc === 0 ? 6 : currentDayUtc - 1;
 

@@ -453,6 +453,117 @@ export function renderAdminHtml(): string {
                 </button>
               </form>
             </div>
+
+            <!-- D1 Database Usage & Quota Protection Widget -->
+            <div class="panel" style="margin-bottom:1.25rem;">
+              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                <div class="panel-title" style="display:flex; align-items:center; gap:0.5rem;">
+                  <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:var(--accent-cyan); stroke-width:2;"><path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
+                  D1 Database Quota &amp; Limit Protection
+                </div>
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                  <span id="d1-quota-tier-badge" class="status-badge status-healthy">NORMAL</span>
+                  <button type="button" class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.6rem;" onclick="loadD1UsageTelemetry(true)">Refresh</button>
+                </div>
+              </div>
+
+              <!-- Protective Mode Banner (hidden by default) -->
+              <div id="d1-protection-banner" style="display:none; background:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.35); border-radius:8px; padding:0.85rem 1rem; margin-bottom:1rem; color:#fca5a5; font-size:0.85rem; line-height:1.4;">
+                <div style="font-weight:700; margin-bottom:0.25rem;">D1 Protective Mode Active</div>
+                <div id="d1-protection-banner-text">Non-critical background generation tasks are deferred to prevent exceeding Workers Free tier limits.</div>
+              </div>
+
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1rem;">
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Rows Written (Today UTC)</div>
+                  <div id="d1-stat-rows-written" style="font-size:1.15rem; font-weight:700;">-- / 100,000</div>
+                  <div id="d1-stat-pct" style="font-size:0.75rem; color:var(--text-muted);">--% of daily limit</div>
+                </div>
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Rows Read</div>
+                  <div id="d1-stat-rows-read" style="font-size:1.15rem; font-weight:700;">--</div>
+                  <div id="d1-stat-queries" style="font-size:0.75rem; color:var(--text-muted);">-- write queries</div>
+                </div>
+                <div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Telemetry Source</div>
+                  <div id="d1-stat-source" style="font-size:0.9rem; font-weight:600; color:var(--accent-cyan);">Checking...</div>
+                  <div id="d1-stat-updated" style="font-size:0.75rem; color:var(--text-muted);">--</div>
+                </div>
+              </div>
+
+              <!-- Progress bar -->
+              <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; height:8px; overflow:hidden;">
+                <div id="d1-usage-progress-bar" style="height:100%; width:0%; background:var(--accent-emerald); transition:width 0.3s ease, background 0.3s ease;"></div>
+              </div>
+            </div>
+
+            <!-- TAB 2 SUB-PANEL: Automation Activity -->
+            <div class="panel">
+              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+                <div>
+                  <div class="panel-title" style="display:flex; align-items:center; gap:0.5rem;">
+                    <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:var(--accent-emerald); stroke-width:2;"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Automation Activity
+                  </div>
+                  <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">Detailed operational log with results, topics, posts, and resource telemetry.</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <button type="button" class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="loadAutomationActivity(true)">
+                    Refresh activity
+                  </button>
+                </div>
+              </div>
+
+              <!-- Activity Filters Bar -->
+              <div style="display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; padding:0.75rem 0; margin-bottom:0.75rem; border-bottom:1px solid var(--border-color);">
+                <div style="display:flex; align-items:center; gap:0.4rem;">
+                  <span style="font-size:0.8rem; color:var(--text-muted);">Period:</span>
+                  <select id="activity-period-filter" class="form-input" style="font-size:0.8rem; padding:0.3rem 0.6rem; width:auto;" onchange="handleActivityPeriodChange(this.value)">
+                    <option value="1h">Last hour</option>
+                    <option value="6h">Last 6 hours</option>
+                    <option value="24h" selected>Last 24 hours</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="custom">Custom date range...</option>
+                  </select>
+                </div>
+
+                <div id="activity-custom-dates" style="display:none; align-items:center; gap:0.4rem;">
+                  <input type="datetime-local" id="activity-custom-start" class="form-input" style="font-size:0.8rem; padding:0.3rem 0.5rem; width:auto;" />
+                  <span style="font-size:0.8rem; color:var(--text-muted);">to</span>
+                  <input type="datetime-local" id="activity-custom-end" class="form-input" style="font-size:0.8rem; padding:0.3rem 0.5rem; width:auto;" />
+                  <button type="button" class="btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.6rem;" onclick="loadAutomationActivity()">Apply</button>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:0.4rem;">
+                  <span style="font-size:0.8rem; color:var(--text-muted);">Stage:</span>
+                  <select id="activity-stage-filter" class="form-input" style="font-size:0.8rem; padding:0.3rem 0.6rem; width:auto;" onchange="loadAutomationActivity()">
+                    <option value="all">All stages</option>
+                    <option value="topics">Topics (Wyszukiwanie tematów)</option>
+                    <option value="posts">Posts (Generowanie postów)</option>
+                    <option value="images">Images (Ilustracje)</option>
+                    <option value="scheduling">Scheduling (Planowanie publikacji)</option>
+                    <option value="errors">Errors &amp; Blocked</option>
+                  </select>
+                </div>
+
+                <div style="margin-left:auto; font-size:0.8rem; color:var(--text-muted);">
+                  Total events: <span id="activity-total-count" style="font-weight:700; color:var(--text-main);">0</span>
+                </div>
+              </div>
+
+              <!-- Activity List Container -->
+              <div id="automation-activity-list" style="display:flex; flex-direction:column; gap:0.75rem;">
+                <div style="text-align:center; color:var(--text-muted); padding:2rem;">Loading automation activity...</div>
+              </div>
+
+              <!-- Pagination / Load More -->
+              <div id="activity-pagination" style="display:none; justify-content:center; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-color);">
+                <button type="button" class="btn-secondary" id="activity-load-more-btn" onclick="loadMoreAutomationActivity()">
+                  Load more events
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- TAB 3: TOPIC RESEARCH -->

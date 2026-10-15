@@ -58,6 +58,7 @@ export interface CandidateImageInput {
   score?: number;
   visualRelevanceScore?: number;
   visualRelevanceReason?: string;
+  notes?: string;
 }
 
 export interface ManualImageInput {
@@ -113,15 +114,34 @@ export class ImageLibraryService {
       'Openverse',
     );
 
+    let notes = candidate.notes;
+    if (!notes) {
+      const { extractOrDeriveSemanticProfile } = await import('./image-relevance-evaluator');
+      const profile = extractOrDeriveSemanticProfile({
+        title: candidate.title,
+        category: candidate.category || 'Technology',
+        keywords: candidate.keywords,
+        description: candidate.description,
+        author: candidate.author,
+        license: candidate.license,
+        sourceType: 'DISCOVERED',
+      });
+      notes = JSON.stringify({
+        semanticProfile: profile,
+        discoveryQuery: candidate.discoveryQuery || null,
+        relevanceScore: candidate.score || 0,
+      });
+    }
+
     await this.db
       .prepare(
         `INSERT INTO curated_images (
           id, title, source_type, source_url, original_page_url, author, author_url,
-          license, license_url, category, keywords, description, status,
+          license, license_url, category, keywords, description, notes, status,
           discovery_query, discovery_score, requires_attribution, allows_modifications,
           attribution_text, legal_verification_status, visual_relevance_score, visual_relevance_reason,
           created_at, updated_at
-        ) VALUES (?, ?, 'DISCOVERED', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, 'DISCOVERED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -135,6 +155,7 @@ export class ImageLibraryService {
         (candidate.category || 'Technology').trim(),
         candidate.keywords?.trim() || null,
         candidate.description?.trim() || null,
+        notes,
         candidate.discoveryQuery?.trim() || null,
         candidate.score || 0,
         legalVal.requiresAttribution ? 1 : 0,
@@ -375,7 +396,8 @@ export class ImageLibraryService {
 
   /**
    * Deterministic matching algorithm: Finds best APPROVED image for a post topic/content.
-   * Enforces 90-day reuse exclusion policy and candidate ranking.
+   * Evaluates semantic alignment, topic, mood/intent, and enforces 90-day reuse exclusion policy.
+   * Rejects non-qualifying or contradictory images (< 65 score) safely.
    */
   async findBestApprovedImage(
     topicTitle: string,
@@ -398,86 +420,47 @@ export class ImageLibraryService {
       return null;
     }
 
-    const now = Date.now();
-    const REUSE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+    const { detectEmotionalIntent } = await import('./ai-image-generator')
+      .then((m) => ({ detectEmotionalIntent: m.detectEmotionalIntent }))
+      .catch(() => ({ detectEmotionalIntent: (_t?: string) => 'neutral' as const }));
 
-    const postCategoryNorm = category.toUpperCase().trim();
-    const textNorm = `${topicTitle} ${bodyText}`.toLowerCase();
-    const words = new Set(textNorm.split(/\W+/).filter((w) => w.length > 3));
+    const { evaluatePostImageMatch: evalMatch } = await import('./image-relevance-evaluator');
+
+    const detectedEmotion = detectEmotionalIntent(`${topicTitle} ${bodyText}`);
 
     let bestMatch: CuratedImageRow | null = null;
     let bestScore = -1;
     let bestReason = '';
 
     for (const img of candidates) {
-      // Reuse policy check: Exclude images used within the last 90 days
-      if (img.usage_count > 0 && img.last_used_at) {
-        const lastUsedMs = new Date(img.last_used_at).getTime();
-        if (!isNaN(lastUsedMs) && now - lastUsedMs < REUSE_WINDOW_MS) {
-          continue; // Recently used within 90 days, skip
-        }
-      }
+      const matchResult = evalMatch(
+        {
+          id: img.id,
+          title: img.title,
+          category: img.category,
+          keywords: img.keywords,
+          description: img.description,
+          notes: img.notes,
+          usageCount: img.usage_count,
+          lastUsedAt: img.last_used_at,
+          visualRelevanceScore: img.visual_relevance_score,
+        },
+        {
+          postTitle: topicTitle,
+          category,
+          postContent: bodyText,
+          emotionalIntent: detectedEmotion,
+        },
+      );
 
-      let score = 0;
-      const reasons: string[] = [];
-
-      // Category match
-      const imgCategoryNorm = img.category.toUpperCase().trim();
-      if (imgCategoryNorm === postCategoryNorm) {
-        score += 30;
-        reasons.push(`Category match (${img.category})`);
-      } else if (imgCategoryNorm.includes(postCategoryNorm) || postCategoryNorm.includes(imgCategoryNorm)) {
-        score += 15;
-        reasons.push(`Partial category match (${img.category})`);
-      }
-
-      // Keyword match
-      if (img.keywords) {
-        const keywordsList = img.keywords.toLowerCase().split(/[\s,;]+/);
-        let kwMatches = 0;
-        for (const kw of keywordsList) {
-          if (kw.length > 2 && words.has(kw)) {
-            kwMatches++;
-          }
-        }
-        if (kwMatches > 0) {
-          score += Math.min(30, kwMatches * 10);
-          reasons.push(`${kwMatches} matching keyword(s)`);
-        }
-      }
-
-      // Description match
-      if (img.description) {
-        const descWords = img.description.toLowerCase().split(/\W+/);
-        let descMatches = 0;
-        for (const dw of descWords) {
-          if (dw.length > 3 && words.has(dw)) {
-            descMatches++;
-          }
-        }
-        if (descMatches > 0) {
-          score += Math.min(20, descMatches * 5);
-          reasons.push(`Description match`);
-        }
-      }
-
-      // Unused bonus
-      if (img.usage_count === 0) {
-        score += 20;
-        reasons.push('Unused asset bonus');
-      } else {
-        score += 5; // 90+ days old reusable bonus
-        reasons.push('Eligible for quarterly reuse');
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
+      if (matchResult.qualified && matchResult.score > bestScore) {
+        bestScore = matchResult.score;
         bestMatch = img;
-        bestReason = reasons.join(', ');
+        bestReason = matchResult.reasons.join(', ');
       }
     }
 
-    if (!bestMatch || bestScore <= 20) {
+    if (!bestMatch || bestScore < 65) {
       return null;
     }
 
@@ -784,9 +767,18 @@ export async function recalculateCuratedImageUsage(db: D1Database, imageId: stri
   if (!imageId) return;
 
   const curImg = await db
-    .prepare('SELECT id, source_url, r2_key FROM curated_images WHERE id = ?')
+    .prepare('SELECT id, source_url, r2_key, usage_count, historical_usage_count, last_used_at, used_in_post_id, reserved_post_id FROM curated_images WHERE id = ?')
     .bind(imageId)
-    .first<{ id: string; source_url: string | null; r2_key: string | null }>();
+    .first<{
+      id: string;
+      source_url: string | null;
+      r2_key: string | null;
+      usage_count: number | null;
+      historical_usage_count: number | null;
+      last_used_at: string | null;
+      used_in_post_id: string | null;
+      reserved_post_id: string | null;
+    }>();
 
   if (!curImg) return;
 
@@ -844,7 +836,7 @@ export async function recalculateCuratedImageUsage(db: D1Database, imageId: stri
   if (pubTime && auditTime) {
     lastUsedAt = new Date(pubTime) > new Date(auditTime) ? pubTime : auditTime;
   } else {
-    lastUsedAt = pubTime || auditTime || (historicalCount > 0 ? new Date().toISOString() : null);
+    lastUsedAt = pubTime || auditTime || (historicalCount > 0 ? (curImg.last_used_at || new Date().toISOString()) : null);
   }
 
   // 3. Determine reservation state:
@@ -862,6 +854,18 @@ export async function recalculateCuratedImageUsage(db: D1Database, imageId: stri
     .first<{ id: string }>();
 
   const reservedPostId = draftUsage?.id || null;
+
+  // D1 Optimization: Only perform UPDATE if values have actually changed
+  if (
+    curImg.usage_count === currentCount &&
+    curImg.historical_usage_count === historicalCount &&
+    curImg.last_used_at === lastUsedAt &&
+    curImg.used_in_post_id === usedInPostId &&
+    curImg.reserved_post_id === reservedPostId
+  ) {
+    return;
+  }
+
   const nowIso = new Date().toISOString();
 
   await db

@@ -12,8 +12,8 @@ function createMockD1Database(existingRuns: any[] = [], existingCurated: any[] =
   const prepare = (sql: string) => ({
     bind: (...args: any[]) => ({
       first: async () => {
-        if (sql.includes("role = 'image_generator' AND status = 'completed'")) {
-          const count = runs.filter((r) => r.role === 'image_generator' && r.status === 'completed').length;
+        if (sql.includes("role = 'image_generator' AND status IN ('completed', 'running')") || sql.includes("role = 'image_generator' AND status = 'completed'")) {
+          const count = runs.filter((r) => r.role === 'image_generator' && (r.status === 'completed' || r.status === 'running')).length;
           return { count };
         }
         if (sql.includes('SELECT SUM(request_count)')) {

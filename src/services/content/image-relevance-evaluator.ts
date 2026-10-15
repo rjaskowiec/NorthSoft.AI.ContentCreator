@@ -199,3 +199,275 @@ export function filterDiverseCandidates<T extends CandidateImageMeta>(
 
   return result;
 }
+
+export interface ImageSemanticProfile {
+  sceneSummary: string;
+  subjects: string;
+  action: string;
+  objects: string;
+  businessContext: string;
+  emotionalTone: 'positive' | 'neutral' | 'problem-aware' | 'collaborative';
+  visualMotif: string;
+  targetCategory: string;
+  keywords: string[];
+  provenance: {
+    source: 'ai_generated' | 'discovered' | 'manual';
+    author?: string;
+    license?: string;
+    model?: string;
+  };
+}
+
+export interface PostMatchCriteria {
+  postTitle: string;
+  category: string;
+  postContent: string;
+  emotionalIntent?: 'positive' | 'neutral' | 'problem-aware' | 'collaborative';
+}
+
+export interface PostImageMatchResult {
+  qualified: boolean;
+  score: number; // 0 - 100
+  reasons: string[];
+  disqualificationReason?: string;
+  emotionalCongruence: 'EXCELLENT' | 'ACCEPTABLE' | 'CONTRADICTORY';
+}
+
+/**
+ * Parses semantic profile from image notes or derives structured profile from metadata.
+ * Does NOT invent fake details if unverified.
+ */
+export function extractOrDeriveSemanticProfile(
+  imageMeta: {
+    title: string;
+    category: string;
+    keywords?: string | null;
+    description?: string | null;
+    notes?: string | null;
+    author?: string | null;
+    license?: string | null;
+    sourceType?: string | null;
+  },
+): ImageSemanticProfile {
+  if (imageMeta.notes) {
+    try {
+      const parsed = JSON.parse(imageMeta.notes);
+      if (parsed.semanticProfile) {
+        return parsed.semanticProfile as ImageSemanticProfile;
+      }
+      if (parsed.sceneConcept) {
+        const sc = parsed.sceneConcept;
+        return {
+          sceneSummary: sc.promptDescription || imageMeta.description || imageMeta.title,
+          subjects: sc.relationship || 'Professional individual or team',
+          action: sc.action || 'Engaging in business workflow',
+          objects: sc.visualMotif || 'Modern digital devices and workspace materials',
+          businessContext: sc.businessNeed || imageMeta.category,
+          emotionalTone: (sc.emotionalTone as ImageSemanticProfile['emotionalTone']) || 'neutral',
+          visualMotif: sc.visualMotif || 'Clean workspace',
+          targetCategory: imageMeta.category,
+          keywords: (imageMeta.keywords || '').split(/,\s*/).filter(Boolean),
+          provenance: {
+            source: 'ai_generated',
+            author: imageMeta.author || 'NorthSoft',
+            license: imageMeta.license || 'NorthSoft internal use',
+            model: parsed.model || '@cf/black-forest-labs/flux-1-schnell',
+          },
+        };
+      }
+    } catch {
+      // Notes is plain text or unparseable JSON
+    }
+  }
+
+  // Derive conservative profile from available metadata without faking unseen details
+  const title = imageMeta.title || '';
+  const desc = imageMeta.description || '';
+  const kw = (imageMeta.keywords || '').split(/,\s*/).filter(Boolean);
+  const combined = `${title} ${desc} ${kw.join(' ')}`.toLowerCase();
+
+  let emotionalTone: ImageSemanticProfile['emotionalTone'] = 'neutral';
+  if (/\b(?:problem|struggle|frustrated|loss|drop|error|broken|difficult|challenge)\b/i.test(combined)) {
+    emotionalTone = 'problem-aware';
+  } else if (/\b(?:success|growth|thriving|celebrat|happy|delight|win|achievement)\b/i.test(combined)) {
+    emotionalTone = 'positive';
+  } else if (/\b(?:meeting|collaborat|team|together|consulting|discussion|partnership)\b/i.test(combined)) {
+    emotionalTone = 'collaborative';
+  }
+
+  let visualMotif = 'General business environment';
+  if (combined.includes('tablet') || combined.includes('counter') || combined.includes('pos')) {
+    visualMotif = 'Tablet interaction';
+  } else if (combined.includes('screen') || combined.includes('monitor') || combined.includes('tv')) {
+    visualMotif = 'Team or workstation screen';
+  } else if (combined.includes('laptop') || combined.includes('desk')) {
+    visualMotif = 'Desk setup with laptop';
+  } else if (combined.includes('phone') || combined.includes('mobile')) {
+    visualMotif = 'Mobile smartphone interaction';
+  }
+
+  return {
+    sceneSummary: desc || title,
+    subjects: combined.includes('team') || combined.includes('group') || combined.includes('people') ? 'Group or team' : 'Professional',
+    action: 'Business activity',
+    objects: visualMotif,
+    businessContext: imageMeta.category,
+    emotionalTone,
+    visualMotif,
+    targetCategory: imageMeta.category,
+    keywords: kw,
+    provenance: {
+      source: (imageMeta.sourceType?.toLowerCase() as 'discovered' | 'manual') || 'discovered',
+      author: imageMeta.author || undefined,
+      license: imageMeta.license || undefined,
+    },
+  };
+}
+
+/**
+ * 6-Pillar Selective Post-to-Image Matching Algorithm
+ * Evaluates semantic and emotional alignment between post draft and candidate image.
+ * Returns match score (0-100), qualification status (score >= 65), and diagnostic reasons.
+ */
+export function evaluatePostImageMatch(
+  imageMeta: {
+    id: string;
+    title: string;
+    category: string;
+    keywords?: string | null;
+    description?: string | null;
+    notes?: string | null;
+    usageCount?: number;
+    lastUsedAt?: string | null;
+    visualRelevanceScore?: number;
+  },
+  post: PostMatchCriteria,
+): PostImageMatchResult {
+  const reasons: string[] = [];
+  const profile = extractOrDeriveSemanticProfile({
+    title: imageMeta.title,
+    category: imageMeta.category,
+    keywords: imageMeta.keywords,
+    description: imageMeta.description,
+    notes: imageMeta.notes,
+  });
+
+  const postText = `${post.postTitle} ${post.postContent}`.toLowerCase();
+  const kwList = Array.isArray(profile.keywords) ? profile.keywords : [];
+  const imageCorpus = `${profile.sceneSummary} ${profile.visualMotif} ${kwList.join(' ')} ${imageMeta.title} ${imageMeta.description || ''}`.toLowerCase();
+
+  // 1. Pillar: Category alignment (max 30 pts)
+  const postCat = post.category.toLowerCase().trim();
+  const imgCat = imageMeta.category.toLowerCase().trim();
+  let categoryScore: number;
+
+  if (postCat === imgCat) {
+    categoryScore = 30;
+    reasons.push(`Exact category match (${imageMeta.category})`);
+  } else if (postCat.includes(imgCat) || imgCat.includes(postCat)) {
+    categoryScore = 18;
+    reasons.push(`Partial category match (${imageMeta.category})`);
+  } else {
+    categoryScore = 0;
+    reasons.push(`Cross-category candidate (${imageMeta.category})`);
+  }
+
+  // 2. Pillar: Topic & operational context fit (max 30 pts)
+  const topicTokens = postText
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !['with', 'from', 'your', 'this', 'that', 'have', 'more', 'about'].includes(w));
+
+  let matchedTokens = 0;
+  for (const token of topicTokens) {
+    if (imageCorpus.includes(token)) {
+      matchedTokens++;
+    }
+  }
+
+  let topicScore: number;
+  if (matchedTokens >= 3) {
+    topicScore = 30;
+    reasons.push(`Strong topic vocabulary overlap (${matchedTokens} terms matched)`);
+  } else if (matchedTokens >= 1) {
+    topicScore = 15;
+    reasons.push(`Moderate topic overlap (${matchedTokens} term(s) matched)`);
+  } else {
+    topicScore = 0;
+    reasons.push('No direct vocabulary overlap');
+  }
+
+  // 3. Pillar: Emotional & tone congruence (max 20 pts)
+  const expectedTone = post.emotionalIntent || 'neutral';
+  const imgTone = profile.emotionalTone;
+  let emotionScore: number;
+  let emotionalCongruence: PostImageMatchResult['emotionalCongruence'];
+
+  if (expectedTone === imgTone) {
+    emotionScore = 20;
+    emotionalCongruence = 'EXCELLENT';
+    reasons.push(`Direct emotional resonance: ${expectedTone}`);
+  } else if (
+    (expectedTone === 'collaborative' && imgTone === 'positive') ||
+    (expectedTone === 'positive' && imgTone === 'collaborative') ||
+    imgTone === 'neutral' ||
+    expectedTone === 'neutral'
+  ) {
+    emotionScore = 12;
+    emotionalCongruence = 'ACCEPTABLE';
+    reasons.push(`Compatible tone (${expectedTone} post vs ${imgTone} visual)`);
+  } else {
+    // 4. Pillar: Anti-contradiction check
+    // e.g. problem-aware post (loss, drops, bugs) paired with celebratory/joyful image, or analytical post with cheerful party
+    emotionalCongruence = 'CONTRADICTORY';
+    emotionScore = -25;
+    reasons.push(`Tone contradiction warning: post is ${expectedTone} but image expresses ${imgTone}`);
+  }
+
+  // 5. Pillar: Visual quality & relevance score (max 10 pts)
+  const visualRelevance = imageMeta.visualRelevanceScore ?? 0.7;
+  const qualityScore = Math.round(visualRelevance * 10);
+  reasons.push(`Visual quality and relevance rating: ${qualityScore}/10`);
+
+  // 6. Pillar: Recency and reuse factor (bonus or penalty, max 10 pts)
+  let reuseScore = 10; // unused bonus
+  if (imageMeta.usageCount && imageMeta.usageCount > 0) {
+    if (imageMeta.lastUsedAt) {
+      const lastUsedMs = new Date(imageMeta.lastUsedAt).getTime();
+      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      if (Date.now() - lastUsedMs < ninetyDaysMs) {
+        return {
+          qualified: false,
+          score: 0,
+          reasons: ['Disqualified: Image was used within the last 90 days.'],
+          disqualificationReason: '90-day reuse window policy violation',
+          emotionalCongruence,
+        };
+      }
+    }
+    reuseScore = 5;
+    reasons.push('Eligible for quarterly reuse');
+  } else {
+    reasons.push('Unused library asset bonus');
+  }
+
+  const rawTotal = categoryScore + topicScore + emotionScore + qualityScore + reuseScore;
+  const finalScore = Math.max(0, Math.min(100, rawTotal));
+
+  // Minimum threshold: 65/100, must have at least some category or topic grounding, and NO tone contradiction
+  const hasGrounding = categoryScore > 0 || topicScore >= 15;
+  const qualified = finalScore >= 65 && hasGrounding && emotionalCongruence !== 'CONTRADICTORY';
+
+  return {
+    qualified,
+    score: finalScore,
+    reasons,
+    disqualificationReason: !qualified
+      ? emotionalCongruence === 'CONTRADICTORY'
+        ? `Contradictory visual tone (${expectedTone} post vs ${imgTone} visual)`
+        : `Insufficient alignment score (${finalScore}/100, minimum 65 required)`
+      : undefined,
+    emotionalCongruence,
+  };
+}
+

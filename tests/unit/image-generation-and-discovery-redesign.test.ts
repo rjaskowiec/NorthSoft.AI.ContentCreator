@@ -16,8 +16,8 @@ function createMockD1Database(existingRuns: any[] = [], existingCurated: any[] =
   const prepare = (sql: string) => ({
     bind: (...args: any[]) => ({
       first: async () => {
-        if (sql.includes("role = 'image_generator' AND status = 'completed'")) {
-          const count = runs.filter((r) => r.role === 'image_generator' && r.status === 'completed').length;
+        if (sql.includes("role = 'image_generator' AND status IN ('completed', 'running')") || sql.includes("role = 'image_generator' AND status = 'completed'")) {
+          const count = runs.filter((r) => r.role === 'image_generator' && (r.status === 'completed' || r.status === 'running')).length;
           return { count };
         }
         if (sql.includes('SELECT SUM(request_count)')) {
@@ -32,12 +32,25 @@ function createMockD1Database(existingRuns: any[] = [], existingCurated: any[] =
       all: async () => ({ results: [] }),
       run: async () => {
         if (sql.includes('INSERT INTO ai_runs')) {
+          const role = sql.includes("'image_generator'") ? 'image_generator' : (args[1] || 'image_generator');
+          const model = sql.includes("'image_generator'") ? args[1] : (args[2] || '');
+          const status = sql.includes("'running'") ? 'running' : (args[4] || args[8] || 'completed');
           runs.push({
-            role: args[1],
-            model: args[2],
-            provider: args[3],
-            status: args[8],
+            id: args[0],
+            role,
+            model,
+            status,
           });
+          return { meta: { changes: 1 } };
+        }
+        if (sql.includes('UPDATE ai_runs')) {
+          const targetId = args[args.length - 1];
+          const target = runs.find((r) => r.id === targetId);
+          if (target && sql.includes("status = 'completed'")) {
+            target.status = 'completed';
+          } else if (target && sql.includes("status = 'failed'")) {
+            target.status = 'failed';
+          }
           return { meta: { changes: 1 } };
         }
         if (sql.includes('INSERT INTO curated_images')) {

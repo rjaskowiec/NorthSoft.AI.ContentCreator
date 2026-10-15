@@ -41,7 +41,7 @@ export class FacebookSyncService {
         .prepare(
           `SELECT pub.id as publication_id, pub.post_id, pub.post_version_id, pub.facebook_post_id,
                   pub.sync_status as pub_sync_status, pub.fb_content_hash, pub.pushed_content_hash,
-                  pub.fb_image_url, pub.pushed_image_url,
+                  pub.fb_image_url, pub.pushed_image_url, pub.fb_is_hidden, pub.fb_last_check_at,
                   p.current_version, p.sync_status as post_sync_status, pv.content as local_content,
                   pi.url as local_image_url, pi.curated_image_id as local_curated_image_id
            FROM publications pub
@@ -60,6 +60,8 @@ export class FacebookSyncService {
           pushed_content_hash?: string;
           fb_image_url?: string | null;
           pushed_image_url?: string | null;
+          fb_is_hidden?: number | null;
+          fb_last_check_at?: string | null;
           current_version: number;
           post_sync_status: string;
           local_content: string;
@@ -87,8 +89,11 @@ export class FacebookSyncService {
         }
 
         const fbMsg = (res.post.message || '').trim();
-        await this.db.prepare('UPDATE publications SET fb_is_hidden = ?, fb_deleted_at = NULL WHERE id = ?')
-          .bind(res.post.isHidden ? 1 : 0, item.publication_id).run();
+        const newIsHidden = res.post.isHidden ? 1 : 0;
+        if (item.fb_is_hidden !== newIsHidden) {
+          await this.db.prepare('UPDATE publications SET fb_is_hidden = ?, fb_deleted_at = NULL WHERE id = ?')
+            .bind(newIsHidden, item.publication_id).run();
+        }
 
         if (res.post.views != null || res.post.reactions != null || res.post.comments != null || res.post.shares != null) {
           try {
@@ -123,25 +128,34 @@ export class FacebookSyncService {
           ).run();
         }
 
-        await this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = COALESCE(pushed_image_url, ?) WHERE id = ?')
-          .bind(res.post.fullPicture || null, item.local_image_url || res.post.fullPicture || null, item.publication_id).run();
+        const newFbImageUrl = res.post.fullPicture || null;
+        if (item.fb_image_url !== newFbImageUrl || (!item.pushed_image_url && (item.local_image_url || newFbImageUrl))) {
+          await this.db.prepare('UPDATE publications SET fb_image_url = ?, pushed_image_url = COALESCE(pushed_image_url, ?) WHERE id = ?')
+            .bind(newFbImageUrl, item.local_image_url || newFbImageUrl, item.publication_id).run();
+        }
 
         if (item.local_curated_image_id) {
           await recalculateCuratedImageUsage(this.db, item.local_curated_image_id);
         }
 
         if (fbHash === localHash || (item.pushed_content_hash && fbHash === item.pushed_content_hash)) {
-          await this.db
-            .prepare(
-              `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', fb_content_hash = ? WHERE id = ?`,
-            )
-            .bind(nowIso, nowIso, fbHash, item.publication_id)
-            .run();
+          const checkAgeMs = item.fb_last_check_at ? Date.now() - new Date(item.fb_last_check_at).getTime() : Infinity;
+          // Only update DB if sync_status was not SYNCED or hash changed, or at most once every 6 hours
+          if (item.pub_sync_status !== 'SYNCED' || item.fb_content_hash !== fbHash || checkAgeMs > 6 * 60 * 60 * 1000) {
+            await this.db
+              .prepare(
+                `UPDATE publications SET fb_last_check_at = ?, fb_last_sync_at = ?, sync_status = 'SYNCED', fb_content_hash = ? WHERE id = ?`,
+              )
+              .bind(nowIso, nowIso, fbHash, item.publication_id)
+              .run();
+          }
 
-          await this.db
-            .prepare(`UPDATE posts SET sync_status = 'SYNCED', last_synced_at = ? WHERE id = ?`)
-            .bind(nowIso, item.post_id)
-            .run();
+          if (item.post_sync_status !== 'SYNCED') {
+            await this.db
+              .prepare(`UPDATE posts SET sync_status = 'SYNCED', last_synced_at = ? WHERE id = ?`)
+              .bind(nowIso, item.post_id)
+              .run();
+          }
 
           continue;
         }
