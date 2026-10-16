@@ -31,7 +31,17 @@ healthRoutes.get('/', async (c) => {
   }
 
   // Check Cloudflare Analytics API telemetry health (without revealing secrets)
-  let telemetryCheck: { status: string; source: string; reason?: string } = {
+  let telemetryCheck: {
+    status: string;
+    source: string;
+    reason?: string;
+    rowsRead?: number | null;
+    rowsWritten?: number | null;
+    readQueries?: number | null;
+    writeQueries?: number | null;
+    period?: string;
+    lastUpdated?: string | null;
+  } = {
     status: 'unconfigured',
     source: 'None',
   };
@@ -42,6 +52,12 @@ healthRoutes.get('/', async (c) => {
       status: d1Usage.status,
       source: d1Usage.source,
       reason: d1Usage.reason,
+      rowsRead: d1Usage.rowsRead,
+      rowsWritten: d1Usage.rowsWritten,
+      readQueries: d1Usage.readQueries,
+      writeQueries: d1Usage.writeQueries,
+      period: d1Usage.period,
+      lastUpdated: d1Usage.lastUpdated,
     };
   } catch (tErr: unknown) {
     telemetryCheck = {
