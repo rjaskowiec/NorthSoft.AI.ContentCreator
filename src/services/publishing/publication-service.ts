@@ -443,7 +443,6 @@ export class PublicationService {
 
       publicationId = pendingPub.id;
 
-      // Atomic state transition to 'publishing'
       const lockRes = await this.db
         .prepare(
           `UPDATE publications
@@ -480,7 +479,6 @@ export class PublicationService {
         };
       }
     } else {
-      // Insert new publication record in 'publishing' state
       await this.db
         .prepare(
           `INSERT INTO publications (id, post_id, post_version_id, schedule_id, provider, status, attempt_count, idempotency_key, created_at, updated_at)
@@ -706,19 +704,16 @@ export class PublicationService {
         });
       }
 
-      // Update post status to published
       await this.db
         .prepare(`UPDATE posts SET status = 'published', updated_at = datetime('now') WHERE id = ?`)
         .bind(postId)
         .run();
 
-      // Update linked topic status to published
       await this.db
         .prepare(`UPDATE content_ideas SET status = 'published', updated_at = datetime('now') WHERE id = (SELECT idea_id FROM posts WHERE id = ?)`)
         .bind(postId)
         .run();
 
-      // Update schedule status if linked
       if (options?.scheduleId) {
         await this.db
           .prepare(
@@ -1026,7 +1021,6 @@ export class PublicationService {
   public async getPublicationHealth(): Promise<PublicationHealthSummary> {
     const configStatus = this.publisher.getConfigStatus();
 
-    // Stats
     const statsRes = await this.db
       .prepare(
         `SELECT
@@ -1055,7 +1049,6 @@ export class PublicationService {
       blocked: statsRes?.blocked || 0,
     };
 
-    // Last Successful Publication
     const lastSuccessRow = await this.db
       .prepare(
         `SELECT pub.id, pub.post_id, pub.facebook_post_id, pub.published_at, p.title
@@ -1073,7 +1066,6 @@ export class PublicationService {
         title?: string;
       }>();
 
-    // Last Failed Publication
     const lastFailedRow = await this.db
       .prepare(
         `SELECT pub.id, pub.post_id, pub.error_code, pub.error_message, pub.http_status, pub.updated_at, p.title
@@ -1093,7 +1085,6 @@ export class PublicationService {
         title?: string;
       }>();
 
-    // Last Publication Attempt
     const lastAttemptRow = await this.db
       .prepare(
         `SELECT pub.id, pub.post_id, pub.status, pub.updated_at, p.title

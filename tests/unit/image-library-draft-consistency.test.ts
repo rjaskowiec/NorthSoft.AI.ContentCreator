@@ -161,14 +161,11 @@ describe('Image Library ↔ Content Drafts State Consistency', () => {
       selection_source: 'AUTO',
     });
 
-    // Admin deletes the image
     const updated = await service.updateMetadata('img-1', { status: 'DELETED' });
     expect(updated).toBe(true);
 
-    // Verify draft query returns null for image_url
     const postsRes = await db.prepare('SELECT p.id, p.idea_id, p.title, p.status FROM posts p').bind('').all();
     expect(postsRes.results[0].image_url).toBeNull();
-    // Verify draft post_images binding was deleted
     expect(db._postImages.has('pi-1')).toBe(false);
   });
 
@@ -247,12 +244,10 @@ describe('Image Library ↔ Content Drafts State Consistency', () => {
       selection_source: 'AUTO',
     });
 
-    // 1. Delete image A
     await service.updateMetadata('img-A', { status: 'DELETED' });
     let postsRes = await db.prepare('SELECT p.id, p.idea_id, p.title, p.status FROM posts p').bind('').all();
     expect(postsRes.results[0].image_url).toBeNull();
 
-    // 2. Select image B (simulate manual assignment)
     db._postImages.set('pi-5-b', {
       id: 'pi-5-b',
       post_id: 'post-5',
@@ -262,7 +257,6 @@ describe('Image Library ↔ Content Drafts State Consistency', () => {
       selection_source: 'MANUAL',
     });
 
-    // 3. Query again
     postsRes = await db.prepare('SELECT p.id, p.idea_id, p.title, p.status FROM posts p').bind('').all();
     expect(postsRes.results[0].image_url).toBe('https://example.com/imgB.jpg');
     expect(postsRes.results[0].selection_source).toBe('MANUAL');
@@ -283,7 +277,6 @@ describe('Image Library ↔ Content Drafts State Consistency', () => {
       selection_source: 'AUTO',
     });
 
-    // Delete image from library
     await service.updateMetadata('img-hist', { status: 'DELETED' });
 
     // Published post retains historical post_images record

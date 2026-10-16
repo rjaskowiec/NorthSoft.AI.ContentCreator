@@ -179,10 +179,6 @@ export class PipelineOrchestratorService {
     this.cfUsageService = CloudflareUsageService.fromEnv(env);
   }
 
-  // ---------------------------------------------------------------------------
-  // Locks
-  // ---------------------------------------------------------------------------
-
   /**
    * Acquire execution lock for idempotency / duplicate run protection
    */
@@ -231,10 +227,6 @@ export class PipelineOrchestratorService {
       await this.releaseLock(lockKey);
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // STAGE 1 — Topics (Content Discovery)
-  // ---------------------------------------------------------------------------
 
   async runDiscovery(actor: PipelineActor = 'admin'): Promise<DiscoveryStageResult> {
     const d1QuotaService = new D1QuotaService();
@@ -287,10 +279,6 @@ export class PipelineOrchestratorService {
       };
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // STAGE 2 — Posts (Generation & Quality)
-  // ---------------------------------------------------------------------------
 
   async runPostGeneration(ideaId?: string, actor: PipelineActor = 'admin'): Promise<GenerationStageResult> {
     const d1QuotaService = new D1QuotaService();
@@ -388,10 +376,6 @@ export class PipelineOrchestratorService {
       };
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // STAGE 3 — Images
-  // ---------------------------------------------------------------------------
 
   /**
    * Assigns images to approved, unpublished posts that do not have one for their current version.
@@ -516,10 +500,6 @@ export class PipelineOrchestratorService {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // STAGE 4 — Scheduling (IntelligentSchedulingService, no AI)
-  // ---------------------------------------------------------------------------
-
   /**
    * Schedules approved posts that have an image and no pending schedule, using the
    * existing IntelligentSchedulingService slot proposal algorithm.
@@ -617,10 +597,6 @@ export class PipelineOrchestratorService {
       details: { scheduledAt: scheduledAtIso, strategy: 'intelligent_scheduler' },
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // Unified stage runner (manual buttons + automation)
-  // ---------------------------------------------------------------------------
 
   async runStage(stage: PipelineStage, actor: PipelineActor = 'admin'): Promise<StageRunResult> {
     // Execution-layer protective mode enforcement: check quota before running expensive stages
@@ -773,10 +749,6 @@ export class PipelineOrchestratorService {
     steps.push(await this.runStage('scheduling', actor));
     return steps;
   }
-
-  // ---------------------------------------------------------------------------
-  // Automation (cron tick)
-  // ---------------------------------------------------------------------------
 
   /**
    * Called by the Worker cron every 5 minutes. Performs at most one AI step per tick
@@ -945,10 +917,6 @@ export class PipelineOrchestratorService {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Run history (orchestrator_runs & Automation Activity)
-  // ---------------------------------------------------------------------------
-
   private async recordRunStart(runId: string, triggerType: 'manual' | 'cron', stage?: PipelineStage): Promise<void> {
     try {
       const nowIso = new Date().toISOString();
@@ -1043,10 +1011,6 @@ export class PipelineOrchestratorService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Configuration
-  // ---------------------------------------------------------------------------
-
   async getSchedulerConfig(): Promise<SchedulerConfig> {
     let row: {
       enabled: number;
@@ -1120,10 +1084,6 @@ export class PipelineOrchestratorService {
 
     return updated;
   }
-
-  // ---------------------------------------------------------------------------
-  // Automation Activity Query Engine
-  // ---------------------------------------------------------------------------
 
   async getAutomationActivity(filters: {
     period?: '1h' | '6h' | '24h' | '7d' | '30d' | 'custom';

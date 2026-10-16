@@ -162,10 +162,6 @@ export class SocialMediaQualityGate {
 
     const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
     const lineBreaks = (body.match(/\n/g) || []).length;
-
-    // -------------------------------------------------------------------
-    // 0. BASIC SANITY / LENGTH CHECKS (Readability)
-    // -------------------------------------------------------------------
     if (charCount < 40) {
       add('Readability', 'critical', 'Post body is empty or too short to deliver any value.');
     } else if (charCount < 80) {
@@ -173,12 +169,6 @@ export class SocialMediaQualityGate {
     } else if (charCount > 1600) {
       add('Readability', 'medium', 'Post body exceeds 1600 characters — consider tightening for social feed scannability.');
     }
-
-
-
-    // -------------------------------------------------------------------
-    // 1. GENERICNESS & AI TEMPLATE PATTERNS (Weight: 16)
-    // -------------------------------------------------------------------
     let genericSignalsCount = 0;
     const aiTemplateMatches: string[] = [];
     for (const pat of AI_TEMPLATE_SYNTAX_PATTERNS) {
@@ -226,10 +216,6 @@ export class SocialMediaQualityGate {
     } else if (matchedTropes.length === 1) {
       add('Authenticity', 'medium', `Post contains a generic marketing cliché or corporate jargon phrase — consider rephrasing with specific language.`);
     }
-
-    // -------------------------------------------------------------------
-    // 2. AUDIENCE RELEVANCE & SMALL BUSINESS ORIENTATION (Weight: 12)
-    // -------------------------------------------------------------------
     const enterpriseJargonMatches: string[] = [];
     for (const term of ENTERPRISE_CONSULTING_TERMS) {
       if (term.test(body)) {
@@ -250,10 +236,6 @@ export class SocialMediaQualityGate {
     if (isConsultingSummary && enterpriseJargonMatches.length === 0) {
       add('AudienceRelevance', 'high', 'Post reads as a formal article summary / consulting methodology rather than conversational social copy for a business owner.');
     }
-
-    // -------------------------------------------------------------------
-    // 3. INFORMATION GAIN & PARAPHRASE DETECTION (Weight: 14)
-    // -------------------------------------------------------------------
     const references = [
       context?.topicTitle,
       ...(context?.referenceTexts || []),
@@ -314,10 +296,6 @@ export class SocialMediaQualityGate {
         }
       }
     }
-
-    // -------------------------------------------------------------------
-    // 4. ATTENTION & HOOK (Weight: 10)
-    // -------------------------------------------------------------------
     const firstSentence = (body.split(/[.!?\n]/)[0] || '').trim();
     let hasGenericOpening = false;
     for (const pattern of GENERIC_OPENING_PATTERNS) {
@@ -340,10 +318,6 @@ export class SocialMediaQualityGate {
         add('Attention', 'medium', 'Opening fails to stop the scroll — consider an immediate recognizable situation or surprising observation.');
       }
     }
-
-    // -------------------------------------------------------------------
-    // 5. SPECIFICITY (Weight: 10)
-    // -------------------------------------------------------------------
     const concreteDetails =
       /\d+/.test(body) || // any numbers
       /\b(website|email|shop|store|booking|order|invoice|review|reviews|listing|google|facebook|instagram|mobile|phone|click|form|checkout|speed|seconds|menu|pricing|hours|address|contact)\b/i.test(body);
@@ -351,10 +325,6 @@ export class SocialMediaQualityGate {
     if (charCount >= 80 && !concreteDetails) {
       add('Specificity', 'medium', 'Post lacks concrete detail — numbers, named tools, or specific operational artifacts would make it believable.');
     }
-
-    // -------------------------------------------------------------------
-    // 6. VALUE & PRACTICAL INSIGHT (Weight: 10)
-    // -------------------------------------------------------------------
     const valueSignals =
       /\b(check|review|update|try|test|add|remove|fix|change|improve|avoid|consider|make sure|ensure|set up|connect|use|enable|turn on|look at|ask|find out|see if|learn|starts with|difference between|rule of thumb|simple beats|rather than|help you|finding a tool)\b/i.test(body) ||
       /\b(tip|key|important|worth|helpful|useful|practical|simple|quick|step|approach|strategy|mechanism|reason|free)\b/i.test(body);
@@ -364,20 +334,12 @@ export class SocialMediaQualityGate {
     if (charCount >= 80 && (!valueSignals || !hasSubstantiveSentences)) {
       add('Value', 'medium', 'Post does not deliver a clear actionable takeaway, mechanism, or useful explanation for the business owner.');
     }
-
-    // -------------------------------------------------------------------
-    // 7. READABILITY & SOCIAL FORMATTING (Weight: 6)
-    // -------------------------------------------------------------------
     // Hard block on paragraph collapse: a single solid block > 160 characters
     if (charCount > 160 && paragraphs.length <= 1 && lineBreaks === 0) {
       add('Readability', 'high', 'Paragraph collapse: post is formatted as a single monolithic block. Social copy must use short paragraphs (1-3 sentences) separated by blank lines.');
     } else if (charCount > 300 && paragraphs.length <= 1) {
       add('Readability', 'medium', 'Post lacks visual rhythm — break dense text into 2-4 short, readable chunks.');
     }
-
-    // -------------------------------------------------------------------
-    // 8. HUMAN VOICE / CONVERSATIONAL TONE (Weight: 6)
-    // -------------------------------------------------------------------
     const hasContraction = /\b(it's|you're|they're|we're|don't|can't|won't|doesn't|isn't|I'm|that's|there's|what's|here's|who's|let's|they'll|you'll|we'll)\b/i.test(body);
     const sentences = body.split(/[.!?]/).filter((s) => s.trim().length > 0);
     const hasVariedRhythm = sentences.length >= 2 && sentences.some((s) => s.trim().split(/\s+/).length <= 8);
@@ -385,10 +347,6 @@ export class SocialMediaQualityGate {
     if (charCount >= 80 && !(hasContraction || hasVariedRhythm)) {
       add('HumanVoice', 'low', 'Tone may sound overly formal or robotic — natural contractions and varied sentence pacing improve authentic human feel.');
     }
-
-    // -------------------------------------------------------------------
-    // 9. CREDIBILITY (Weight: 10)
-    // -------------------------------------------------------------------
     const bodyPercentages = body.match(/\d+%/g) || [];
     const hasSourceIndicator = /\b(source|study|report|according to|survey|found that|published by|based on|cited by|per (?:the )?\w+)\b/i.test(body);
     const hasFabricatedStat =
@@ -404,10 +362,6 @@ export class SocialMediaQualityGate {
     if (hasResearchClaim && !hasSourceIndicator && !hasFabricatedStat) {
       add('Credibility', 'high', 'Post references research or expert opinion without citing a source — rephrase as an observation or attribute clearly.');
     }
-
-    // -------------------------------------------------------------------
-    // 10. CTA QUALITY & EMPTY ENGAGEMENT BAIT (Weight: 6)
-    // -------------------------------------------------------------------
     let hasEmptyEngagementBait = false;
     for (const pattern of EMPTY_ENGAGEMENT_QUESTIONS) {
       if (pattern.test(body)) {
@@ -432,10 +386,6 @@ export class SocialMediaQualityGate {
     if (brandIdx !== -1 && brandIdx < 80 && charCount > 150) {
       add('CTAQuality', 'low', 'NorthSoft is introduced very early — placing the brand after delivering reader value reads more authentically.');
     }
-
-    // -------------------------------------------------------------------
-    // COMPUTE WEIGHTED SCORE & QUALITY FLOOR ENFORCEMENT
-    // -------------------------------------------------------------------
     let score = 100;
     const dimensionScores: Record<string, number> = {};
 

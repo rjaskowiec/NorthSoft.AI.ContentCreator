@@ -23,10 +23,6 @@ import type { IAIProvider } from '../../src/ai/provider';
 describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
   const smqg = new SocialMediaQualityGate();
   const cqg = new ContentQualityGate();
-
-  // ---------------------------------------------------------------------------
-  // Test A: Generic AI Template
-  // ---------------------------------------------------------------------------
   it("Test A — 'You're not just building X, you're building Y...' triggers genericness warning & is rejected", () => {
     // The exact problematic post from the user problem description
     const badDraft = {
@@ -54,10 +50,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     expect(cqgResult.passed).toBe(false);
     expect(cqgResult.reasons.some((r) => r.includes('AI template'))).toBe(true);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test B: 5 sentences in one monolithic paragraph (Paragraph Collapse)
-  // ---------------------------------------------------------------------------
   it('Test B — 5 sentences in a single paragraph triggers social formatting warning & is rejected', () => {
     const singleParagraphDraft = {
       title: 'Local SEO Tips',
@@ -72,10 +64,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     expect(readabilityWarning?.severity).toBe('high');
     expect(readabilityWarning?.reason).toMatch(/paragraph collapse/i);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test C: Article-like explanation / enterprise consulting summary
-  // ---------------------------------------------------------------------------
   it('Test C — Article-like consulting explanation triggers AudienceRelevance warning & low score', () => {
     const consultingDraft = {
       title: 'UX Strategy',
@@ -89,10 +77,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     expect(audienceWarning).toBeDefined();
     expect(audienceWarning?.reason).toMatch(/consulting|stakeholders/i);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test D: Abstract marketing language without concrete operational artifacts
-  // ---------------------------------------------------------------------------
   it('Test D — Abstract marketing language without operational grounding triggers genericness penalty', () => {
     const abstractDraft = {
       title: 'Digital Transformation',
@@ -103,10 +87,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     expect(result.pass).toBe(false);
     expect(result.genericnessScore).toBeGreaterThanOrEqual(40);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test E: Great hook + concrete useful content passes quality floor
-  // ---------------------------------------------------------------------------
   it('Test E — Great hook + concrete useful content passes quality floor decisively', () => {
     const goodDraft = {
       title: 'The Overwhelmed Marketing Dilemma',
@@ -118,10 +98,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     expect(result.score).toBeGreaterThanOrEqual(80);
     expect(result.warnings.filter((w) => w.severity === 'critical' || w.severity === 'high')).toHaveLength(0);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test F: Good content but no CTA passes cleanly
-  // ---------------------------------------------------------------------------
   it('Test F — Good content without any CTA passes without penalty', () => {
     const noCtaDraft = {
       title: 'Smartphone Mobile Lag',
@@ -134,10 +110,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     const ctaWarning = result.warnings.find((w) => w.dimension === 'CTAQuality');
     expect(ctaWarning).toBeUndefined();
   });
-
-  // ---------------------------------------------------------------------------
-  // Test G: Good content with natural, contextual CTA passes cleanly
-  // ---------------------------------------------------------------------------
   it('Test G — Good content with natural contextual CTA passes with high score', () => {
     const contextualCtaDraft = {
       title: 'Google Maps Hours',
@@ -149,10 +121,6 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
     expect(result.pass).toBe(true);
     expect(result.score).toBeGreaterThanOrEqual(85);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test H: Bad draft -> regeneration directive receives failure reason
-  // ---------------------------------------------------------------------------
   it('Test H — Bad draft rejection passes detailed failure reasons into regeneration directive', () => {
     const badDraft = {
       title: 'UX Investment',
@@ -161,17 +129,11 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
 
     const smqgResult = smqg.evaluate(badDraft);
     expect(smqgResult.pass).toBe(false);
-
-    // Verify specific warnings are generated
     const reasons = smqgResult.warnings.map((w) => `[SMQG-${w.dimension}] ${w.reason}`);
     expect(reasons.some((r) => r.includes('[SMQG-Genericness]'))).toBe(true);
     expect(reasons.some((r) => r.includes('[SMQG-AudienceRelevance]'))).toBe(true);
     expect(reasons.some((r) => r.includes('[SMQG-Readability]'))).toBe(true);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test I: Repeated bad generations -> post blocked / rejected, NEVER published
-  // ---------------------------------------------------------------------------
   it('Test I — When all attempts fail quality gate, generation marks idea rejected and never publishes', async () => {
     const ideaId = 'idea-test-block';
     let ideaStatus = 'queued';
@@ -230,16 +192,10 @@ describe('Autonomous Quality Floor & Regression Tests (A through J)', () => {
 
     const planner = new ContentPlannerService(mockDb, mockEnv);
     const result = await planner.generatePostFromTopic(ideaId, 'admin');
-
-    // Must be failed and blocked
     expect(result.status).toBe('failed');
     expect(result.qualityDecision).toBe('BLOCKED');
     expect(ideaStatus).toBe('rejected');
   });
-
-  // ---------------------------------------------------------------------------
-  // Test J: Noisy / random generation does not allow low-quality post through
-  // ---------------------------------------------------------------------------
   it('Test J — Low quality variations under temperature noise are consistently blocked by Quality Gate', () => {
     const noisyVariations = [
       "You're not just running a cafe, you're building a community experience. In today's digital world, digital transformation is essential for scaling your business. Contact NorthSoft today to unlock your potential!",

@@ -69,7 +69,6 @@ describe('Audit Log Engine & Security Redaction', () => {
       const mockDb = { prepare: prepareMock } as unknown as D1Database;
       const logger = new D1AuditLogger(mockDb);
 
-      // Must not throw an unhandled exception
       await expect(
         logger.log({
           eventType: 'AI_RESEARCH_STARTED',
@@ -115,7 +114,6 @@ describe('Audit Log Engine & Security Redaction', () => {
       expect(bindMock).toHaveBeenCalledTimes(1);
       const args = bindMock.mock.calls[0] as unknown[];
 
-      // Verify bound columns
       expect(args[1]).toBe('AI_RESEARCH_FAILED');
       expect(args[2]).toBe('research_item');
       expect(args[3]).toBe('item-100');

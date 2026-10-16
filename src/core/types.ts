@@ -8,14 +8,6 @@ export type AppEnv = {
   };
 };
 
-/**
- * Domain types representing the content lifecycle from idea to publication.
- */
-
-// ============================================================
-// Content Ideas
-// ============================================================
-
 export type IdeaSourceType = 'manual' | 'research' | 'ai';
 export type IdeaStatus = 'new' | 'accepted' | 'rejected' | 'used';
 
@@ -30,10 +22,6 @@ export interface ContentIdea {
   createdAt: string;
   updatedAt: string;
 }
-
-// ============================================================
-// Posts
-// ============================================================
 
 export type PostStatus =
   'draft' | 'in_review' | 'approved' | 'scheduled' | 'published' | 'blocked' | 'rejected';
@@ -53,10 +41,6 @@ export interface Post {
   blockedReason: string | null;
 }
 
-// ============================================================
-// Post Versions
-// ============================================================
-
 export type ContentType = 'text' | 'link' | 'photo';
 
 export interface PostVersion {
@@ -70,10 +54,6 @@ export interface PostVersion {
   aiProvider: string | null;
   createdAt: string;
 }
-
-// ============================================================
-// Sources
-// ============================================================
 
 export type SourceType = 'website' | 'rss' | 'api' | 'manual';
 export type SourceRelevance = 'primary' | 'supporting' | 'background';
@@ -89,10 +69,6 @@ export interface Source {
   createdAt: string;
 }
 
-// ============================================================
-// Schedules
-// ============================================================
-
 export type ScheduleStatus = 'pending' | 'published' | 'cancelled' | 'failed';
 
 export interface Schedule {
@@ -104,10 +80,6 @@ export interface Schedule {
   createdAt: string;
   updatedAt: string;
 }
-
-// ============================================================
-// Publications
-// ============================================================
 
 export type PublicationStatus = 'attempted' | 'success' | 'failed';
 
@@ -121,10 +93,6 @@ export interface Publication {
   publishedAt: string | null;
   createdAt: string;
 }
-
-// ============================================================
-// AI Runs
-// ============================================================
 
 export type AIRunStatus = 'completed' | 'failed' | 'timeout';
 

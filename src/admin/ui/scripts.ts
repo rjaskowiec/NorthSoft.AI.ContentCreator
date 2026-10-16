@@ -1458,10 +1458,6 @@ export function getAdminScripts(): string {
         alert('Failed to load generator context preview.');
       }
     }
-
-    // ======================================================================
-    // GLOBAL TASK QUEUE / ACTIVITY CENTER SERVICE
-    // ======================================================================
     window.AsyncOperationManager = {
       STORAGE_KEY: 'admin_activity_tasks',
       SUCCESS_AUTO_DISMISS_MS: 4500, // Reasonable, user-friendly duration (4.5s) to read success summary before auto-dismiss
@@ -1687,10 +1683,6 @@ export function getAdminScripts(): string {
 
     // Alias for backward compatibility
     window.TaskQueue = window.AsyncOperationManager;
-
-    // ======================================================================
-    // MANUAL GUIDELINES & CONTEXT EDITOR HANDLERS
-    // ======================================================================
     function openAddGuidelineModal() {
       const input = document.getElementById('guideline-text-input');
       if (input) input.value = '';
@@ -3153,10 +3145,6 @@ export function getAdminScripts(): string {
       }
     }
 
-    // ======================================================================
-    // Facebook Page Posts — READ-ONLY Live Feed & Health Status
-    // ======================================================================
-
     let fbPostsLoaded = false;
     let fbNextCursor = null;
     let fbHasMore = false;
@@ -4359,10 +4347,6 @@ export function getAdminScripts(): string {
     async function runPublishNow() { return runStageNow('scheduling'); }
     async function runFullPipelineNow() { return runAllPipelineStagesNow(); }
 
-    // ======================================================================
-    // Modal Overlays & Calendar Grid Functions
-    // ======================================================================
-
     function openModal(id) {
       const modal = document.getElementById(id);
       if (modal) modal.classList.add('active');
@@ -4421,10 +4405,6 @@ export function getAdminScripts(): string {
         document.querySelectorAll('.modal-backdrop.active').forEach(m => m.classList.remove('active'));
       }
     });
-
-    // ======================================================================
-    // TOPIC RESEARCH — CRUD & BULK ACTIONS
-    // ======================================================================
     function updateTopicSelectionState() {
       const checkboxes = document.querySelectorAll('.topic-select-checkbox');
       selectedTopicIds = new Set();
@@ -4628,10 +4608,6 @@ export function getAdminScripts(): string {
         window.TaskQueue.fail(taskId, 'Post Generation Error', errMsg);
       }
     }
-
-    // ======================================================================
-    // CONTENT DRAFTS — CRUD & BULK ACTIONS
-    // ======================================================================
     function updatePostSelectionState() {
       const checkboxes = document.querySelectorAll('.post-select-checkbox');
       selectedPostIds = new Set();
@@ -5565,11 +5541,6 @@ export function getAdminScripts(): string {
         console.error('Failed to trigger Facebook sync:', err);
       }
     }
-
-
-    // ======================================================================
-    // BATCH POST GENERATION (CONTROLLED SEQUENCE)
-    // ======================================================================
     function generatePostsForSelectedTopics() {
       if (selectedTopicIds.size === 0) return;
       const topics = cachedTopics.filter(t => t && selectedTopicIds.has(t.id));
@@ -5663,10 +5634,6 @@ export function getAdminScripts(): string {
       updateTopicSelectionState();
       await Promise.all([loadResearchData(), loadContentData()]);
     }
-
-    // ======================================================================
-    // PUBLICATIONS — DELETION & HISTORY MANAGEMENT
-    // ======================================================================
     function openDeletePublicationModal(id) {
       const idInput = document.getElementById('pub-delete-id');
       if (idInput) idInput.value = safeStr(id);

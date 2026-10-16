@@ -354,7 +354,6 @@ describe('D1 Quota & Automation Activity Suite', () => {
       expect(activity.items).toHaveLength(1);
       const item = activity.items[0]!;
 
-      // Verify camelCase fields returned by backend
       expect(item.startedAt).toBe(startIso);
       expect(item.finishedAt).toBe(finishIso);
       expect(item.durationSeconds).toBe(35); // 35 seconds difference
@@ -475,7 +474,6 @@ describe('D1 Quota & Automation Activity Suite', () => {
       expect(purged.purgedRuns).toBe(3);
       expect(purged.purgedDailyMetrics).toBe(3);
 
-      // Verify orchestrator_runs and d1_daily_usage older than 30 days are targeted
       const runDelete = mockStatements.find(s => s.sql.includes('DELETE FROM orchestrator_runs'));
       const metricsDelete = mockStatements.find(s => s.sql.includes('DELETE FROM d1_daily_usage'));
 

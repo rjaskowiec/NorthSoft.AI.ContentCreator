@@ -14,7 +14,6 @@ describe('Production Audit & Fixes Verification Suite', () => {
       const publications: any[] = [];
       const schedules = new Map<string, any>();
 
-      // Image A, Image B, Image C
       curatedImages.set('img-A', {
         id: 'img-A',
         title: 'Image A',
@@ -292,13 +291,10 @@ describe('Production Audit & Fixes Verification Suite', () => {
       const context = vm.createContext(sandbox);
       vm.runInContext(scripts, context);
 
-      // Verify openFacebookPostDetails exists
       expect(typeof sandbox.openFacebookPostDetails).toBe('function');
 
-      // Call openFacebookPostDetails for post - should fetch and populate smoothly without throwing TypeError
       await sandbox.openFacebookPostDetails('fb-post-99');
 
-      // Check that elements were correctly populated
       const contentEl = domElements.get('fb-post-detail-content');
       expect(contentEl.value).toBe('Published Facebook content');
       expect(contentEl.dataset.facebookPostId).toBe('fb-post-99');
@@ -330,15 +326,12 @@ describe('Production Audit & Fixes Verification Suite', () => {
     it('scheduled list renders UPCOMING and PUBLISHED post items with correct actions and styling', () => {
       const scripts = getAdminScripts();
 
-      // Verify scripts contain the upcoming / published queue separation logic
       expect(scripts.includes('UPCOMING SCHEDULED POSTS')).toBe(true);
       expect(scripts.includes('PUBLISHED POSTS')).toBe(true);
 
-      // Verify clicking Edit on an upcoming post opens openScheduledPostDetailModal directly
       expect(scripts.includes('openScheduledPostDetailModal(&quot;' + '\'' + ' + s.id + ' + '\'' + '&quot;)') ||
              scripts.includes('openScheduledPostDetailModal(')).toBe(true);
 
-      // Verify published posts in queue list route to openFacebookPostDetails instead of rescheduling
       expect(scripts.includes('openFacebookPostDetails(&quot;' + '\'' + ' + (fbPostId || postIdStr) + ' + '\'' + '&quot;)') ||
              scripts.includes('openFacebookPostDetails(')).toBe(true);
     });
@@ -348,18 +341,15 @@ describe('Production Audit & Fixes Verification Suite', () => {
     it('verifies post, scheduled, and facebook modals have no raw file or URL input fields outside Image Library', () => {
       const html = renderAdminHtml();
 
-      // Check post-modal
       const postModalSection = html.slice(html.indexOf('id="post-modal"'), html.indexOf('id="bulk-post-modal"'));
       expect(postModalSection.includes('id="post-image-url"')).toBe(false);
       expect(postModalSection.includes('id="post-image-file"')).toBe(false);
       expect(postModalSection.includes('openDraftImageSelectorModalForDraft()')).toBe(true);
 
-      // Check scheduled-post-detail-modal
       expect(html.includes('id="scheduled-post-detail-modal"')).toBe(true);
       expect(html.includes('openDraftImageSelectorModalForScheduled()')).toBe(true);
       expect(html.includes('id="sched-detail-image-wrap"')).toBe(true);
 
-      // Check facebook-post-modal
       expect(html.includes('id="facebook-post-modal"')).toBe(true);
       expect(html.includes('id="fb-post-image-url"')).toBe(false);
       expect(html.includes('id="fb-post-image-file"')).toBe(false);

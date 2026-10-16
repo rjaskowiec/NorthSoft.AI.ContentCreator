@@ -438,11 +438,9 @@ describe('PasswordRecoveryService Unit Tests', () => {
     expect(result.message).toBe('Password changed successfully.');
     expect(result.newSession).toBeDefined();
 
-    // Verify password hash updated
     const isNewValid = await hashPassword('BrandNewSecurePass123!', mockUser.password_salt);
     expect(isNewValid).toBe(mockUser.password_hash);
 
-    // Verify audit event
     expect(mockAudit.log).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'ADMIN_PASSWORD_CHANGED',

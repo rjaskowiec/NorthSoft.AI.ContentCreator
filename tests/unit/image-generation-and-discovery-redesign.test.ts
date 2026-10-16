@@ -332,26 +332,22 @@ describe('Image Discovery Simplification & AI Image Generation Suite', () => {
       expect(result.r2Key).toMatch(/^gen-.*\.png$/);
       expect(result.sourceUrl).toContain('/media/');
 
-      // Check curated_images record
       expect(curated.length).toBe(1);
       const saved = curated[0];
       expect(saved.author).toBe('NorthSoft');
       expect(saved.license).toBe('NorthSoft internal use');
       expect(saved.status).toBe('PENDING');
 
-      // Check notes contain internal provenance
       const parsedNotes = JSON.parse(saved.notes);
       expect(parsedNotes.generatedBy).toBe('Cloudflare Workers AI');
       expect(parsedNotes.internalBrand).toBe('NorthSoft');
       expect(parsedNotes.usagePolicy).toBe('NorthSoft internal use');
       expect(parsedNotes.originalPrompt).toContain('laptop on clean modern wooden desk');
 
-      // Check QuotaManager recorded execution in ai_runs
       expect(runs.length).toBe(1);
       expect(runs[0].role).toBe('image_generator');
       expect(runs[0].status).toBe('completed');
 
-      // Check approving the generated image via ImageLibraryService / PATCH /images/:id succeeds
       const updateResult = await service.generateAndPersistImage ? await new (await import('../../src/services/content/image-library-service')).ImageLibraryService(db).updateMetadata(result.id, { status: 'APPROVED' }) : false;
       expect(updateResult).toBe(true);
     });

@@ -69,7 +69,6 @@ export function createMockDbWithFkEnforcement() {
         return { results: [] as T[] };
       },
       run: async () => {
-        // --- TOPIC / CONTENT_IDEAS OPERATIONS ---
         if (normSql.startsWith('INSERT INTO content_ideas')) {
           const id = boundArgs[0] as string;
           topicsMap.set(id, {
@@ -119,7 +118,6 @@ export function createMockDbWithFkEnforcement() {
           return { success: true };
         }
 
-        // --- POSTS OPERATIONS ---
         if (normSql.startsWith('INSERT INTO posts')) {
           const id = boundArgs[0] as string;
           postsMap.set(id, {

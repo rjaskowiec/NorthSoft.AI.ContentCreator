@@ -147,7 +147,6 @@ describe('Unified Image Acquisition & AI Generation Pipeline Suite', () => {
       expect(curated[0].license).toBe('NorthSoft internal use');
       expect(curated[0].status).toBe('PENDING');
 
-      // Check step logged
       expect(json.steps.some((s: any) => s.step === 'ai_supplement')).toBe(true);
       vi.unstubAllGlobals();
     });

@@ -89,19 +89,16 @@ export const MIN_QUALITY_SCORE = 70;
  * This is the ONLY function that should determine publication eligibility.
  */
 export function evaluateQualityGate(result: QualityGateResult): QualityDecision {
-  // Any critical check failure always blocks
   for (const check of CRITICAL_BLOCKING_CHECKS) {
     if (result.checks[check] === 'FAIL') {
       return 'BLOCKED';
     }
   }
 
-  // Score too low
   if (result.score < MIN_QUALITY_SCORE) {
     return 'FAIL';
   }
 
-  // Any non-critical failure
   const hasFailures = Object.values(result.checks).some((v) => v === 'FAIL');
   if (hasFailures) {
     return 'FAIL';

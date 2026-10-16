@@ -169,7 +169,6 @@ export class D1QuotaService {
     const today = new Date().toISOString().split('T')[0] ?? '';
     const nowIso = new Date().toISOString();
 
-    // 1. Fetch official Cloudflare verified telemetry
     let cfTelemetry: CloudflareD1Usage | undefined;
     if (cfUsageService) {
       try {
@@ -179,7 +178,6 @@ export class D1QuotaService {
       }
     }
 
-    // 2. Query local persistent usage from D1
     let localDbFound = false;
     let localRowsWritten = localBuffer.rowsWritten;
     let localRowsRead = localBuffer.rowsRead;
@@ -203,7 +201,6 @@ export class D1QuotaService {
       // Local query fallback
     }
 
-    // 3. Determine primary telemetry source & authenticity
     let effectiveWritten: number | null = null;
     let effectiveRead: number | null = null;
     let effectiveWriteQueries: number | null = null;
@@ -228,7 +225,6 @@ export class D1QuotaService {
       telemetrySource = 'TELEMETRY_UNAVAILABLE';
     }
 
-    // 4. Calculate usage percentage and protection tier (evaluating BOTH writes and reads)
     let usagePct: number | null = null;
     let writeUsagePct: number | null = null;
     let readUsagePct: number | null = null;

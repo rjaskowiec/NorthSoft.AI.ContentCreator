@@ -26,10 +26,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     description:
       'Want to reach more customers and build a stronger online presence? Your business deserves to be seen, remembered and trusted by potential customers. We can help you build a professional online presence that supports your growth. Ready to take the next step? Get in touch with NorthSoft — we’re here to help.',
   };
-
-  // ---------------------------------------------------------------------------
-  // Test 1 — Paraphrase rejection
-  // ---------------------------------------------------------------------------
   it('Test 1 — paraphrase rejection: fails a sentence-by-sentence rewrite of source text', () => {
     // The exact failing example from the problem statement
     const badParaphraseDraft = {
@@ -42,18 +38,12 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
       topicTitle: sourceTopic.title,
       referenceTexts: [sourceTopic.description],
     });
-
-    // Must fail decisively
     expect(smqgResult.pass).toBe(false);
     expect(smqgResult.score).toBeLessThan(55);
-
-    // Must identify information gain / paraphrase / authenticity failures
     const hasParaphraseOrInfoGainWarning = smqgResult.warnings.some(
       (w) => w.dimension === 'InformationGain' || w.dimension === 'Authenticity',
     );
     expect(hasParaphraseOrInfoGainWarning).toBe(true);
-
-    // ContentQualityGate must also reject this draft
     const cqgResult = cqg.evaluate(
       {
         ...badParaphraseDraft,
@@ -70,10 +60,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     );
     expect(cqgResult.passed).toBe(false);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 2 — Generic question rejection
-  // ---------------------------------------------------------------------------
   it('Test 2 — generic question rejection: appending generic bait lowers score and triggers CTA warning', () => {
     const cleanPost = {
       title: 'Website Trust Factors',
@@ -96,10 +82,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     expect(ctaWarning).toBeDefined();
     expect(ctaWarning?.reason).toMatch(/empty engagement bait/i);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 3 — Structure: rejects single-block paragraph collapse
-  // ---------------------------------------------------------------------------
   it('Test 3 — structure: rejects posts that collapse into a single text block', () => {
     const singleBlockPost = {
       title: 'Local SEO Basics',
@@ -121,10 +103,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     expect(structuredResult.pass).toBe(true);
     expect(structuredResult.score).toBeGreaterThan(blockResult.score);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 4 — Information gain: verifies value added beyond raw material
-  // ---------------------------------------------------------------------------
   it('Test 4 — information gain: rewards posts that add concrete mechanisms and scenarios beyond source notes', () => {
     const highInfoGainPost = {
       title: 'First Impressions Online',
@@ -142,10 +120,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     const infoGainWarning = result.warnings.find((w) => w.dimension === 'InformationGain');
     expect(infoGainWarning).toBeUndefined();
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 5 — Regeneration: triggers strategic pivot with different structure
-  // ---------------------------------------------------------------------------
   it('Test 5 — regeneration: selects a different structure pattern on subsequent attempts', async () => {
     const attempt1 = await selectStructurePattern(undefined, undefined, 1);
     expect(attempt1.pattern).toBeDefined();
@@ -154,10 +128,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     const attempt2 = await selectStructurePattern(undefined, undefined, 2, attempt1.pattern.id);
     expect(attempt2.pattern.id).not.toBe(attempt1.pattern.id);
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 6 — CTA is optional and contextual
-  // ---------------------------------------------------------------------------
   it('Test 6 — CTA: post without a CTA passes with high quality score', () => {
     const noCtaPost = {
       title: 'Website Loading Speed',
@@ -171,10 +141,6 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     const ctaWarning = result.warnings.find((w) => w.dimension === 'CTAQuality');
     expect(ctaWarning).toBeUndefined();
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 7 — Brand: NorthSoft is not forced as hero
-  // ---------------------------------------------------------------------------
   it('Test 7 — brand: excellent post without any NorthSoft mention passes completely', () => {
     const readerHeroPost = {
       title: 'Invoicing Automation',
@@ -188,17 +154,11 @@ describe('Social Content Quality Rebuild — Regression Suite', () => {
     const brandWarning = result.warnings.find((w) => w.dimension === 'BrandPlacement');
     expect(brandWarning).toBeUndefined();
   });
-
-  // ---------------------------------------------------------------------------
-  // Test 8 — Variation across topics
-  // ---------------------------------------------------------------------------
   it('Test 8 — variation: catalog offers multiple distinct reasoning patterns', () => {
     expect(STRUCTURE_PATTERNS.length).toBeGreaterThanOrEqual(10);
 
     const patternIds = new Set(STRUCTURE_PATTERNS.map((p) => p.id));
     expect(patternIds.size).toBe(STRUCTURE_PATTERNS.length);
-
-    // Verify key diverse patterns exist
     expect(patternIds.has('scenario_problem_insight')).toBe(true);
     expect(patternIds.has('observation_implication_action')).toBe(true);
     expect(patternIds.has('myth_reality_implication')).toBe(true);

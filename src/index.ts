@@ -71,7 +71,6 @@ app.get('/media/:key', async (c) => {
   return new Response(object.body, { headers });
 });
 
-// --- Global Middleware ---
 app.use(
   '*',
   secureHeaders({
@@ -97,19 +96,15 @@ app.use(
 app.use('*', cors());
 app.use('*', requestLogger());
 
-// --- Global Error Handler ---
 app.onError(errorHandler);
 
-// --- API Routes ---
 app.route('/api/health', healthRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/admin', adminRoutes);
 
-// --- Admin UI Dashboard ---
 app.get('/admin', (c) => c.html(renderAdminHtml()));
 app.get('/admin/*', (c) => c.html(renderAdminHtml()));
 
-// --- Root ---
 app.get('/', (c) => {
   return c.json({
     name: 'NorthSoft.AI.ContentCreator',
@@ -120,7 +115,6 @@ app.get('/', (c) => {
   });
 });
 
-// --- 404 ---
 app.notFound((c) => {
   return c.json(
     {

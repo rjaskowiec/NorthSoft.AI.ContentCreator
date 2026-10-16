@@ -129,10 +129,6 @@ If scheduling headaches are eating into your workday, drop us a note at NorthSof
     expect(pattern?.transitionGuidance).toContain('low-pressure invitation');
   });
 
-  // ---------------------------------------------------------------------------
-  // Requirement 1 & 4 — CTA Consolidation, Deduplication & ctaType Validation
-  // ---------------------------------------------------------------------------
-
   it('safely appends CTA to body when provided only in callToAction metadata, without duplicating hashtags', async () => {
     const { WriterService } = await import('../../src/services/content/writer-service');
 

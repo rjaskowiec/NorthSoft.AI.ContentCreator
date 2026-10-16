@@ -133,7 +133,6 @@ describe('Facebook Page Posts READ API Integration', () => {
     expect(body.paging.hasMore).toBe(true);
     expect(body.paging.after).toBe('cursor_abc_123');
 
-    // Assert URL construction
     expect(fetchCalls.length).toBe(2);
     const postsCall = fetchCalls.find((c) => c.url.includes('/posts?'));
     expect(postsCall).toBeDefined();

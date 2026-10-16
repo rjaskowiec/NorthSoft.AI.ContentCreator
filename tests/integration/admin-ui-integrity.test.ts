@@ -9,7 +9,6 @@ describe('Admin UI Integrity & Pipeline Endpoint Security', () => {
 
     const html = await res.text();
 
-    // Verify all required navigation items exist (8-tab Information Architecture)
     expect(html).toContain('id="nav-dashboard"');
     expect(html).toContain('id="nav-pipeline"');
     expect(html).toContain('id="nav-content"');
@@ -19,7 +18,6 @@ describe('Admin UI Integrity & Pipeline Endpoint Security', () => {
     expect(html).toContain('id="nav-audit"');
     expect(html).toContain('id="nav-security"');
 
-    // Verify all required tab sections exist
     expect(html).toContain('id="tab-dashboard"');
     expect(html).toContain('id="tab-pipeline"');
     expect(html).toContain('id="tab-content"');
@@ -29,7 +27,6 @@ describe('Admin UI Integrity & Pipeline Endpoint Security', () => {
     expect(html).toContain('id="tab-audit"');
     expect(html).toContain('id="tab-security"');
 
-    // Verify client JS contains switchTab, pipeline functions and DOM readiness check
     expect(html).toContain('function switchTab');
     expect(html).toContain('function loadPipelineData');
     expect(html).toContain('function runDiscoveryNow');
