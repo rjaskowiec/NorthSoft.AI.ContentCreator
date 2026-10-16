@@ -20,6 +20,8 @@ import { sanitizeSecretTokens, FacebookPublisher } from '../../publishing/facebo
 import { csrfProtection } from '../../core/auth/csrf.js';
 import { D1AuditLogger } from '../../core/audit.js';
 import { PublicationService } from '../../services/publishing/publication-service.js';
+import { D1QuotaService } from '../../services/cloudflare/d1-quota-service.js';
+import { CloudflareUsageService } from '../../services/cloudflare/cloudflare-usage-service.js';
 
 export const facebookRouter = new Hono<AppEnv>();
 
@@ -306,6 +308,21 @@ facebookRouter.post('/facebook/sync', csrfProtection, async (c) => {
   const publisher = new FacebookPublisher(c.env);
   const auditLogger = new D1AuditLogger(db);
   const pubService = new PublicationService(db, publisher, auditLogger);
+
+  const d1QuotaService = new D1QuotaService();
+  const cfUsage = CloudflareUsageService.fromEnv(c.env);
+  const d1Status = await d1QuotaService.getD1UsageStatus(db, cfUsage);
+  const deferCheck = d1QuotaService.shouldDeferStage('facebook_sync', d1Status, true);
+  if (deferCheck.defer) {
+    return c.json(
+      {
+        success: false,
+        error: deferCheck.reason || 'Facebook sync is temporarily disabled: D1 Protective Mode Active.',
+        code: 'PROTECTIVE_MODE_ACTIVE',
+      },
+      409,
+    );
+  }
 
   const result = await pubService.syncFacebookPostsToSystem();
 
