@@ -20,6 +20,7 @@ import { FacebookPublisher } from './publishing/facebook-publisher';
 import { ImageLibraryService } from './services/content/image-library-service';
 import { PipelineOrchestratorService } from './services/content/pipeline-orchestrator-service';
 import { D1QuotaService } from './services/cloudflare/d1-quota-service';
+import { CloudflareUsageService } from './services/cloudflare/cloudflare-usage-service';
 import { NorthSoftMailGatewayClient } from './services/mail/mail-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { PublicationService } from './services/publishing/publication-service';
@@ -151,12 +152,13 @@ export default {
     // Guarded by D1 Quota Protective Mode & intelligent scheduling controls.
     const pipelineService = new PipelineOrchestratorService(env.DB, env);
     const d1QuotaService = new D1QuotaService();
+    const cfUsageService = CloudflareUsageService.fromEnv(env);
 
     ctx.waitUntil(
       (async () => {
         try {
           const schedulerConfig = await pipelineService.getSchedulerConfig();
-          const d1Status = await d1QuotaService.getD1UsageStatus(env.DB);
+          const d1Status = await d1QuotaService.getD1UsageStatus(env.DB, cfUsageService);
 
           // If protective mode is active (due to high writes OR reads), skip non-critical maintenance & batch runs
           if (d1Status.isProtectiveModeActive) {

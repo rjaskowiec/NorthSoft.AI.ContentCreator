@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import type { AppEnv } from '../core/types';
+import { CloudflareUsageService } from '../services/cloudflare/cloudflare-usage-service';
 
 export const healthRoutes = new Hono<AppEnv>();
 
@@ -29,6 +30,27 @@ healthRoutes.get('/', async (c) => {
     // dbStatus remains 'error'
   }
 
+  // Check Cloudflare Analytics API telemetry health (without revealing secrets)
+  let telemetryCheck: { status: string; source: string; reason?: string } = {
+    status: 'unconfigured',
+    source: 'None',
+  };
+  try {
+    const cfUsage = CloudflareUsageService.fromEnv(env);
+    const d1Usage = await cfUsage.getVerifiedD1Usage({ forceRefresh: true });
+    telemetryCheck = {
+      status: d1Usage.status,
+      source: d1Usage.source,
+      reason: d1Usage.reason,
+    };
+  } catch (tErr: unknown) {
+    telemetryCheck = {
+      status: 'error',
+      source: 'Exception',
+      reason: tErr instanceof Error ? tErr.message : String(tErr),
+    };
+  }
+
   const isHealthy = dbStatus === 'connected';
 
   return c.json(
@@ -45,6 +67,7 @@ healthRoutes.get('/', async (c) => {
         worker: {
           status: 'operational',
         },
+        telemetry: telemetryCheck,
       },
     },
     isHealthy ? 200 : 503,
