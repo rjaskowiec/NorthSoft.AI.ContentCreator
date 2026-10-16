@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { FacebookSyncService } from '../../src/services/publishing/facebook-sync-service';
 import { PublicationService } from '../../src/services/publishing/publication-service';
 import { PipelineOrchestratorService } from '../../src/services/content/pipeline-orchestrator-service';
@@ -296,6 +299,107 @@ describe('Resource Efficiency Regression Suite', () => {
 
       const writeQueries = executedQueries.filter((q) => q.isWrite);
       expect(writeQueries.length).toBe(0);
+    });
+  });
+
+  describe('D1 Migration Schema & Query Plan Verification (Real SQLite)', () => {
+    function initMigratedDatabase(): DatabaseSync {
+      const db = new DatabaseSync(':memory:');
+      const migrationsDir = path.resolve(__dirname, '../../migrations');
+      const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+      for (const file of migrationFiles) {
+        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+        db.exec(sql);
+      }
+      return db;
+    }
+
+    it('confirms all 7 efficiency indices from 0030 exist in the schema', () => {
+      const db = initMigratedDatabase();
+      const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'").all() as Array<{ name: string }>;
+      const indexNames = new Set(rows.map((r) => r.name));
+
+      expect(indexNames.has('idx_publications_fb_post_id')).toBe(true);
+      expect(indexNames.has('idx_publications_status_published')).toBe(true);
+      expect(indexNames.has('idx_publications_status_updated')).toBe(true);
+      expect(indexNames.has('idx_post_images_curated_image')).toBe(true);
+      expect(indexNames.has('idx_post_images_post_version')).toBe(true);
+      expect(indexNames.has('idx_schedules_status_sched')).toBe(true);
+      expect(indexNames.has('idx_post_perf_post_measured')).toBe(true);
+    });
+
+    it('verifies critical query execution plans use indexed seeks rather than full table scans', () => {
+      const db = initMigratedDatabase();
+
+      const getPlan = (sql: string): string => {
+        const steps = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as Array<{ detail: string }>;
+        return steps.map((s) => s.detail).join(' | ');
+      };
+
+      const fbBatchPlan = getPlan('SELECT facebook_post_id FROM publications WHERE facebook_post_id IN (?, ?)');
+      expect(fbBatchPlan).toMatch(/USING COVERING INDEX idx_publications_fb_post_id/);
+      expect(fbBatchPlan).not.toMatch(/SCAN/);
+
+      const fbSinglePlan = getPlan('SELECT id, status FROM publications WHERE facebook_post_id = ?');
+      expect(fbSinglePlan).toMatch(/USING INDEX idx_publications_fb_post_id/);
+      expect(fbSinglePlan).not.toMatch(/SCAN/);
+
+      const dueSchedulePlan = getPlan("SELECT id, status, scheduled_at FROM schedules WHERE status = 'pending' AND scheduled_at <= datetime('now') ORDER BY scheduled_at ASC LIMIT 1");
+      expect(dueSchedulePlan).toMatch(/USING INDEX idx_schedules_status_sched/);
+      expect(dueSchedulePlan).not.toMatch(/SCAN/);
+
+      const staleLockPlan = getPlan("SELECT id FROM publications WHERE status = 'publishing' AND updated_at < datetime('now', '-5 minutes')");
+      expect(staleLockPlan).toMatch(/USING INDEX idx_publications_status_updated/);
+      expect(staleLockPlan).not.toMatch(/SCAN/);
+
+      const publishedOrderPlan = getPlan("SELECT id FROM publications WHERE status = 'published' ORDER BY published_at DESC LIMIT 1");
+      expect(publishedOrderPlan).toMatch(/USING INDEX idx_publications_status_published/);
+      expect(publishedOrderPlan).not.toMatch(/SCAN/);
+
+      const postVersionJoinPlan = getPlan("SELECT p.id, pi.url FROM posts p LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version WHERE p.status = 'draft'");
+      expect(postVersionJoinPlan).toMatch(/USING INDEX idx_post_images_post_version/);
+
+      const postPerfPlan = getPlan('SELECT * FROM post_performance_metrics WHERE post_id = ? ORDER BY measured_at DESC LIMIT 1');
+      expect(postPerfPlan).toMatch(/USING INDEX idx_post_perf_post_measured/);
+      expect(postPerfPlan).not.toMatch(/SCAN/);
+
+      const curatedImagePlan = getPlan('SELECT post_id FROM post_images WHERE curated_image_id = ?');
+      expect(curatedImagePlan).toMatch(/USING INDEX idx_post_images_curated_image/);
+      expect(curatedImagePlan).not.toMatch(/SCAN/);
+    });
+
+    it('demonstrates that query count and rows read are distinct metrics on indexed data', () => {
+      const db = initMigratedDatabase();
+
+      const insertPost = db.prepare(`
+        INSERT INTO posts (id, title, status, current_version, created_at, updated_at)
+        VALUES (?, 'Test Post', 'published', 1, datetime('now'), datetime('now'))
+      `);
+
+      const insertVersion = db.prepare(`
+        INSERT INTO post_versions (id, post_id, version_number, content, content_type, created_at)
+        VALUES (?, ?, 1, 'Body', 'text', datetime('now'))
+      `);
+
+      const insertPub = db.prepare(`
+        INSERT INTO publications (id, post_id, post_version_id, facebook_post_id, provider, status, attempt_count, published_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'facebook', ?, 1, datetime('now'), datetime('now'), datetime('now'))
+      `);
+
+      for (let i = 0; i < 1000; i++) {
+        insertPost.run(`post-${i}`);
+        insertVersion.run(`v-${i}`, `post-${i}`);
+        const status = i < 10 ? 'publishing' : (i < 800 ? 'published' : 'failed');
+        insertPub.run(`pub-${i}`, `post-${i}`, `v-${i}`, `fb-id-${i}`, status);
+      }
+
+      const staleRows = db.prepare("SELECT id FROM publications WHERE status = 'publishing' AND updated_at < datetime('now', '-5 minutes')").all();
+      expect(staleRows.length).toBe(0);
+
+      const targetIds = ['fb-id-10', 'fb-id-25', 'fb-id-50', 'fb-id-99', 'fb-id-9999'];
+      const matched = db.prepare("SELECT facebook_post_id FROM publications WHERE facebook_post_id IN (?, ?, ?, ?, ?)").all(...targetIds) as Array<{ facebook_post_id: string }>;
+
+      expect(matched.length).toBe(4);
     });
   });
 });

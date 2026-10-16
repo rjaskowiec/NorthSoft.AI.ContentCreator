@@ -259,7 +259,6 @@ export class FacebookSyncService {
          LEFT JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'scheduled')
          WHERE (p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED')
            AND p.status IN ('draft', 'approved', 'scheduled')
-           AND p.created_at >= datetime('now', '-30 days')
          ORDER BY p.created_at DESC`
       ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string; schedule_time: string | null; schedule_status: string | null }>();
 
