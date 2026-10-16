@@ -41,9 +41,6 @@ healthRoutes.get('/', async (c) => {
     writeQueries?: number | null;
     period?: string;
     lastUpdated?: string | null;
-  } = {
-    status: 'unconfigured',
-    source: 'None',
   };
   try {
     const cfUsage = CloudflareUsageService.fromEnv(env);

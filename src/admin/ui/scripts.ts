@@ -892,17 +892,17 @@ export function getAdminScripts(): string {
         if (fbStatusEl && fbSubEl) {
           if (fbData.status === 'Connected') {
             fbStatusEl.style.color = 'var(--accent-emerald)';
-            fbStatusEl.innerHTML = '● CONNECTED';
+            fbStatusEl.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true" style="margin-right:4px;"><circle cx="12" cy="12" r="6"/></svg>CONNECTED';
             fbSubEl.textContent = fbData.lastPublishedAt
               ? 'Last published ' + formatDateSafe(fbData.lastPublishedAt)
               : 'Page configured & active';
           } else if (fbData.status === 'Disabled') {
             fbStatusEl.style.color = 'var(--accent-amber)';
-            fbStatusEl.innerHTML = '○ DISABLED';
+            fbStatusEl.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true" style="margin-right:4px;"><circle cx="12" cy="12" r="6"/></svg>DISABLED';
             fbSubEl.textContent = 'Publishing disabled in config';
           } else {
             fbStatusEl.style.color = 'var(--accent-rose)';
-            fbStatusEl.innerHTML = '✕ NOT CONFIGURED';
+            fbStatusEl.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true" style="margin-right:4px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>NOT CONFIGURED';
             fbSubEl.textContent = 'Missing Meta credentials';
           }
         }
@@ -914,11 +914,11 @@ export function getAdminScripts(): string {
         if (autoStatusEl && autoSubEl) {
           if (autoData.status === 'Active') {
             autoStatusEl.style.color = 'var(--accent-blue)';
-            autoStatusEl.innerHTML = '● ACTIVE';
+            autoStatusEl.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true" style="margin-right:4px;"><circle cx="12" cy="12" r="6"/></svg>ACTIVE';
             autoSubEl.textContent = autoData.schedule || 'Cron: Every 5 minutes';
           } else {
             autoStatusEl.style.color = 'var(--text-muted)';
-            autoStatusEl.innerHTML = '○ INACTIVE';
+            autoStatusEl.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true" style="margin-right:4px;"><circle cx="12" cy="12" r="6"/></svg>INACTIVE';
             autoSubEl.textContent = 'Automation disabled';
           }
         }
@@ -1239,7 +1239,7 @@ export function getAdminScripts(): string {
           html += '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:0.5rem; background:rgba(255,255,255,0.02); padding:0.75rem; border-radius:6px;">';
           
           html += '<div>';
-          html += '<div style="font-weight:600; color:var(--accent-emerald); margin-bottom:0.35rem;">✓ High-Performing Patterns</div>';
+          html += '<div style="font-weight:600; color:var(--accent-emerald); margin-bottom:0.35rem; display:flex; align-items:center; gap:0.35rem;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>High-Performing Patterns</span></div>';
           if (successPatterns.length > 0) {
             html += '<ul style="margin:0; padding-left:1.2rem; font-size:0.8rem; color:var(--text-main);">';
             for (let i = 0; i < successPatterns.length; i++) {
@@ -1252,7 +1252,7 @@ export function getAdminScripts(): string {
           html += '</div>';
 
           html += '<div>';
-          html += '<div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.35rem;">✕ Underperforming Patterns (Avoid)</div>';
+          html += '<div style="font-weight:600; color:var(--accent-rose); margin-bottom:0.35rem; display:flex; align-items:center; gap:0.35rem;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Underperforming Patterns (Avoid)</span></div>';
           if (failurePatterns.length > 0) {
             html += '<ul style="margin:0; padding-left:1.2rem; font-size:0.8rem; color:var(--text-main);">';
             for (let j = 0; j < failurePatterns.length; j++) {
@@ -1638,11 +1638,11 @@ export function getAdminScripts(): string {
           var badgeClass = 'ac-badge-processing';
 
           if (t.status === 'COMPLETED') {
-            iconHtml = '<span style="color:#34d399; font-size:1.05rem; line-height:1;">✓</span>';
+            iconHtml = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block; vertical-align:middle;"><polyline points="20 6 9 17 4 12"/></svg>';
             badgeText = 'Done';
             badgeClass = 'ac-badge-completed';
           } else if (t.status === 'FAILED') {
-            iconHtml = '<span style="color:#f87171; font-size:1.05rem; line-height:1;">✕</span>';
+            iconHtml = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block; vertical-align:middle;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
             badgeText = 'Failed';
             badgeClass = 'ac-badge-failed';
           } else {
@@ -6256,17 +6256,17 @@ export function getAdminScripts(): string {
         stepItem.style.opacity = '1';
         stepIcon.style.background = 'var(--accent-blue)';
         stepIcon.style.color = '#fff';
-        stepIcon.textContent = '●';
+        stepIcon.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>';
       } else if (status === 'completed') {
         stepItem.style.opacity = '1';
         stepIcon.style.background = 'var(--accent-emerald)';
         stepIcon.style.color = '#fff';
-        stepIcon.textContent = '✓';
+        stepIcon.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
       } else {
         stepItem.style.opacity = '0.5';
         stepIcon.style.background = 'rgba(255,255,255,0.1)';
         stepIcon.style.color = 'var(--text-muted)';
-        stepIcon.textContent = '○';
+        stepIcon.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>';
       }
 
       if (detailText && stepSub) {

@@ -106,7 +106,7 @@ ${params.license ? `License: ${params.license}` : ''}`;
   <div style="max-width: 600px; margin: 0 auto; background: #111827; padding: 28px; border-radius: 12px; border: 1px solid #1f2937;">
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #1f2937; padding-bottom: 15px;">
       <h2 style="color: #60a5fa; margin: 0; font-size: 1.2rem;">NorthSoft AI Content Creator</h2>
-      <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">✓ PUBLISHED</span>
+      <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">PUBLISHED</span>
     </div>
 
     <h3 style="color: #ffffff; margin-top: 0; font-size: 1.1rem;">${escapeHtml(params.title)}</h3>
@@ -183,7 +183,7 @@ Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for deta
   <div style="max-width: 600px; margin: 0 auto; background: #111827; padding: 28px; border-radius: 12px; border: 1px solid #1f2937;">
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #1f2937; padding-bottom: 15px;">
       <h2 style="color: #60a5fa; margin: 0; font-size: 1.2rem;">NorthSoft AI Content Creator</h2>
-      <span style="background: rgba(244, 63, 94, 0.15); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">⚠ ALERT</span>
+      <span style="background: rgba(244, 63, 94, 0.15); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">ALERT</span>
     </div>
 
     <h3 style="color: #ffffff; margin-top: 0; font-size: 1.1rem;">Publication Alert: ${escapeHtml(params.action)}</h3>

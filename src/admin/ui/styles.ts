@@ -1830,13 +1830,60 @@ export function getAdminCss(): string {
 
     @media (max-width: 640px) {
       #image-library-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 0.75rem;
-        padding: 0.75rem;
+        padding: 0.5rem;
       }
 
       .image-card-preview {
         height: 120px;
+      }
+
+      .btn {
+        min-height: 40px;
+        padding: 0.5rem 0.85rem;
+      }
+
+      .modal-box {
+        width: 95vw !important;
+        margin: 0.5rem;
+        padding: 1rem !important;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .sidebar {
+        padding: 0.75rem 0.5rem;
+      }
+
+      .nav-list {
+        gap: 0.25rem;
+      }
+
+      .nav-item a {
+        font-size: 0.8rem;
+        padding: 0.35rem 0.5rem;
+      }
+
+      .content-body {
+        padding: 0.75rem 0.5rem;
+      }
+
+      .section-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .btn {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
       }
     }
 
