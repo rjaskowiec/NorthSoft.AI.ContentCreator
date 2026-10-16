@@ -153,7 +153,10 @@ describe('D1 Quota & Automation Activity Suite', () => {
         writeQueries: 100,
         readQueries: 500,
         dailyWriteLimit: 100000,
+        dailyReadLimit: 5000000,
         usagePercentage: 30,
+        writeUsagePercentage: 30,
+        readUsagePercentage: 10,
         isProtectiveModeActive: false,
         reason: 'Normal',
         config: DEFAULT_D1_CONFIG,
@@ -165,6 +168,8 @@ describe('D1 Quota & Automation Activity Suite', () => {
         tier: 'PROTECTIVE_MODE',
         rowsWritten: 89000,
         usagePercentage: 89,
+        writeUsagePercentage: 89,
+        readUsagePercentage: 15,
         isProtectiveModeActive: true,
         reason: 'Protective mode',
       };
@@ -198,6 +203,34 @@ describe('D1 Quota & Automation Activity Suite', () => {
       expect(manualRunAll.defer).toBe(true);
     });
 
+    it('activates protective mode when rowsRead exceeds protective threshold even if writes are low', async () => {
+      const db = createMockDb();
+      const service = new D1QuotaService();
+
+      queryResults.set('SELECT rows_written, rows_read', {
+        rows_written: 1500, // very low writes (1.5%)
+        rows_read: 4600000, // 92% of 5,000,000 limit!
+        write_queries: 100,
+        read_queries: 50000,
+      });
+
+      const status = await service.getD1UsageStatus(db);
+      expect(status.tier).toBe('PROTECTIVE_MODE');
+      expect(status.isProtectiveModeActive).toBe(true);
+      expect(status.usagePercentage).toBe(92);
+      expect(status.readUsagePercentage).toBe(92);
+      expect(status.writeUsagePercentage).toBe(1.5);
+      expect(status.reason).toContain('reads');
+
+      const deferSync = service.shouldDeferStage('facebook_sync', status);
+      expect(deferSync.defer).toBe(true);
+      expect(deferSync.reason).toContain('D1 Protective Mode');
+
+      // Scheduling & publishing remain allowed
+      expect(service.shouldDeferStage('scheduling', status).defer).toBe(false);
+      expect(service.shouldDeferStage('publishing' as any, status).defer).toBe(false);
+    });
+
     it('returns TELEMETRY_UNAVAILABLE with unmeasured state when neither Cloudflare nor local telemetry exists', async () => {
       const db = createMockDb();
       const service = new D1QuotaService();
@@ -206,6 +239,7 @@ describe('D1 Quota & Automation Activity Suite', () => {
       const status = await service.getD1UsageStatus(db);
       expect(status.telemetrySource).toBe('TELEMETRY_UNAVAILABLE');
       expect(status.rowsWritten).toBeNull();
+      expect(status.rowsRead).toBeNull();
       expect(status.usagePercentage).toBeNull();
       expect(status.reason).toContain('D1 telemetry is currently unavailable');
     });

@@ -19,6 +19,7 @@ import { requestLogger } from './core/middleware/logger';
 import { FacebookPublisher } from './publishing/facebook-publisher';
 import { ImageLibraryService } from './services/content/image-library-service';
 import { PipelineOrchestratorService } from './services/content/pipeline-orchestrator-service';
+import { D1QuotaService } from './services/cloudflare/d1-quota-service';
 import { NorthSoftMailGatewayClient } from './services/mail/mail-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { PublicationService } from './services/publishing/publication-service';
@@ -138,30 +139,72 @@ export default {
     const mailClient = new NorthSoftMailGatewayClient(env);
     const pubService = new PublicationService(env.DB, publisher, new D1AuditLogger(env.DB), mailClient, env.IMAGE_BUCKET);
 
-    // 1. Time-critical: Process scheduled due posts first with isolated error boundary
+    // 1. Time-critical: Process scheduled due posts first with isolated error boundary.
+    // Scheduled publication must ALWAYS execute regardless of automation switches or non-fatal quota warnings.
     try {
       await pubService.publishScheduledDuePosts();
     } catch (err: unknown) {
       console.error('[cron] Critical scheduled publishing task failed:', err);
     }
 
-    // 2. Background maintenance and discovery tasks (run concurrently via waitUntil)
+    // 2. Background maintenance, sync, and generation tasks.
+    // Guarded by D1 Quota Protective Mode & intelligent scheduling controls.
     const pipelineService = new PipelineOrchestratorService(env.DB, env);
-    const backgroundTasks: Array<[string, () => Promise<unknown>]> = [
-      ['syncFacebookPostsToSystem', () => pubService.syncFacebookPostsToSystem()],
-      ['runAutomationTick', () => pipelineService.runAutomationTick()],
-      ['sendWeeklyDigest', () => NotificationService.sendWeeklyDigest(env.DB, mailClient)],
-      ['purgeExpiredRejectedImages', () => new ImageLibraryService(env.DB).purgeExpiredRejectedImages(7, env.IMAGE_BUCKET)],
-    ];
+    const d1QuotaService = new D1QuotaService();
 
     ctx.waitUntil(
-      Promise.allSettled(backgroundTasks.map(([, run]) => run())).then((results) => {
-        results.forEach((r, i) => {
-          if (r.status === 'rejected') {
-            console.error(`[cron] ${backgroundTasks[i]?.[0] ?? 'task'} failed:`, r.reason);
+      (async () => {
+        try {
+          const schedulerConfig = await pipelineService.getSchedulerConfig();
+          const d1Status = await d1QuotaService.getD1UsageStatus(env.DB);
+
+          // If protective mode is active (due to high writes OR reads), skip non-critical maintenance & batch runs
+          if (d1Status.isProtectiveModeActive) {
+            console.warn('[cron] Skipping background tasks — D1 Protective Mode Active:', d1Status.reason);
+            return;
           }
-        });
-      }),
+
+          const backgroundTasks: Array<[string, () => Promise<unknown>]> = [];
+
+          // Facebook Sync: only run if automation is enabled and interval throttle matches (at most once every 60m in cron)
+          if (schedulerConfig.enabled) {
+            const currentMinute = new Date().getUTCMinutes();
+            // Run at the top of the hour (:00) during 5-minute cron
+            if (currentMinute < 5) {
+              backgroundTasks.push(['syncFacebookPostsToSystem', () => pubService.syncFacebookPostsToSystem()]);
+            }
+          }
+
+          // Content generation / scouting automation tick (self-checks config.enabled and AI window)
+          if (schedulerConfig.enabled) {
+            backgroundTasks.push(['runAutomationTick', () => pipelineService.runAutomationTick()]);
+          }
+
+          // Maintenance tasks: Weekly digest (runs once a week on Monday morning) & Image purge (runs daily at 03:00 UTC)
+          const now = new Date();
+          if (now.getUTCHours() === 9 && now.getUTCMinutes() < 5 && now.getUTCDay() === 1) {
+            backgroundTasks.push(['sendWeeklyDigest', () => NotificationService.sendWeeklyDigest(env.DB, mailClient)]);
+          }
+
+          if (now.getUTCHours() === 3 && now.getUTCMinutes() < 5) {
+            backgroundTasks.push([
+              'purgeExpiredRejectedImages',
+              () => new ImageLibraryService(env.DB).purgeExpiredRejectedImages(7, env.IMAGE_BUCKET),
+            ]);
+          }
+
+          if (backgroundTasks.length > 0) {
+            const results = await Promise.allSettled(backgroundTasks.map(([, run]) => run()));
+            results.forEach((r, i) => {
+              if (r.status === 'rejected') {
+                console.error(`[cron] ${backgroundTasks[i]?.[0] ?? 'task'} failed:`, r.reason);
+              }
+            });
+          }
+        } catch (bgErr: unknown) {
+          console.error('[cron] Background task execution error:', bgErr);
+        }
+      })(),
     );
   },
 };

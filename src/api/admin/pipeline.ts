@@ -99,6 +99,9 @@ pipelineRouter.post('/pipeline/discovery', csrfProtection, async (c) => {
     const result = await service.runDiscovery('admin');
     return c.json({ success: true, result });
   } catch (err: unknown) {
+    if (err instanceof AppError) {
+      return c.json({ success: false, error: err.message, code: err.code }, err.statusCode as 409);
+    }
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json(
       {
@@ -128,6 +131,9 @@ pipelineRouter.post('/pipeline/generate', csrfProtection, async (c) => {
       result,
     });
   } catch (err: unknown) {
+    if (err instanceof AppError) {
+      return c.json({ success: false, error: err.message, code: err.code }, err.statusCode as 409);
+    }
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json(
       {
@@ -152,6 +158,9 @@ pipelineRouter.post('/pipeline/run-full', csrfProtection, async (c) => {
     const allSuccessful = steps.every((s) => s.success);
     return c.json({ success: allSuccessful, steps, result: { status: allSuccessful ? 'SUCCESS' : 'PARTIAL' } });
   } catch (err: unknown) {
+    if (err instanceof AppError) {
+      return c.json({ success: false, error: err.message, code: err.code }, err.statusCode as 409);
+    }
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json(
       {

@@ -22,6 +22,7 @@ export type D1ProtectionTier = 'NORMAL' | 'WARNING' | 'ELEVATED_WARNING' | 'PROT
 
 export interface D1ProtectionConfig {
   dailyWriteLimit: number;
+  dailyReadLimit: number;
   warningThresholdPct: number;
   elevatedWarningThresholdPct: number;
   protectiveModeThresholdPct: number;
@@ -29,6 +30,7 @@ export interface D1ProtectionConfig {
 
 export const DEFAULT_D1_CONFIG: D1ProtectionConfig = {
   dailyWriteLimit: 100_000,
+  dailyReadLimit: 5_000_000,
   warningThresholdPct: 50,
   elevatedWarningThresholdPct: 70,
   protectiveModeThresholdPct: 85,
@@ -42,7 +44,10 @@ export interface D1UsageTelemetryStatus {
   writeQueries: number | null;
   readQueries: number | null;
   dailyWriteLimit: number;
+  dailyReadLimit: number;
   usagePercentage: number | null;
+  writeUsagePercentage: number | null;
+  readUsagePercentage: number | null;
   isProtectiveModeActive: boolean;
   reason: string;
   config: D1ProtectionConfig;
@@ -74,6 +79,7 @@ export class D1QuotaService {
   constructor(customConfig?: Partial<D1ProtectionConfig>) {
     this.config = {
       dailyWriteLimit: customConfig?.dailyWriteLimit ?? DEFAULT_D1_CONFIG.dailyWriteLimit,
+      dailyReadLimit: customConfig?.dailyReadLimit ?? DEFAULT_D1_CONFIG.dailyReadLimit,
       warningThresholdPct: customConfig?.warningThresholdPct ?? DEFAULT_D1_CONFIG.warningThresholdPct,
       elevatedWarningThresholdPct: customConfig?.elevatedWarningThresholdPct ?? DEFAULT_D1_CONFIG.elevatedWarningThresholdPct,
       protectiveModeThresholdPct: customConfig?.protectiveModeThresholdPct ?? DEFAULT_D1_CONFIG.protectiveModeThresholdPct,
@@ -222,30 +228,37 @@ export class D1QuotaService {
       telemetrySource = 'TELEMETRY_UNAVAILABLE';
     }
 
-    // 4. Calculate usage percentage and protection tier
+    // 4. Calculate usage percentage and protection tier (evaluating BOTH writes and reads)
     let usagePct: number | null = null;
+    let writeUsagePct: number | null = null;
+    let readUsagePct: number | null = null;
     let tier: D1ProtectionTier = 'NORMAL';
     let isProtectiveModeActive = false;
     let reason: string;
 
     if (telemetrySource === 'TELEMETRY_UNAVAILABLE') {
       // Telemetry unavailable: do not fabricate 0 / 100,000 (0%). State clearly that usage is unmeasured.
-      reason = 'D1 telemetry is currently unavailable. Cloudflare Analytics API is not configured or returning data, and local telemetry has no recorded writes today. Actual usage is unmeasured.';
+      reason = 'D1 telemetry is currently unavailable. Cloudflare Analytics API is not configured or returning data, and local telemetry has no recorded writes/reads today. Actual usage is unmeasured.';
     } else {
       const written = effectiveWritten ?? 0;
-      usagePct = Number(((written / this.config.dailyWriteLimit) * 100).toFixed(1));
-      reason = `D1 usage is within normal operational limits (${usagePct}% of daily allocation).`;
+      const read = effectiveRead ?? 0;
+      writeUsagePct = Number(((written / this.config.dailyWriteLimit) * 100).toFixed(1));
+      readUsagePct = Number(((read / this.config.dailyReadLimit) * 100).toFixed(1));
+      // Primary usage percentage reflects the higher constrained metric
+      usagePct = Math.max(writeUsagePct, readUsagePct);
+      reason = `D1 usage is within normal operational limits (${usagePct}% of daily allocation: ${writeUsagePct}% writes, ${readUsagePct}% reads).`;
 
       if (usagePct >= this.config.protectiveModeThresholdPct) {
         tier = 'PROTECTIVE_MODE';
         isProtectiveModeActive = true;
-        reason = `Protective Mode Active: ${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Heavy batch tasks (runAllStages, topics, posts) are paused to preserve free tier quota.`;
+        const triggerMetric = writeUsagePct >= this.config.protectiveModeThresholdPct ? 'writes' : 'reads';
+        reason = `Protective Mode Active: ${usagePct}% daily quota reached on ${triggerMetric} (${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} writes, ${read.toLocaleString()} / ${this.config.dailyReadLimit.toLocaleString()} reads). Heavy batch tasks and background sync are paused to preserve database quota.`;
       } else if (usagePct >= this.config.elevatedWarningThresholdPct) {
         tier = 'ELEVATED_WARNING';
-        reason = `Elevated Warning: ${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Nearing daily budget ceiling.`;
+        reason = `Elevated Warning: ${usagePct}% daily budget ceiling approached (${written.toLocaleString()} writes, ${read.toLocaleString()} reads).`;
       } else if (usagePct >= this.config.warningThresholdPct) {
         tier = 'WARNING';
-        reason = `Warning: ${written.toLocaleString()} / ${this.config.dailyWriteLimit.toLocaleString()} rows written (${usagePct}%). Moderate write activity.`;
+        reason = `Warning: ${usagePct}% daily budget reached (${written.toLocaleString()} writes, ${read.toLocaleString()} reads).`;
       }
     }
 
@@ -257,7 +270,10 @@ export class D1QuotaService {
       writeQueries: effectiveWriteQueries,
       readQueries: effectiveReadQueries,
       dailyWriteLimit: this.config.dailyWriteLimit,
+      dailyReadLimit: this.config.dailyReadLimit,
       usagePercentage: usagePct,
+      writeUsagePercentage: writeUsagePct,
+      readUsagePercentage: readUsagePct,
       isProtectiveModeActive,
       reason,
       config: { ...this.config },
@@ -269,7 +285,7 @@ export class D1QuotaService {
   /**
    * Decides whether a given pipeline stage should be deferred in protective mode.
    * Enforces strict safety:
-   *  - When isProtectiveModeActive is true, heavy batch stages ('topics', 'posts', 'images', 'runAllStages')
+   *  - When isProtectiveModeActive is true, heavy batch stages ('topics', 'posts', 'images', 'runAllStages', 'facebook_sync')
    *    are BLOCKED even if triggered manually (isManual = true) to prevent accidental quota exhaustion.
    *  - Critical publishing and scheduling tasks ('scheduling', 'publishing') are ALWAYS permitted.
    */
@@ -286,10 +302,11 @@ export class D1QuotaService {
     // 2. If protective mode is active, block heavy batch generation tasks regardless of actor or manual flag
     if (status.isProtectiveModeActive) {
       const writtenStr = status.rowsWritten !== null ? status.rowsWritten.toLocaleString() : 'high';
+      const readStr = status.rowsRead !== null ? status.rowsRead.toLocaleString() : 'high';
       const pctStr = status.usagePercentage !== null ? `${status.usagePercentage}%` : '>85%';
       return {
         defer: true,
-        reason: `Stage '${stage}' blocked by D1 Protective Mode (${writtenStr} / ${status.dailyWriteLimit.toLocaleString()} rows written, ${pctStr}). Manual and automated heavy batch tasks are paused to protect database quota. Scheduled publishing remains active.`,
+        reason: `Stage '${stage}' blocked by D1 Protective Mode (${writtenStr} writes, ${readStr} reads, ${pctStr}). Heavy batch tasks and background sync are paused to protect database quota. Scheduled publishing remains active.`,
       };
     }
 

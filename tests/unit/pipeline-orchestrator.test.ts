@@ -158,5 +158,9 @@ describe('PipelineOrchestratorService Unit Tests', () => {
 
     // 3. runAllStages must be rejected upfront
     await expect(service.runAllStages('admin')).rejects.toThrow(/D1 Protective Mode/);
+
+    // 4. runDiscovery and runPostGeneration direct endpoints must also be rejected
+    await expect(service.runDiscovery('admin')).rejects.toThrow(/D1 Protective Mode/);
+    await expect(service.runPostGeneration('idea-123', 'admin')).rejects.toThrow(/D1 Protective Mode/);
   });
 });

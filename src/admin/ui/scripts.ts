@@ -3286,7 +3286,7 @@ export function getAdminScripts(): string {
 
             return '<div class="fb-rail-post-card">' +
               '<div class="fb-rail-post-header">' +
-                '<div class="fb-rail-post-avatar"><img src="https://northsoft.is/brand/logos/northsoft-symbol.svg" alt="NorthSoft" onerror="this.onerror=null;this.parentElement.textContent=\\\'NS\\\';" /></div>' +
+                '<div class="fb-rail-post-avatar"><img src="https://northsoft.is/brand/logos/northsoft-symbol.svg" alt="NorthSoft" onerror="this.onerror=null;this.parentElement.textContent=String.fromCharCode(78,83);" /></div>' +
                 '<div style="flex:1; min-width:0;">' +
                   '<div class="fb-rail-post-name">' + escapeHtml(safeStr(data.pageInfo?.name, 'NorthSoft')) + '</div>' +
                   '<div class="fb-rail-post-time" title="' + escapeHtml(fullDate) + '">' + escapeHtml(timeAgo) + '</div>' +

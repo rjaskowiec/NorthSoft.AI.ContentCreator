@@ -237,6 +237,13 @@ export class PipelineOrchestratorService {
   // ---------------------------------------------------------------------------
 
   async runDiscovery(actor: PipelineActor = 'admin'): Promise<DiscoveryStageResult> {
+    const d1QuotaService = new D1QuotaService();
+    const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
+    const deferCheck = d1QuotaService.shouldDeferStage('topics', d1Status, actor === 'admin');
+    if (deferCheck.defer) {
+      throw new AppError(deferCheck.reason || "Stage 'topics' blocked: D1 Protective Mode Active.", 409, 'PROTECTIVE_MODE_ACTIVE');
+    }
+
     return this.withLock('stage_discovery', actor, 600, async (runId) => {
       const startTime = Date.now();
       const researchProvider = getAIProvider(this.env, 'researcher');
@@ -286,6 +293,13 @@ export class PipelineOrchestratorService {
   // ---------------------------------------------------------------------------
 
   async runPostGeneration(ideaId?: string, actor: PipelineActor = 'admin'): Promise<GenerationStageResult> {
+    const d1QuotaService = new D1QuotaService();
+    const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
+    const deferCheck = d1QuotaService.shouldDeferStage('posts', d1Status, actor === 'admin');
+    if (deferCheck.defer) {
+      throw new AppError(deferCheck.reason || "Stage 'posts' blocked: D1 Protective Mode Active.", 409, 'PROTECTIVE_MODE_ACTIVE');
+    }
+
     return this.withLock('stage_generation', actor, 600, async (runId) => {
       const startTime = Date.now();
 

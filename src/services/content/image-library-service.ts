@@ -802,7 +802,7 @@ export async function recalculateCuratedImageUsage(db: D1Database, imageId: stri
   const usedInPostId = currentCount > 0 ? currentUsageRes?.latest_post_id || null : null;
 
   // 2. Calculate HISTORICAL usage: count of distinct publications where this image was published
-  // Look across publications joined with post_images, direct publication pushed_image_url, and audit_log
+  // Optimized: Queries indexed publications and post_images directly without full-table audit_log scanning
   const pubRes = await db
     .prepare(
       `SELECT COUNT(DISTINCT CASE WHEN pub.facebook_post_id IS NOT NULL AND TRIM(pub.facebook_post_id) != '' THEN pub.facebook_post_id ELSE pub.post_id END) as pub_count,
@@ -816,28 +816,12 @@ export async function recalculateCuratedImageUsage(db: D1Database, imageId: stri
     .bind(imageId, imageId, curImg.source_url || '', publicUrl, publicUrl)
     .first<{ pub_count: number; max_published_at: string | null }>();
 
-  // Check audit_log for historical IMAGE_PUBLISHED events for this image
-  const auditRes = await db
-    .prepare(
-      `SELECT COUNT(DISTINCT CASE WHEN json_extract(details, '$.postId') IS NOT NULL THEN json_extract(details, '$.postId') ELSE id END) as audit_pub_count,
-              MAX(created_at) as max_audit_time
-       FROM audit_log
-       WHERE event_type = 'IMAGE_PUBLISHED' AND entity_id = ?`,
-    )
-    .bind(imageId)
-    .first<{ audit_pub_count: number; max_audit_time: string | null }>();
-
-  const historicalCount = Math.max(pubRes?.pub_count || 0, auditRes?.audit_pub_count || 0);
+  const pubCount = pubRes?.pub_count || 0;
+  const historicalCount = Math.max(pubCount, curImg.historical_usage_count || 0);
 
   // Latest published timestamp
   const pubTime = pubRes?.max_published_at || null;
-  const auditTime = auditRes?.max_audit_time || null;
-  let lastUsedAt: string | null;
-  if (pubTime && auditTime) {
-    lastUsedAt = new Date(pubTime) > new Date(auditTime) ? pubTime : auditTime;
-  } else {
-    lastUsedAt = pubTime || auditTime || (historicalCount > 0 ? (curImg.last_used_at || new Date().toISOString()) : null);
-  }
+  const lastUsedAt: string | null = pubTime || (historicalCount > 0 ? (curImg.last_used_at || new Date().toISOString()) : null);
 
   // 3. Determine reservation state:
   // Only held if an active, UNPUBLISHED post (draft, approved, scheduled) is currently linked to this image

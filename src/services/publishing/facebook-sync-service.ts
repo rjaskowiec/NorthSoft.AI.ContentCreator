@@ -134,7 +134,8 @@ export class FacebookSyncService {
             .bind(newFbImageUrl, item.local_image_url || newFbImageUrl, item.publication_id).run();
         }
 
-        if (item.local_curated_image_id) {
+        // Only recalculate curated image usage if image URL actually changed on Facebook
+        if (item.local_curated_image_id && (item.fb_image_url !== newFbImageUrl)) {
           await recalculateCuratedImageUsage(this.db, item.local_curated_image_id);
         }
 
@@ -240,6 +241,17 @@ export class FacebookSyncService {
         }
       }
 
+      // Pre-fetch candidate local posts ONCE before the feed pagination loop to avoid O(N*M) full table scans
+      const existingLocalPost = await this.db.prepare(
+        `SELECT p.id as post_id, p.idea_id, pv.id as version_id, pv.content as body, p.status as post_status,
+                s.scheduled_at as schedule_time, s.status as schedule_status
+         FROM posts p
+         JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+         LEFT JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'scheduled')
+         WHERE p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED'
+         ORDER BY p.created_at DESC`
+      ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string; schedule_time: string | null; schedule_status: string | null }>();
+
       let after: string | undefined;
       for (let page = 0; page < 5; page++) {
         const feed = await this.publisher.fetchPagePosts(100, after);
@@ -253,16 +265,6 @@ export class FacebookSyncService {
           const existing = await this.db.prepare('SELECT id FROM publications WHERE facebook_post_id = ? AND fb_deleted_at IS NULL LIMIT 1')
             .bind(fbPost.id).first<{ id: string }>();
           if (existing) continue;
-
-          const existingLocalPost = await this.db.prepare(
-            `SELECT p.id as post_id, p.idea_id, pv.id as version_id, pv.content as body, p.status as post_status,
-                    s.scheduled_at as schedule_time, s.status as schedule_status
-             FROM posts p
-             JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
-             LEFT JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'scheduled')
-             WHERE p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED'
-             ORDER BY p.created_at DESC`
-          ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string; schedule_time: string | null; schedule_status: string | null }>();
 
           const normalize = (t: string) => (t || '').trim().toLowerCase().replace(/\s+/g, ' ');
           const normFbContent = normalize(content);
