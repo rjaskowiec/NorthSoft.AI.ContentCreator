@@ -782,10 +782,27 @@ export class PipelineOrchestratorService {
    * Called by the Worker cron every 5 minutes. Performs at most one AI step per tick
    * inside the nightly window, plus non-AI scheduling whenever posts are ready.
    */
-  async runAutomationTick(now: Date = new Date()): Promise<AutomationTickResult> {
-    const config = await this.getSchedulerConfig();
+  async runAutomationTick(now: Date = new Date(), preloadedConfig?: SchedulerConfig): Promise<AutomationTickResult> {
+    const config = preloadedConfig ?? (await this.getSchedulerConfig());
     if (!config.enabled) {
       return { ran: false, reason: 'Automation is disabled.', steps: [] };
+    }
+
+    const inAiWindow = isWithinAiBackgroundWindow(now);
+    if (!inAiWindow) {
+      // Outside AI background window: the only possible work is scheduling approved posts.
+      // Fast-gate check with index seek on posts(status) avoids acquiring locks or running multi-table counts:
+      const hasApprovedPost = await this.db
+        .prepare("SELECT id FROM posts WHERE status = 'approved' LIMIT 1")
+        .first<{ id: string }>();
+
+      if (!hasApprovedPost) {
+        return {
+          ran: false,
+          reason: 'Outside AI background window and no approved posts awaiting scheduling.',
+          steps: [],
+        };
+      }
     }
 
     const runId = newRunId('automation');

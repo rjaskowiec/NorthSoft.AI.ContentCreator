@@ -126,6 +126,7 @@ export class PublicationService {
         .catch(() => {});
 
       // 2. Recover stale publication records in 'publishing' status older than threshold minutes
+      // (Index idx_publications_status_updated makes this an instant index seek without table scans)
       const staleRows = await this.db
         .prepare(
           `SELECT id, post_id, post_version_id, attempt_count

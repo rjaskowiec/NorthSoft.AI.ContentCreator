@@ -179,7 +179,7 @@ export default {
 
           // Content generation / scouting automation tick (self-checks config.enabled and AI window)
           if (schedulerConfig.enabled) {
-            backgroundTasks.push(['runAutomationTick', () => pipelineService.runAutomationTick()]);
+            backgroundTasks.push(['runAutomationTick', () => pipelineService.runAutomationTick(new Date(), schedulerConfig)]);
           }
 
           // Maintenance tasks: Weekly digest (runs once a week on Monday morning) & Image purge (runs daily at 03:00 UTC)

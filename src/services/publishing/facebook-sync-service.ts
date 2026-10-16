@@ -48,7 +48,15 @@ export class FacebookSyncService {
            JOIN posts p ON pub.post_id = p.id
            JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
            LEFT JOIN post_images pi ON pi.post_id = p.id AND pi.version_number = p.current_version
-           WHERE pub.status = 'published' AND pub.facebook_post_id IS NOT NULL AND pub.facebook_post_id != '' AND pub.fb_deleted_at IS NULL`,
+           WHERE pub.status = 'published' AND pub.facebook_post_id IS NOT NULL AND pub.facebook_post_id != '' AND pub.fb_deleted_at IS NULL
+             AND (
+               pub.sync_status != 'SYNCED'
+               OR pub.published_at >= datetime('now', '-30 days')
+               OR pub.created_at >= datetime('now', '-30 days')
+               OR pub.fb_last_check_at IS NULL
+               OR pub.fb_last_check_at <= datetime('now', '-7 days')
+             )
+           ORDER BY pub.published_at DESC LIMIT 50`,
         )
         .all<{
           publication_id: string;
@@ -241,14 +249,17 @@ export class FacebookSyncService {
         }
       }
 
-      // Pre-fetch candidate local posts ONCE before the feed pagination loop to avoid O(N*M) full table scans
+      // Pre-fetch candidate local posts ONCE before the feed pagination loop to avoid O(N*M) full table scans.
+      // Only unlinked or recent active candidate posts need evaluation.
       const existingLocalPost = await this.db.prepare(
         `SELECT p.id as post_id, p.idea_id, pv.id as version_id, pv.content as body, p.status as post_status,
                 s.scheduled_at as schedule_time, s.status as schedule_status
          FROM posts p
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          LEFT JOIN schedules s ON s.post_id = p.id AND s.status IN ('pending', 'scheduled')
-         WHERE p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED'
+         WHERE (p.quality_decision IS NULL OR p.quality_decision != 'IMPORTED')
+           AND p.status IN ('draft', 'approved', 'scheduled')
+           AND p.created_at >= datetime('now', '-30 days')
          ORDER BY p.created_at DESC`
       ).all<{ post_id: string; idea_id: string | null; version_id: string; body: string; post_status: string; schedule_time: string | null; schedule_status: string | null }>();
 
@@ -259,12 +270,36 @@ export class FacebookSyncService {
           errors++;
           break;
         }
-        for (const fbPost of feed.posts) {
+
+        const validPosts = (feed.posts || []).filter((p) => p.id && (p.message || '').trim());
+        if (validPosts.length === 0) {
+          after = feed.paging?.after;
+          if (!after || feed.posts.length < 100) break;
+          continue;
+        }
+
+        // Batch query all Facebook post IDs for this page in a single indexed query instead of N queries
+        const fbPostIds = validPosts.map((p) => p.id);
+        const placeholders = fbPostIds.map(() => '?').join(',');
+        const existingPubs = await this.db
+          .prepare(
+            `SELECT facebook_post_id FROM publications WHERE facebook_post_id IN (${placeholders}) AND fb_deleted_at IS NULL`,
+          )
+          .bind(...fbPostIds)
+          .all<{ facebook_post_id: string }>();
+
+        const existingFbIdSet = new Set((existingPubs.results || []).map((r) => r.facebook_post_id));
+
+        // Incremental early exit:
+        // Facebook feed is ordered newest-to-oldest. If on page 0 every post is already recorded in the database,
+        // all subsequent pages only contain even older posts that were already imported in prior sync runs.
+        if (page === 0 && fbPostIds.every((id) => existingFbIdSet.has(id))) {
+          break;
+        }
+
+        for (const fbPost of validPosts) {
           const content = (fbPost.message || '').trim();
-          if (!fbPost.id || !content) continue;
-          const existing = await this.db.prepare('SELECT id FROM publications WHERE facebook_post_id = ? AND fb_deleted_at IS NULL LIMIT 1')
-            .bind(fbPost.id).first<{ id: string }>();
-          if (existing) continue;
+          if (existingFbIdSet.has(fbPost.id)) continue;
 
           const normalize = (t: string) => (t || '').trim().toLowerCase().replace(/\s+/g, ' ');
           const normFbContent = normalize(content);
@@ -313,6 +348,7 @@ export class FacebookSyncService {
               ] : [])
             ]);
 
+            existingFbIdSet.add(fbPost.id);
             updated++;
             continue;
           }
@@ -343,6 +379,7 @@ export class FacebookSyncService {
                VALUES (?, ?, 1, ?, 'Facebook post image', ?, 'Facebook Page', 'Facebook media', 'facebook_imported', 'not_checked', ?)`
             ).bind(crypto.randomUUID(), postId, fbPost.fullPicture, fbPost.permalinkUrl || fbPost.fullPicture, createdAt)] : []),
           ]);
+          existingFbIdSet.add(fbPost.id);
           imported++;
         }
         after = feed.paging?.after;
