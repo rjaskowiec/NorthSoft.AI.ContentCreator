@@ -22,12 +22,23 @@ export interface CloudflareVerifiedUsage {
   dashboardUrl: string;
 }
 
+export interface CloudflareD1DatabaseUsage {
+  databaseId: string;
+  rowsWritten: number;
+  rowsRead: number;
+  writeQueries: number;
+  readQueries: number;
+}
+
 export interface CloudflareD1Usage {
   status: 'VERIFIED' | 'NOT_CONFIGURED' | 'API_ERROR' | 'DATA_DELAYED';
   rowsWritten: number | null;
   rowsRead: number | null;
   writeQueries: number | null;
   readQueries: number | null;
+  databaseUsage?: CloudflareD1DatabaseUsage | null;
+  databases?: CloudflareD1DatabaseUsage[];
+  scope?: string;
   period: string;
   lastUpdated: string | null;
   source: string;
@@ -47,14 +58,16 @@ const CACHE_TTL_MS = 60 * 1000; // 60 seconds cache
 export class CloudflareUsageService {
   private accountId?: string;
   private apiToken?: string;
+  private databaseId?: string;
   private fetchFn: typeof fetch;
 
   constructor(
-    config?: { accountId?: string; apiToken?: string },
+    config?: { accountId?: string; apiToken?: string; databaseId?: string },
     customFetch?: typeof fetch,
   ) {
     this.accountId = config?.accountId;
     this.apiToken = config?.apiToken;
+    this.databaseId = config?.databaseId;
     this.fetchFn = customFetch || globalThis.fetch.bind(globalThis);
   }
 
@@ -62,9 +75,13 @@ export class CloudflareUsageService {
    * Helper factory to instantiate CloudflareUsageService from Worker Env.
    */
   static fromEnv(env?: Env): CloudflareUsageService {
+    const prodDbId = '902bbe67-adda-4797-af9a-a09ec57d5538';
+    const stagingDbId = '960c64cd-c450-47bc-a0e6-58552aa0d824';
+    const defaultDbId = env?.ENVIRONMENT === 'staging' ? stagingDbId : prodDbId;
     return new CloudflareUsageService({
       accountId: env?.CLOUDFLARE_ACCOUNT_ID,
       apiToken: env?.CLOUDFLARE_API_TOKEN,
+      databaseId: env?.CLOUDFLARE_D1_DATABASE_ID || defaultDbId,
     });
   }
 
@@ -270,6 +287,9 @@ export class CloudflareUsageService {
               limit: 1000
               filter: { datetime_geq: $start }
             ) {
+              dimensions {
+                databaseId
+              }
               sum {
                 rowsWritten
                 rowsRead
@@ -326,6 +346,9 @@ export class CloudflareUsageService {
           viewer?: {
             accounts?: Array<{
               d1AnalyticsAdaptiveGroups?: Array<{
+                dimensions?: {
+                  databaseId?: string;
+                };
                 sum?: {
                   rowsWritten?: number;
                   rowsRead?: number;
@@ -362,13 +385,39 @@ export class CloudflareUsageService {
       let totalRead = 0;
       let totalWriteQueries = 0;
       let totalReadQueries = 0;
+      const databases: CloudflareD1DatabaseUsage[] = [];
 
       for (const group of groups) {
-        totalWritten += group.sum?.rowsWritten || 0;
-        totalRead += group.sum?.rowsRead || 0;
-        totalWriteQueries += group.sum?.writeQueries || 0;
-        totalReadQueries += group.sum?.readQueries || 0;
+        const w = group.sum?.rowsWritten || 0;
+        const r = group.sum?.rowsRead || 0;
+        const wq = group.sum?.writeQueries || 0;
+        const rq = group.sum?.readQueries || 0;
+
+        totalWritten += w;
+        totalRead += r;
+        totalWriteQueries += wq;
+        totalReadQueries += rq;
+
+        if (group.dimensions?.databaseId) {
+          databases.push({
+            databaseId: group.dimensions.databaseId,
+            rowsWritten: Math.round(w),
+            rowsRead: Math.round(r),
+            writeQueries: wq,
+            readQueries: rq,
+          });
+        }
       }
+
+      const databaseUsage = this.databaseId
+        ? databases.find((d) => d.databaseId.toLowerCase() === this.databaseId?.toLowerCase()) || {
+            databaseId: this.databaseId,
+            rowsWritten: 0,
+            rowsRead: 0,
+            writeQueries: 0,
+            readQueries: 0,
+          }
+        : null;
 
       const result: CloudflareD1Usage = {
         status: 'VERIFIED',
@@ -376,6 +425,9 @@ export class CloudflareUsageService {
         rowsRead: Math.round(totalRead),
         writeQueries: totalWriteQueries,
         readQueries: totalReadQueries,
+        databaseUsage,
+        databases,
+        scope: 'account_aggregate',
         period: 'Today (UTC)',
         lastUpdated: new Date().toISOString(),
         source: 'Cloudflare Analytics GraphQL API',

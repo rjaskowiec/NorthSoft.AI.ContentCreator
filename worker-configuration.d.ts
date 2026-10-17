@@ -46,4 +46,5 @@ interface Env {
   ADMIN_RECOVERY_EMAIL?: string;
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_D1_DATABASE_ID?: string;
 }

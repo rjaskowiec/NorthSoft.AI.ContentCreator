@@ -131,4 +131,69 @@ describe('CloudflareUsageService Unit Tests', () => {
     expect(res3.actualRequests).toBe(20);
     expect(callCount).toBe(2);
   });
+
+  describe('D1 Usage & Database-Specific Telemetry', () => {
+    it('returns NOT_CONFIGURED when credentials are not configured', async () => {
+      const service = new CloudflareUsageService({});
+      const result = await service.getVerifiedD1Usage();
+
+      expect(result.status).toBe('NOT_CONFIGURED');
+      expect(result.rowsRead).toBeNull();
+      expect(result.rowsWritten).toBeNull();
+      expect(result.source).toBe('Not Configured');
+    });
+
+    it('parses valid GraphQL response with database dimensions and separates database usage from account aggregate', async () => {
+      const mockFetch = async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              viewer: {
+                accounts: [
+                  {
+                    d1AnalyticsAdaptiveGroups: [
+                      {
+                        dimensions: { databaseId: '902bbe67-adda-4797-af9a-a09ec57d5538' },
+                        sum: { rowsWritten: 50, rowsRead: 1200, writeQueries: 5, readQueries: 30 },
+                      },
+                      {
+                        dimensions: { databaseId: '7c50529d-eb49-4f12-9a33-6fe33e37f27a' },
+                        sum: { rowsWritten: 100, rowsRead: 8000, writeQueries: 10, readQueries: 120 },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+
+      const service = new CloudflareUsageService(
+        {
+          accountId: 'test-acc',
+          apiToken: 'test-tok',
+          databaseId: '902bbe67-adda-4797-af9a-a09ec57d5538',
+        },
+        mockFetch as unknown as typeof fetch,
+      );
+
+      const result = await service.getVerifiedD1Usage();
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.rowsRead).toBe(9200); // 1200 + 8000 (account total)
+      expect(result.rowsWritten).toBe(150);
+      expect(result.readQueries).toBe(150);
+      expect(result.writeQueries).toBe(15);
+      expect(result.scope).toBe('account_aggregate');
+
+      expect(result.databaseUsage).toBeDefined();
+      expect(result.databaseUsage?.databaseId).toBe('902bbe67-adda-4797-af9a-a09ec57d5538');
+      expect(result.databaseUsage?.rowsRead).toBe(1200);
+      expect(result.databaseUsage?.rowsWritten).toBe(50);
+      expect(result.databaseUsage?.readQueries).toBe(30);
+
+      expect(result.databases).toHaveLength(2);
+    });
+  });
 });

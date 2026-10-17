@@ -34,11 +34,14 @@ healthRoutes.get('/', async (c) => {
   let telemetryCheck: {
     status: string;
     source: string;
+    scope?: string;
     reason?: string;
     rowsRead?: number | null;
     rowsWritten?: number | null;
     readQueries?: number | null;
     writeQueries?: number | null;
+    databaseUsage?: unknown;
+    databases?: unknown;
     period?: string;
     lastUpdated?: string | null;
   };
@@ -48,11 +51,14 @@ healthRoutes.get('/', async (c) => {
     telemetryCheck = {
       status: d1Usage.status,
       source: d1Usage.source,
+      scope: d1Usage.scope,
       reason: d1Usage.reason,
       rowsRead: d1Usage.rowsRead,
       rowsWritten: d1Usage.rowsWritten,
       readQueries: d1Usage.readQueries,
       writeQueries: d1Usage.writeQueries,
+      databaseUsage: d1Usage.databaseUsage,
+      databases: d1Usage.databases,
       period: d1Usage.period,
       lastUpdated: d1Usage.lastUpdated,
     };
