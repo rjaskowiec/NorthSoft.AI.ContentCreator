@@ -50,6 +50,17 @@ describe('Resource Efficiency Regression Suite', () => {
                 updated_at: '2026-10-16T12:00:00Z',
               } as T : null);
             }
+            if (sql.includes('FROM posts p') && (sql.includes('JOIN post_versions pv') || sql.includes('p.id = ?'))) {
+              return {
+                id: (currentBinds[0] as string) || 'post-due-1',
+                title: 'Post Title',
+                post_status: 'scheduled',
+                version_id: 'ver-1',
+                body: 'Post content to publish',
+                version_status: 'scheduled',
+                version_number: 1,
+              } as T;
+            }
 
             return null;
           }),
@@ -134,6 +145,51 @@ describe('Resource Efficiency Regression Suite', () => {
 
       const statusQueries = executedQueries.filter((q) => q.sql.includes("status = 'publishing'"));
       expect(statusQueries.length).toBe(2);
+    });
+
+    it('fast-gate in runAutomationTick correctly skips for non-approved statuses (draft, scheduled, published) outside AI window', async () => {
+      const nonApprovedStatuses = ['draft', 'scheduled', 'published', 'failed', 'rejected'];
+      for (const _status of nonApprovedStatuses) {
+        const { db, executedQueries } = createInstrumentedDb({
+          approvedPosts: [],
+          schedulerConfig: { enabled: true, minTopicBacklog: 5, targetCoverageDays: 14, maxPostsPerNight: 3 },
+        });
+
+        const pipelineService = new PipelineOrchestratorService(db, {} as Env);
+        const daytime = new Date('2026-10-17T11:00:00Z');
+        const tickResult = await pipelineService.runAutomationTick(daytime);
+
+        expect(tickResult.ran).toBe(false);
+        expect(tickResult.reason).toContain('Outside AI background window and no approved posts awaiting scheduling');
+        const lockQueries = executedQueries.filter((q) => q.sql.includes('pipeline_execution_locks'));
+        expect(lockQueries.length).toBe(0);
+      }
+    });
+
+    it('guarantees scheduled publishing runs even when automation scheduler is disabled', async () => {
+      const { db } = createInstrumentedDb({
+        dueSchedules: [{ schedule_id: 'sched-due-1', post_id: 'post-due-1' }],
+        schedulerConfig: { enabled: false, minTopicBacklog: 5, targetCoverageDays: 14, maxPostsPerNight: 3 },
+      });
+
+      const mockPublisher = {
+        getConfigStatus: vi.fn().mockReturnValue({ state: 'OPERATIONAL' }),
+        publish: vi.fn().mockResolvedValue({ success: true, externalPostId: 'fb-due-pub-1' }),
+        publishPost: vi.fn().mockResolvedValue({ success: true, externalPostId: 'fb-due-pub-1' }),
+        getPost: vi.fn(),
+      } as unknown as IMetaPublisher;
+
+      const pubService = new PublicationService(db, mockPublisher);
+      const pipelineService = new PipelineOrchestratorService(db, {} as Env);
+
+      const tickResult = await pipelineService.runAutomationTick(new Date('2026-10-17T11:00:00Z'));
+      expect(tickResult.ran).toBe(false);
+      expect(tickResult.reason).toBe('Automation is disabled.');
+
+      const pubResult = await pubService.publishScheduledDuePosts();
+      expect(pubResult.processed).toBe(1);
+      expect(pubResult.succeeded).toBe(1);
+      expect(mockPublisher.publish).toHaveBeenCalledTimes(1);
     });
   });
 
