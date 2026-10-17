@@ -1235,7 +1235,7 @@ export function renderAdminHtml(): string {
             </div>
             <input type="hidden" id="post-selected-image-id" value="" />
             <input type="hidden" id="post-remove-image-flag" value="false" />
-            <div style="display:flex; gap:0.5rem; align-items:center;">
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
               <button type="button" class="btn-secondary" style="font-size:0.85rem; display:inline-flex; align-items:center; gap:0.4rem;" onclick="openDraftImageSelectorModalForDraft()">
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 Choose from Image Library
@@ -1264,7 +1264,7 @@ export function renderAdminHtml(): string {
               <button type="button" id="post-modal-delete-btn" class="btn-logout" style="padding:0.4rem 0.75rem; font-size:0.8rem;" onclick="handleModalDelete()">Delete Draft</button>
             </div>
           </div>
-          <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1.25rem;">
+          <div class="modal-footer" style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1.25rem; padding:0; border:none; background:transparent;">
             <button type="button" class="btn-secondary" onclick="closeModal('post-modal')">Cancel</button>
             <button type="submit" id="save-post-btn" class="btn-primary">Save Changes</button>
           </div>
