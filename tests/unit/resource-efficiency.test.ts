@@ -129,11 +129,11 @@ describe('Resource Efficiency Regression Suite', () => {
       expect(tickResult.reason).toContain('Outside AI background window');
 
       const writeQueries = executedQueries.filter((q) => q.isWrite);
-      expect(writeQueries.length).toBeLessThanOrEqual(1);
+      expect(writeQueries.length).toBe(0);
       expect(executedQueries.length).toBeLessThanOrEqual(5);
     });
 
-    it('recovers stale publication records and handles 0 publishing rows gracefully', async () => {
+    it('recovers stale publication records and executes 0 writes when no locks are in publishing status', async () => {
       const { db, executedQueries } = createInstrumentedDb({
         schedulesPublishing: [],
         publicationsPublishing: [],
@@ -142,6 +142,9 @@ describe('Resource Efficiency Regression Suite', () => {
       const pubService = new PublicationService(db, {} as IMetaPublisher);
       const recovered = await pubService.recoverStaleLocks();
       expect(recovered).toBe(0);
+
+      const writeQueries = executedQueries.filter((q) => q.isWrite);
+      expect(writeQueries.length).toBe(0);
 
       const statusQueries = executedQueries.filter((q) => q.sql.includes("status = 'publishing'"));
       expect(statusQueries.length).toBe(2);
@@ -400,9 +403,21 @@ describe('Resource Efficiency Regression Suite', () => {
       expect(fbSinglePlan).toMatch(/USING INDEX idx_publications_fb_post_id/);
       expect(fbSinglePlan).not.toMatch(/SCAN/);
 
-      const dueSchedulePlan = getPlan("SELECT id, status, scheduled_at FROM schedules WHERE status = 'pending' AND scheduled_at <= datetime('now') ORDER BY scheduled_at ASC LIMIT 1");
+      const dueSchedulePlan = getPlan("SELECT id, status, scheduled_at FROM schedules WHERE status = 'pending' AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT 1");
       expect(dueSchedulePlan).toMatch(/USING INDEX idx_schedules_status_sched/);
       expect(dueSchedulePlan).not.toMatch(/SCAN/);
+
+      const publishDueJoinPlan = getPlan(`
+        SELECT s.id as schedule_id, s.post_id
+        FROM schedules s
+        JOIN posts p ON s.post_id = p.id
+        JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
+        WHERE s.status = 'pending'
+          AND s.scheduled_at <= ?
+          AND p.status IN ('approved', 'scheduled')
+      `);
+      expect(publishDueJoinPlan).toMatch(/USING INDEX idx_schedules_status_sched/);
+      expect(publishDueJoinPlan).not.toMatch(/SCAN TABLE schedules/);
 
       const staleLockPlan = getPlan("SELECT id FROM publications WHERE status = 'publishing' AND updated_at < datetime('now', '-5 minutes')");
       expect(staleLockPlan).toMatch(/USING INDEX idx_publications_status_updated/);

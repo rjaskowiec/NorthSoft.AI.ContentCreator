@@ -135,6 +135,7 @@ describe('PublicationService Unit Tests', () => {
         if (sql.includes("status = 'publishing'")) {
           return {
             bind: vi.fn().mockReturnThis(),
+            first: vi.fn().mockResolvedValue({ id: 'pub-stale-1' }),
             all: vi.fn().mockResolvedValue({
               results: [
                 { id: 'pub-stale-1', post_id: 'p1', post_version_id: 'v1', attempt_count: 1 },
@@ -145,6 +146,7 @@ describe('PublicationService Unit Tests', () => {
         }
         return {
           bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
           all: vi.fn().mockResolvedValue({ results: [] }),
           run: runMock,
         };
@@ -167,10 +169,14 @@ describe('PublicationService Unit Tests', () => {
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('SELECT COUNT(*)')) {
           return {
+            bind: vi.fn().mockReturnThis(),
             first: vi.fn().mockResolvedValue({ cnt: 3 }),
           };
         }
-        return { first: vi.fn().mockResolvedValue(null) };
+        return {
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
+        };
       }),
     } as unknown as D1Database;
 
@@ -195,6 +201,7 @@ describe('PublicationService Unit Tests', () => {
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM schedules s')) {
           return {
+            bind: vi.fn().mockReturnThis(),
             all: vi.fn().mockResolvedValue({
               results: [
                 { schedule_id: 'sched-past', post_id: 'post-past' },
@@ -262,6 +269,12 @@ describe('PublicationService Unit Tests', () => {
             run: runMock,
           };
         }
+        if (sql.includes("SELECT id FROM schedules WHERE status = 'publishing'")) {
+          return {
+            bind: vi.fn().mockReturnThis(),
+            first: vi.fn().mockResolvedValue({ id: 'sched-publishing-1' }),
+          };
+        }
         if (sql.includes("UPDATE schedules")) {
           return {
             bind: vi.fn().mockReturnThis(),
@@ -270,6 +283,7 @@ describe('PublicationService Unit Tests', () => {
         }
         return {
           bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(null),
           all: vi.fn().mockResolvedValue({ results: [] }),
           run: runMock,
         };
@@ -290,6 +304,7 @@ describe('PublicationService Unit Tests', () => {
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM schedules s')) {
           return {
+            bind: vi.fn().mockReturnThis(),
             all: vi.fn().mockResolvedValue({
               results: [
                 { schedule_id: 'sched-1', post_id: 'post-1' },

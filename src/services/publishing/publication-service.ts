@@ -114,16 +114,23 @@ export class PublicationService {
   public async recoverStaleLocks(thresholdMinutes = 5): Promise<number> {
     try {
       // 1. Recover stale schedule locks in 'publishing' status older than threshold minutes
-      await this.db
-        .prepare(
-          `UPDATE schedules
-           SET status = 'pending', updated_at = datetime('now')
-           WHERE status = 'publishing'
-             AND updated_at <= datetime('now', '-' || ? || ' minutes')`,
-        )
-        .bind(thresholdMinutes)
-        .run()
-        .catch(() => {});
+      // Avoid blind writes on every cron tick: check first if any schedules are in 'publishing' status
+      const hasPublishingSchedule = await this.db
+        .prepare("SELECT id FROM schedules WHERE status = 'publishing' LIMIT 1")
+        .first<{ id: string }>();
+
+      if (hasPublishingSchedule) {
+        await this.db
+          .prepare(
+            `UPDATE schedules
+             SET status = 'pending', updated_at = datetime('now')
+             WHERE status = 'publishing'
+               AND updated_at <= datetime('now', '-' || ? || ' minutes')`,
+          )
+          .bind(thresholdMinutes)
+          .run()
+          .catch(() => {});
+      }
 
       // 2. Recover stale publication records in 'publishing' status older than threshold minutes
       // (Index idx_publications_status_updated makes this an instant index seek without table scans)
@@ -845,15 +852,17 @@ export class PublicationService {
     const publisherConfig = this.publisher.getConfigStatus();
     if (publisherConfig.state === 'DISABLED' || publisherConfig.state === 'NOT_CONFIGURED') {
       try {
+        const nowIso = new Date().toISOString();
         const dueCountRes = await this.db
           .prepare(
             `SELECT COUNT(*) as cnt
              FROM schedules s
              JOIN posts p ON s.post_id = p.id
              WHERE s.status = 'pending'
-               AND datetime(s.scheduled_at) <= datetime('now')
+               AND s.scheduled_at <= ?
                AND p.status IN ('approved', 'scheduled')`,
           )
+          .bind(nowIso)
           .first<{ cnt: number }>();
 
         if (dueCountRes && dueCountRes.cnt > 0) {
@@ -886,6 +895,7 @@ export class PublicationService {
     // Clear stale locks before processing queue
     await this.recoverStaleLocks();
 
+    const nowIso = new Date().toISOString();
     const dueSchedules = await this.db
       .prepare(
         `SELECT s.id as schedule_id, s.post_id
@@ -893,9 +903,10 @@ export class PublicationService {
          JOIN posts p ON s.post_id = p.id
          JOIN post_versions pv ON p.id = pv.post_id AND p.current_version = pv.version_number
          WHERE s.status = 'pending'
-           AND datetime(s.scheduled_at) <= datetime('now')
+           AND s.scheduled_at <= ?
            AND p.status IN ('approved', 'scheduled')`,
       )
+      .bind(nowIso)
       .all<{ schedule_id: string; post_id: string }>();
 
     let processed = 0;
