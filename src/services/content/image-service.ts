@@ -4,6 +4,9 @@ import type {
   ImageCandidate,
   ImageService,
   ImageVerificationResult,
+  SearchDiagnostics,
+  SearchErrorType,
+  SearchImagesResult,
   SearchQueryCandidate,
   SelectedImageResult,
 } from './image-service.interface';
@@ -14,6 +17,136 @@ const NOISY_IRRELEVANT_KEYWORDS = [
   'politic', 'bedroom', 'baby', 'fashion', 'wedding', 'model', 'dress',
   'recipe', 'pizza', 'burger', 'cooking', 'dog', 'cat', 'kitten', 'puppy'
 ];
+
+/**
+ * Derives a separate, concise English image search query (approximately 3–8 words, noun phrase)
+ * optimized for retrieving existing stock photographs from providers like Openverse.
+ *
+ * Distinct from the rich AI image-generation prompt:
+ * - Omits camera instructions, lighting descriptions, narrative sentences, and abstract fluff.
+ * - Produces a clear physical subject and recognizable scene.
+ * - Handles Polish topics, English titles, or detailed generation prompts without simple naive truncation.
+ */
+export function deriveImageSearchQuery(topicOrPrompt?: string, category?: string): string {
+  const cleanCat = (category || '').trim();
+  const raw = (topicOrPrompt || '').trim();
+
+  // Category fallback scenes (3-6 words, clear physical subject)
+  const categoryFallbackMap: Record<string, string> = {
+    'AI & Business Automation': 'small business AI automation',
+    'Marketing & Customer Acquisition': 'satisfied customer business meeting',
+    'Websites & Landing Pages': 'person using smartphone website',
+    'Sales & Conversion Process': 'retail store customer payment',
+    'Small Business Productivity & Ops': 'small business owner planning work',
+    'Customer Experience & Trust': 'customer service friendly meeting',
+    'Local Business & Regional Context': 'local store retail storefront',
+    'General': 'modern office business meeting',
+  };
+
+  if (!raw) {
+    return categoryFallbackMap[cleanCat] || 'small business office meeting';
+  }
+
+  // 1. Strip generation prompt boilerplate, photographic styles, and camera directions
+  const text = raw
+    .replace(/^A\s+(?:35mm\s+)?candid\s+commercial\s+photograph\s+of\s+/i, '')
+    .replace(/^Photograph\s+of\s+/i, '')
+    .replace(/^Commercial\s+photography\s+of\s+/i, '')
+    .replace(/Category:\s*[^.]+\./gi, '')
+    .replace(/Expression:\s*[^.]+\./gi, '')
+    .replace(/Style:\s*35mm[^.]+\./gi, '')
+    .replace(/Screens:\s*[^.]+\./gi, '')
+    .replace(/Spatial composition\s*&?\s*lighting:\s*[^.]+\./gi, '')
+    .replace(/\b(?:35mm|50mm|f\/4|aperture|bokeh|dslr|shutter|lighting|daylight|directional|neutral color grading|pores|skin texture|fabric folds|minimalist|geometric|wireframe|candid|photorealistic|hyper realistic|ultra realistic|high resolution|negative space|close-up|wide shot|over-the-shoulder)\b/gi, ' ')
+    .trim();
+
+  // If text became empty after stripping prompt boilerplate, fall back to category
+  if (!text) {
+    return categoryFallbackMap[cleanCat] || 'small business office workspace';
+  }
+
+  const lower = text.toLowerCase();
+
+  // 2. High-priority semantic topic recognition (covering business themes accurately)
+  if (lower.includes('automate with ai') || (lower.includes('ai') && (lower.includes('automat') || lower.includes('time-saving') || lower.includes('workflow')))) {
+    return 'small business AI automation';
+  }
+  if (lower.includes('operator to owner') || lower.includes('stages of business') || (lower.includes('time management') && lower.includes('owner'))) {
+    return 'small business owner planning work';
+  }
+  if (lower.includes('customer journey') && lower.includes('ai')) {
+    return 'customer journey digital experience';
+  }
+  if (lower.includes('user experience') || lower.includes('ux') || lower.includes('shopping') || lower.includes('responsiv')) {
+    return 'person using smartphone shopping';
+  }
+  if (lower.includes('meeting') && (lower.includes('customer') || lower.includes('sales') || lower.includes('growth'))) {
+    return 'satisfied customer business meeting';
+  }
+
+  // Polish topic detection
+  if (lower.includes('automatyzacj') || lower.includes('procesów')) {
+    return 'small business AI automation';
+  }
+  if (lower.includes('audyt') || lower.includes('użytecznoś') || lower.includes('ux') || (lower.includes('stron') && lower.includes('internetow'))) {
+    return 'person using smartphone website';
+  }
+  if (lower.includes('klient') && (lower.includes('zadowolen') || lower.includes('obsług') || lower.includes('relacj'))) {
+    return 'satisfied customer business meeting';
+  }
+  if (lower.includes('czas') || lower.includes('planowani') || lower.includes('przedsiębiorc') || lower.includes('etapy')) {
+    return 'small business owner planning work';
+  }
+  if (lower.includes('sprzedaż') || lower.includes('sklep') || lower.includes('płatnoś')) {
+    return 'retail store customer payment';
+  }
+
+  // 3. Extract meaningful noun phrases from general text
+  const stopWords = new Set([
+    'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
+    'by', 'from', 'up', 'about', 'into', 'over', 'after', 'beneath', 'under', 'above',
+    'their', 'his', 'her', 'its', 'our', 'my', 'your', 'this', 'that', 'these', 'those',
+    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
+    'did', 'can', 'could', 'should', 'would', 'may', 'might', 'must', 'will', 'shall',
+    'looking', 'stands', 'standing', 'sits', 'sitting', 'walks', 'walking', 'gesturing',
+    'gathered', 'gathers', 'around', 'surrounded', 'empty', 'scattered', 'filled', 'air',
+    'atmosphere', 'sense', 'symbolizing', 'relieved', 'satisfied', 'friendly', 'warm',
+    'ways', 'how', 'why', 'what', 'when', 'where', 'which', 'who', 'whom', 'tips',
+  ]);
+
+  const cleanWords = text
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length > 2 && !stopWords.has(w));
+
+  // If words are between 2 and 8, keep them
+  if (cleanWords.length >= 2 && cleanWords.length <= 8) {
+    return cleanWords.join(' ');
+  }
+
+  if (cleanWords.length > 8) {
+    // Pick the most meaningful 4 to 6 words (avoiding trailing conjunctions/modifiers)
+    return cleanWords.slice(0, 5).join(' ');
+  }
+
+  // If fewer than 3 words, anchor with relevant business environment
+  if (cleanWords.length > 0) {
+    const base = cleanWords.join(' ');
+    if (cleanCat.toLowerCase().includes('website') || cleanCat.toLowerCase().includes('design')) {
+      return `${base} website workspace`;
+    }
+    if (cleanCat.toLowerCase().includes('automation') || cleanCat.toLowerCase().includes('ai')) {
+      return `${base} business automation`;
+    }
+    if (cleanCat.toLowerCase().includes('marketing') || cleanCat.toLowerCase().includes('sales')) {
+      return `${base} business customer`;
+    }
+    return `${base} business office`;
+  }
+
+  return categoryFallbackMap[cleanCat] || 'small business office meeting';
+}
 
 export function buildSearchHierarchy(topicTitle: string, category: string): SearchQueryCandidate[] {
   const cleanTitle = topicTitle.toLowerCase();
@@ -41,11 +174,7 @@ export function buildSearchHierarchy(topicTitle: string, category: string): Sear
   } else if (cleanTitle.includes('social media') || cleanTitle.includes('marketing')) {
     level1 = 'small business marketing laptop office';
   } else {
-    const words = cleanTitle
-      .replace(/[^a-z0-9\s]/g, '')
-      .split(/\s+/)
-      .filter((w) => w.length > 3 && !['ways', 'your', 'with', 'that', 'this', 'from', 'about', 'how'].includes(w));
-    level1 = words.slice(0, 3).join(' ') || 'small business laptop office';
+    level1 = deriveImageSearchQuery(topicTitle, category);
   }
 
   let level2 = 'small business website office';
@@ -71,21 +200,22 @@ export function buildSearchHierarchy(topicTitle: string, category: string): Sear
 
 /**
  * Builds a bounded list of up to 3 queries for candidate discovery:
- * 1. User-entered specific description / exact scene
- * 2. Broader business query (filtered key concepts)
+ * 1. Primary concise search query (3-8 meaningful words, noun phrase)
+ * 2. Broader business query (filtered key concepts anchored to commercial scene)
  * 3. General category default scene
  */
 export function buildDiscoveryQueryHierarchy(description: string, category: string): string[] {
   const queries: string[] = [];
-  const cleanDesc = description.trim();
   const cleanCat = category.trim();
 
-  if (cleanDesc) {
-    queries.push(cleanDesc);
+  // Primary concise search query: derive if description is long or AI prompt
+  const cleanPrimary = deriveImageSearchQuery(description, cleanCat);
+  if (cleanPrimary) {
+    queries.push(cleanPrimary);
   }
 
   // Broader query: extract 2-3 meaningful words and anchor to business scene
-  const meaningfulWords = cleanDesc
+  const meaningfulWords = cleanPrimary
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
@@ -135,6 +265,7 @@ export function buildDiscoveryQueryHierarchy(description: string, category: stri
 
   return queries.slice(0, 3);
 }
+
 
 const HISTORICAL_AND_MISLEADING_KEYWORDS = [
   'vintage', 'antique', 'black and white', 'b&w', '19th century', 'ancient',
@@ -231,33 +362,69 @@ export function scoreImageCandidate(
 export class OpenverseImageService implements ImageService {
   constructor(private readonly env: Env) {}
 
-  async searchImages(query: string, limit = 10): Promise<ImageCandidate[]> {
+  async searchImagesWithDiagnostics(query: string, limit = 10): Promise<SearchImagesResult> {
+    const cleanQuery = deriveImageSearchQuery(query);
     const url = new URL('https://api.openverse.org/v1/images/');
-    url.searchParams.set('q', query);
+    url.searchParams.set('q', cleanQuery);
     url.searchParams.set('license', 'cc0,pdm,by,by-sa');
-    url.searchParams.set('page_size', limit.toString());
+    url.searchParams.set('page_size', Math.min(20, Math.max(1, limit)).toString());
 
-    let response: Response;
+    const startTime = Date.now();
+    let response: Response | undefined;
+    let error: string | undefined;
+    let errorType: SearchErrorType = 'NONE';
+    let httpStatus: number | undefined;
+
+    const envObj = this.env as unknown as Record<string, unknown> | undefined;
+    const isTest = typeof process !== 'undefined' && Boolean(process.env.VITEST || process.env.NODE_ENV === 'test');
+    const configuredTimeout = typeof envObj?.OPENVERSE_TIMEOUT_MS === 'number'
+      ? envObj.OPENVERSE_TIMEOUT_MS
+      : (isTest ? 1000 : 8000);
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+    const timeout = setTimeout(() => controller.abort(), configuredTimeout);
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'NorthSoft.AI.ContentCreator/0.1.0 (https://northsoft.is)',
+      'Accept': 'application/json',
+    };
+
+    const token = envObj?.OPENVERSE_TOKEN || envObj?.OPENVERSE_API_KEY;
+    if (typeof token === 'string' && token.trim()) {
+      headers['Authorization'] = `Bearer ${token.trim()}`;
+    }
+
     try {
       response = await fetch(url.toString(), {
         signal: controller.signal,
-        headers: {
-          'User-Agent': 'NorthSoft.AI.ContentCreator/0.1.0',
-          'Accept': 'application/json',
-        },
+        headers,
       });
+      httpStatus = response.status;
     } catch (err: unknown) {
-      console.warn(`[OpenverseImageService] Network error searching openverse: ${err instanceof Error ? err.message : String(err)}`);
-      return [];
+      if (err instanceof Error && err.name === 'AbortError') {
+        errorType = 'TIMEOUT';
+        error = `Openverse API request timed out (exceeded ${configuredTimeout}ms threshold)`;
+      } else {
+        errorType = 'NETWORK_ERROR';
+        error = `Openverse API network error: ${err instanceof Error ? err.message : String(err)}`;
+      }
     } finally {
       clearTimeout(timeout);
     }
 
-    if (!response.ok) {
-      console.warn(`[OpenverseImageService] Failed to search openverse: ${response.statusText}`);
-      return [];
+    const latencyMs = Date.now() - startTime;
+
+    if (response) {
+      if (response.status === 429) {
+        errorType = 'RATE_LIMIT';
+        error = 'Openverse API rate limit exceeded (HTTP 429)';
+      } else if (response.status >= 500) {
+        errorType = 'PROVIDER_5XX';
+        error = `Openverse API upstream server error (HTTP ${response.status} ${response.statusText || ''})`.trim();
+      } else if (!response.ok) {
+        errorType = 'PROVIDER_5XX';
+        error = `Openverse API returned HTTP ${response.status}: ${response.statusText || 'Unknown error'}`;
+      }
     }
 
     interface OpenverseItem {
@@ -278,37 +445,82 @@ export class OpenverseImageService implements ImageService {
       results?: OpenverseItem[];
     }
 
-    const data = (await response.json()) as OpenverseApiResponse;
     const candidates: ImageCandidate[] = [];
 
-    if (data.results && Array.isArray(data.results)) {
-      for (const item of data.results) {
-        const validLicenses = ['cc0', 'pdm', 'by', 'by-sa'];
-        if (!validLicenses.includes(item.license?.toLowerCase() || '')) {
-          continue;
+    if (response && response.ok) {
+      try {
+        const data = (await response.json()) as OpenverseApiResponse;
+        if (data.results && Array.isArray(data.results)) {
+          const validLicenses = ['cc0', 'pdm', 'by', 'by-sa'];
+          for (const item of data.results) {
+            if (!validLicenses.includes(item.license?.toLowerCase() || '')) {
+              continue;
+            }
+
+            const tags = Array.isArray(item.tags)
+              ? item.tags.map((t) => (typeof t === 'string' ? t : t.name || '')).filter(Boolean)
+              : [];
+
+            candidates.push({
+              id: item.id,
+              url: item.url,
+              thumbnailUrl: item.thumbnail,
+              title: item.title || 'Illustration',
+              author: item.creator || 'Openverse Author',
+              authorUrl: item.creator_url,
+              license: (item.license || 'CC').toUpperCase(),
+              licenseUrl: item.license_url || 'https://creativecommons.org/',
+              sourceUrl: item.foreign_landing_url || item.detail_url || item.url,
+              tags,
+            });
+          }
+        } else {
+          errorType = 'INVALID_RESPONSE';
+          error = 'Openverse API returned unexpected schema (results array missing)';
         }
-
-        const tags = Array.isArray(item.tags)
-          ? item.tags.map((t) => (typeof t === 'string' ? t : t.name || '')).filter(Boolean)
-          : [];
-
-        candidates.push({
-          id: item.id,
-          url: item.url,
-          thumbnailUrl: item.thumbnail,
-          title: item.title || 'Illustration',
-          author: item.creator || 'Openverse Author',
-          authorUrl: item.creator_url,
-          license: (item.license || 'CC').toUpperCase(),
-          licenseUrl: item.license_url || 'https://creativecommons.org/',
-          sourceUrl: item.foreign_landing_url || item.detail_url || item.url,
-          tags,
-        });
+      } catch (parseErr: unknown) {
+        errorType = 'INVALID_RESPONSE';
+        error = `Failed to parse Openverse JSON response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`;
       }
     }
 
-    return candidates.slice(0, limit);
+    const providerSuccess = errorType === 'NONE' && (response?.ok ?? false);
+
+    console.log('[OpenverseImageService] Search completed:', {
+      query: cleanQuery,
+      provider: 'Openverse',
+      success: providerSuccess,
+      status: httpStatus,
+      latencyMs,
+      rawCount: candidates.length,
+      errorType,
+      error,
+    });
+
+    const diagnostics: SearchDiagnostics = {
+      initiated: true,
+      query: cleanQuery,
+      provider: 'Openverse',
+      providerSuccess,
+      httpStatus,
+      providerLatencyMs: latencyMs,
+      rawResultsCount: candidates.length,
+      filteredResultsCount: candidates.slice(0, limit).length,
+      error,
+      errorType,
+    };
+
+    return {
+      candidates: candidates.slice(0, limit),
+      diagnostics,
+    };
   }
+
+  async searchImages(query: string, limit = 10): Promise<ImageCandidate[]> {
+    const res = await this.searchImagesWithDiagnostics(query, limit);
+    return res.candidates;
+  }
+
 
   async findBestImage(
     topicTitle: string,

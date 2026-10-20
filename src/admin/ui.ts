@@ -1968,9 +1968,9 @@ export function renderAdminHtml(): string {
 
       <!-- VIEW 1: Category & Description Form -->
       <div id="discover-view-form" class="modal-body">
-        <div class="form-group" style="margin-bottom:1rem;">
+        <div class="form-group" style="margin-bottom:0.85rem;">
           <label class="form-label" for="discover-category-select" style="font-weight:600;">Image Library Category</label>
-          <select id="discover-category-select" class="form-input" onchange="handleDiscoverCategoryChange()">
+          <select id="discover-category-select" class="form-input" onchange="handleDiscoverCategoryChange(true)">
             <option value="Websites &amp; Landing Pages">Websites &amp; Landing Pages</option>
             <option value="Marketing &amp; Customer Acquisition">Marketing &amp; Customer Acquisition</option>
             <option value="Sales &amp; Conversion Process">Sales &amp; Conversion Process</option>
@@ -1982,25 +1982,40 @@ export function renderAdminHtml(): string {
           </select>
         </div>
 
-        <div class="form-group" style="margin-bottom:1.25rem;">
+        <!-- Prompt Generation Lifecycle & Status Banner -->
+        <div id="discover-prompt-status-banner" style="display:none; margin-bottom:0.85rem; padding:0.45rem 0.75rem; border-radius:6px; font-size:0.75rem; align-items:center; justify-content:space-between; background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.25); color:var(--accent-blue);">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="inline-spinner" id="discover-prompt-spinner" style="display:inline-block;"></span>
+            <span id="discover-prompt-status-text">Generating AI concept...</span>
+          </div>
+          <button type="button" id="discover-prompt-retry-btn" class="btn-secondary" style="display:none; font-size:0.7rem; padding:0.15rem 0.45rem; line-height:1.2;" onclick="retryPromptGeneration()">Retry</button>
+        </div>
+
+        <!-- Field A: Rich AI Image Generation Prompt -->
+        <div class="form-group" style="margin-bottom:0.85rem;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
-            <div style="display:flex; align-items:center; gap:0.5rem;">
-              <label class="form-label" for="discover-description-input" style="font-weight:600; margin-bottom:0;">Image search description</label>
-              <span id="discover-prompt-loading" style="display:none; font-size:0.75rem; color:var(--accent-blue); align-items:center; gap:0.4rem;">
-                <span class="inline-spinner"></span>
-                <span>Generating AI concept...</span>
-              </span>
-            </div>
+            <label class="form-label" for="discover-description-input" style="font-weight:600; margin-bottom:0;">
+              AI Image Generation Prompt <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">(Detailed FLUX.1 scene)</span>
+            </label>
             <button type="button" id="discover-suggest-alt-btn" class="btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.55rem; line-height:1.2;" onclick="suggestAlternativeScene()">Suggest Alternative</button>
           </div>
-          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Describe the scene..." oninput="handleDiscoverDescriptionInput()"></textarea>
+          <textarea id="discover-description-input" class="form-input" rows="3" placeholder="Detailed candid scene description for text-to-image..." oninput="handleDiscoverDescriptionInput()"></textarea>
+        </div>
+
+        <!-- Field B: Concise Stock Search Query -->
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label class="form-label" for="discover-search-query-input" style="font-weight:600; margin-bottom:0.35rem; display:flex; justify-content:space-between; align-items:center;">
+            <span>Stock Image Search Query <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">(Concise 3–8 words for Openverse)</span></span>
+            <span id="discover-search-query-count" style="font-size:0.7rem; font-weight:400; color:var(--text-muted);"></span>
+          </label>
+          <input type="text" id="discover-search-query-input" class="form-input" placeholder="e.g. small business team strategy meeting" oninput="handleDiscoverSearchQueryInput()" />
         </div>
       </div>
       <div id="discover-footer-form" class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
         <button type="button" class="btn-secondary" onclick="closeModal('discover-image-modal')">Cancel</button>
         <div style="display:flex; gap:0.5rem;">
           <button type="button" id="start-ai-generate-btn" class="btn-secondary" style="border-color:rgba(96,165,250,0.4); color:var(--accent-blue);" onclick="startAiImageGeneration()">
-            Generate AI Images
+            Generate AI Image
           </button>
           <button type="button" id="start-discovery-btn" class="btn-primary" onclick="startCandidateDiscovery()">
             Discover Images

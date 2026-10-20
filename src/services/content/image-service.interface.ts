@@ -40,8 +40,35 @@ export interface ImageVerificationResult {
   reason: string;
 }
 
+export type SearchErrorType =
+  | 'TIMEOUT'
+  | 'PROVIDER_5XX'
+  | 'RATE_LIMIT'
+  | 'NETWORK_ERROR'
+  | 'INVALID_RESPONSE'
+  | 'NONE';
+
+export interface SearchDiagnostics {
+  initiated: boolean;
+  query: string;
+  provider: string;
+  providerSuccess: boolean;
+  httpStatus?: number;
+  providerLatencyMs: number;
+  rawResultsCount: number;
+  filteredResultsCount: number;
+  error?: string;
+  errorType: SearchErrorType;
+}
+
+export interface SearchImagesResult {
+  candidates: ImageCandidate[];
+  diagnostics: SearchDiagnostics;
+}
+
 export interface ImageService {
   searchImages(query: string, limit?: number): Promise<ImageCandidate[]>;
+  searchImagesWithDiagnostics?(query: string, limit?: number): Promise<SearchImagesResult>;
   downloadImage(url: string): Promise<ArrayBuffer>;
   verifyImageWithVision(imageBytes: ArrayBuffer, topicTitle: string, postBody: string): Promise<ImageVerificationResult>;
   findBestImage(
@@ -51,3 +78,4 @@ export interface ImageService {
     recentlyUsedUrls?: Set<string>,
   ): Promise<SelectedImageResult | null>;
 }
+

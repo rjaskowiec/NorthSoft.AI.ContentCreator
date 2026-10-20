@@ -6077,13 +6077,99 @@ export function getAdminScripts(): string {
     let isCandidateDiscoveryRunning = false;
     let discoverSceneCycleOffset = 0;
     let discoverDescriptionUserEdited = false;
+    let discoverSearchQueryUserEdited = false;
+    let currentPromptAbortController = null;
+
+    const promptOperationState = {
+      status: 'idle', // 'idle' | 'loading' | 'success' | 'error'
+      requestId: 0,
+      targetCategory: '',
+      isAlternative: false,
+      errorMessage: '',
+    };
+
+    function updatePromptOperationUI() {
+      const banner = document.getElementById('discover-prompt-status-banner');
+      const spinner = document.getElementById('discover-prompt-spinner');
+      const text = document.getElementById('discover-prompt-status-text');
+      const retryBtn = document.getElementById('discover-prompt-retry-btn');
+      const altBtn = document.getElementById('discover-suggest-alt-btn');
+      const descInput = document.getElementById('discover-description-input');
+      const queryInput = document.getElementById('discover-search-query-input');
+
+      if (!banner) return;
+
+      if (promptOperationState.status === 'loading') {
+        banner.style.display = 'flex';
+        banner.style.background = 'rgba(59,130,246,0.1)';
+        banner.style.borderColor = 'rgba(59,130,246,0.25)';
+        banner.style.color = 'var(--accent-blue)';
+        if (spinner) spinner.style.display = 'inline-block';
+        if (text) {
+          text.textContent = promptOperationState.isAlternative
+            ? 'Generating alternative scene for "' + promptOperationState.targetCategory + '"...'
+            : 'Generating AI concept proposal for "' + promptOperationState.targetCategory + '"...';
+        }
+        if (retryBtn) retryBtn.style.display = 'none';
+        if (altBtn) altBtn.disabled = true;
+        if (descInput && !discoverDescriptionUserEdited) {
+          descInput.placeholder = 'Conceiving unique scene concept based on library history...';
+        }
+        if (queryInput && !discoverSearchQueryUserEdited) {
+          queryInput.placeholder = 'Extracting concise search query...';
+        }
+      } else if (promptOperationState.status === 'error') {
+        banner.style.display = 'flex';
+        banner.style.background = 'rgba(239,68,68,0.1)';
+        banner.style.borderColor = 'rgba(239,68,68,0.25)';
+        banner.style.color = 'var(--accent-rose, #ef4444)';
+        if (spinner) spinner.style.display = 'none';
+        if (text) {
+          text.textContent = promptOperationState.errorMessage || 'Failed to generate prompt proposal.';
+        }
+        if (retryBtn) retryBtn.style.display = 'inline-block';
+        if (altBtn) altBtn.disabled = false;
+        if (descInput) descInput.placeholder = 'Describe the scene...';
+        if (queryInput) queryInput.placeholder = 'e.g. small business team strategy meeting';
+      } else { // 'success' or 'idle'
+        banner.style.display = 'none';
+        if (retryBtn) retryBtn.style.display = 'none';
+        if (altBtn) altBtn.disabled = false;
+        if (descInput) descInput.placeholder = 'Describe the scene...';
+        if (queryInput) queryInput.placeholder = 'e.g. small business team strategy meeting';
+      }
+    }
 
     function handleDiscoverDescriptionInput() {
       discoverDescriptionUserEdited = true;
       validateDiscoverForm();
     }
 
-    let currentPromptAbortController = null;
+    function handleDiscoverSearchQueryInput() {
+      discoverSearchQueryUserEdited = true;
+      updateSearchQueryWordCount();
+      validateDiscoverForm();
+    }
+
+    function updateSearchQueryWordCount() {
+      const queryInput = document.getElementById('discover-search-query-input');
+      const countEl = document.getElementById('discover-search-query-count');
+      if (!queryInput || !countEl) return;
+      const val = queryInput.value.trim();
+      if (!val) {
+        countEl.textContent = '';
+        return;
+      }
+      const words = val.split(' ').filter(Boolean);
+      countEl.textContent = words.length + (words.length === 1 ? ' word' : ' words');
+      if (words.length >= 3 && words.length <= 8) {
+        countEl.style.color = 'var(--accent-emerald)';
+      } else if (words.length > 8) {
+        countEl.style.color = 'var(--accent-amber)';
+      } else {
+        countEl.style.color = 'var(--text-muted)';
+      }
+    }
 
     async function fetchDynamicPromptProposal(category, forceCycle) {
       if (forceCycle) {
@@ -6095,17 +6181,16 @@ export function getAdminScripts(): string {
       }
       currentPromptAbortController = new AbortController();
 
-      const loadingEl = document.getElementById('discover-prompt-loading');
-      const descInput = document.getElementById('discover-description-input');
-      const altBtn = document.getElementById('discover-suggest-alt-btn');
-      const discBtn = document.getElementById('start-discovery-btn');
-      const aiBtn = document.getElementById('start-ai-generate-btn');
+      const reqId = ++promptOperationState.requestId;
+      promptOperationState.status = 'loading';
+      promptOperationState.targetCategory = category || 'Websites & Landing Pages';
+      promptOperationState.isAlternative = Boolean(forceCycle);
+      promptOperationState.errorMessage = '';
+      updatePromptOperationUI();
 
-      if (loadingEl) loadingEl.style.display = 'inline-flex';
-      if (altBtn) altBtn.disabled = true;
-      if (descInput && !discoverDescriptionUserEdited) {
-        descInput.placeholder = 'Conceiving unique scene concept based on library history...';
-      }
+      const descInput = document.getElementById('discover-description-input');
+      const queryInput = document.getElementById('discover-search-query-input');
+      const categorySelect = document.getElementById('discover-category-select');
 
       try {
         const queryParams = new URLSearchParams({
@@ -6115,48 +6200,76 @@ export function getAdminScripts(): string {
         const res = await guardedFetch('/api/admin/images/suggest-prompt?' + queryParams.toString(), {
           signal: currentPromptAbortController.signal,
         });
+
+        // If another request started while in-flight, ignore stale response
+        if (promptOperationState.requestId !== reqId) {
+          return null;
+        }
+
         const data = await res.json();
+        if (promptOperationState.requestId !== reqId) {
+          return null;
+        }
+
         if (data && data.success && data.prompt) {
-          return data.prompt;
+          const currentCategory = categorySelect ? categorySelect.value : '';
+          const matchesCategory = !currentCategory || currentCategory === category;
+
+          if (matchesCategory) {
+            if (!discoverDescriptionUserEdited && descInput) {
+              descInput.value = data.prompt;
+            }
+            if (!discoverSearchQueryUserEdited && queryInput && data.searchQuery) {
+              queryInput.value = data.searchQuery;
+              updateSearchQueryWordCount();
+            }
+          }
+
+          promptOperationState.status = 'success';
+          promptOperationState.errorMessage = '';
+          updatePromptOperationUI();
+          validateDiscoverForm();
+          return data;
         }
-        if (data && !data.success && data.error) {
-          console.warn('Concept proposal error from server:', data.error);
-        }
+
+        const errMsg = (data && data.error) ? data.error : 'Server returned empty proposal.';
+        promptOperationState.status = 'error';
+        promptOperationState.errorMessage = errMsg;
+        updatePromptOperationUI();
+        console.warn('Concept proposal error from server:', errMsg);
       } catch (err) {
         if (err && err.name === 'AbortError') {
-          return '';
+          // Aborted by newer request or modal close; newer request owns UI state
+          return null;
         }
-        console.warn('Failed to fetch dynamic prompt proposal:', err);
+        if (promptOperationState.requestId === reqId) {
+          promptOperationState.status = 'error';
+          promptOperationState.errorMessage = (err && err.message) ? err.message : 'Network error fetching proposal.';
+          updatePromptOperationUI();
+          console.warn('Failed to fetch dynamic prompt proposal:', err);
+        }
       } finally {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (altBtn) altBtn.disabled = false;
-        if (descInput) {
-          descInput.placeholder = 'Describe the scene...';
+        if (promptOperationState.requestId === reqId && promptOperationState.status === 'loading') {
+          promptOperationState.status = 'idle';
+          updatePromptOperationUI();
         }
         validateDiscoverForm();
       }
-      return '';
+      return null;
     }
 
     async function suggestAlternativeScene() {
       const categorySelect = document.getElementById('discover-category-select');
-      const descInput = document.getElementById('discover-description-input');
-      const altBtn = document.getElementById('discover-suggest-alt-btn');
-      if (!descInput) return;
-
       const cat = categorySelect ? categorySelect.value : 'Websites & Landing Pages';
-      if (altBtn) altBtn.disabled = true;
+      discoverDescriptionUserEdited = false;
+      discoverSearchQueryUserEdited = false;
+      await fetchDynamicPromptProposal(cat, true);
+    }
 
-      try {
-        const newPrompt = await fetchDynamicPromptProposal(cat, true);
-        if (newPrompt) {
-          descInput.value = newPrompt;
-          discoverDescriptionUserEdited = false;
-          validateDiscoverForm();
-        }
-      } finally {
-        if (altBtn) altBtn.disabled = false;
-      }
+    async function retryPromptGeneration() {
+      const categorySelect = document.getElementById('discover-category-select');
+      const cat = categorySelect ? categorySelect.value : 'Websites & Landing Pages';
+      await fetchDynamicPromptProposal(cat, false);
     }
 
     async function openDiscoverImageModal() {
@@ -6182,37 +6295,44 @@ export function getAdminScripts(): string {
       }
 
       const cat = categorySelect.value || 'Websites & Landing Pages';
-      const prompt = await fetchDynamicPromptProposal(cat, false);
-      if (prompt) {
-        descInput.value = prompt;
-        discoverDescriptionUserEdited = false;
-      }
-      validateDiscoverForm();
+      await fetchDynamicPromptProposal(cat, false);
     }
 
     function validateDiscoverForm() {
       const descInput = document.getElementById('discover-description-input');
+      const queryInput = document.getElementById('discover-search-query-input');
       const discBtn = document.getElementById('start-discovery-btn');
       const aiBtn = document.getElementById('start-ai-generate-btn');
-      const txt = descInput ? descInput.value.trim() : '';
+      const descTxt = descInput ? descInput.value.trim() : '';
+      const queryTxt = queryInput ? queryInput.value.trim() : '';
 
-      const isValid = txt.length > 0;
-      if (discBtn) discBtn.disabled = !isValid;
-      if (aiBtn) aiBtn.disabled = !isValid;
+      const canDiscover = queryTxt.length > 0 || descTxt.length > 0;
+      const canAiGenerate = descTxt.length > 0;
+      if (discBtn) discBtn.disabled = !canDiscover;
+      if (aiBtn) aiBtn.disabled = !canAiGenerate;
     }
 
     function resetDiscoverModalForm() {
       setDiscoverModalView('form');
       discoverDescriptionUserEdited = false;
+      discoverSearchQueryUserEdited = false;
       discoverSceneCycleOffset = Math.floor(Math.random() * 5);
       const categorySelect = document.getElementById('discover-category-select');
       if (categorySelect) categorySelect.value = 'Websites & Landing Pages';
       const descInput = document.getElementById('discover-description-input');
       if (descInput) descInput.value = '';
+      const queryInput = document.getElementById('discover-search-query-input');
+      if (queryInput) queryInput.value = '';
+      const queryCount = document.getElementById('discover-search-query-count');
+      if (queryCount) queryCount.textContent = '';
       if (currentPromptAbortController) {
         currentPromptAbortController.abort();
         currentPromptAbortController = null;
       }
+      promptOperationState.status = 'idle';
+      promptOperationState.requestId++;
+      promptOperationState.errorMessage = '';
+      updatePromptOperationUI();
       validateDiscoverForm();
     }
 
@@ -6278,12 +6398,15 @@ export function getAdminScripts(): string {
 
       const categorySelect = document.getElementById('discover-category-select');
       const descInput = document.getElementById('discover-description-input');
+      const queryInput = document.getElementById('discover-search-query-input');
 
       const category = categorySelect ? categorySelect.value : 'Websites & Landing Pages';
-      const query = descInput ? descInput.value.trim() : '';
+      const promptDescription = descInput ? descInput.value.trim() : '';
+      const searchQuery = queryInput ? queryInput.value.trim() : '';
+      const effectiveQuery = searchQuery || promptDescription;
 
-      if (!query) {
-        alert('Please enter or verify the image search description.');
+      if (!effectiveQuery) {
+        alert('Please enter or verify the image search query or scene description.');
         return;
       }
 
@@ -6300,14 +6423,14 @@ export function getAdminScripts(): string {
 
       const topicTitleEl = document.getElementById('discover-progress-topic');
       const detailBox = document.getElementById('discover-live-detail-box');
-      if (topicTitleEl) topicTitleEl.textContent = '"' + query + '"';
+      if (topicTitleEl) topicTitleEl.textContent = '"' + effectiveQuery + '"';
 
       for (let i = 1; i <= 5; i++) {
         updateDiscoverStep(i, i === 1 ? 'active' : 'pending');
       }
 
       try {
-        if (detailBox) detailBox.textContent = 'Initializing search strategy for "' + query + '" (' + category + ')...';
+        if (detailBox) detailBox.textContent = 'Initializing search strategy for "' + effectiveQuery + '" (' + category + ')...';
         await new Promise((r) => setTimeout(r, 300));
 
         updateDiscoverStep(1, 'completed');
@@ -6317,7 +6440,11 @@ export function getAdminScripts(): string {
         const resPromise = guardedFetch('/api/admin/images/candidate-discovery', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ query, category }),
+          body: JSON.stringify({
+            query: promptDescription,
+            searchQuery: searchQuery || undefined,
+            category,
+          }),
         });
 
         await new Promise((r) => setTimeout(r, 400));
@@ -6350,7 +6477,7 @@ export function getAdminScripts(): string {
 
         if (total === 0 || (added === 0 && skipped === 0)) {
           const emptyTopicEl = document.getElementById('discover-empty-topic-name');
-          if (emptyTopicEl) emptyTopicEl.textContent = '"' + query + '" (' + category + ')';
+          if (emptyTopicEl) emptyTopicEl.textContent = '"' + effectiveQuery + '" (' + category + ')';
           setDiscoverModalView('empty');
         } else {
           const topicNameEl = document.getElementById('discover-result-topic-name');
@@ -6358,7 +6485,7 @@ export function getAdminScripts(): string {
           const addedEl = document.getElementById('discover-stat-added');
           const skippedEl = document.getElementById('discover-stat-skipped');
 
-          if (topicNameEl) topicNameEl.textContent = query + ' [' + category + ']';
+          if (topicNameEl) topicNameEl.textContent = effectiveQuery + ' [' + category + ']';
           if (totalEl) totalEl.textContent = String(total);
           if (addedEl) addedEl.textContent = String(added);
           if (skippedEl) skippedEl.textContent = String(skipped);
@@ -7217,6 +7344,10 @@ export function getAdminScripts(): string {
     window.openDiscoverImageModal = openDiscoverImageModal;
     window.handleDiscoverCategoryChange = handleDiscoverCategoryChange;
     window.handleDiscoverTopicSelectChange = handleDiscoverCategoryChange; // Backwards compatibility alias
+    window.handleDiscoverDescriptionInput = handleDiscoverDescriptionInput;
+    window.handleDiscoverSearchQueryInput = handleDiscoverSearchQueryInput;
+    window.suggestAlternativeScene = suggestAlternativeScene;
+    window.retryPromptGeneration = retryPromptGeneration;
     window.validateDiscoverForm = validateDiscoverForm;
     window.startCandidateDiscovery = startCandidateDiscovery;
     window.startAiImageGeneration = startAiImageGeneration;

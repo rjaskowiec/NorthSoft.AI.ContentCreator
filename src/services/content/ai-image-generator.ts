@@ -23,6 +23,7 @@ import { AppError } from '../../core/errors';
 import type { IAIProvider } from '../../ai/provider';
 import { QuotaManager } from '../ai/quota-manager';
 import { ImageLibraryService } from './image-library-service';
+import { deriveImageSearchQuery } from './image-service';
 
 export const AI_IMAGE_GENERATION_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 export const AI_IMAGE_DAILY_LIMIT = 1;
@@ -121,8 +122,12 @@ export interface GeneratedSceneConcept {
   emotionalTone: EmotionalIntent;
   visualMotif: string;
   promptDescription: string;
+  searchQuery?: string;
   compositionGuidance: string;
   rationale: string;
+  peoplePerspective?: string;
+  settingType?: string;
+  compositionType?: string;
 }
 
 export const AI_CONCEPT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8';
@@ -229,59 +234,67 @@ export async function getCategoryConceptHistory(
 
 /**
  * Visual scope and creative exploration directions per category.
- * Used as inspirational vectors for the LLM art director, NOT as rigid templates or rotating arrays.
+ * Used as inspirational vectors for the LLM art director across varied people, settings, actions, and compositions.
+ * Never uses generic futuristic tropes, sci-fi machinery, or identical room templates.
  */
 export const CATEGORY_CREATIVE_VECTORS: Record<string, string[]> = {
   'Websites & Landing Pages': [
-    'Cross-device responsive layout setup (desktop, tablet, and mobile positioned together displaying unified adaptive interface)',
-    'UI/UX design exploration (designer with physical design system typography cards or paper wireframes)',
-    'Focused developer at workstation building custom component architecture',
-    'Tangible client consultation examining business goals and brand architecture',
-    'Real user conducting usability walkthrough on an authentic device in their daily workflow',
-    'Architectural before-and-after visual contrast in a modern creative studio',
+    'Web developer and local business owner reviewing responsive site layout across dual monitors in sunny studio',
+    'Client in design consultation discussing homepage usability and navigation with consultant at timber table',
+    'Artisan inspecting customer checkout flow on tablet at clean wooden workshop counter',
+    'Candid over-the-shoulder shot of customer comfortably completing mobile purchase in bright cafe',
+    'Creative pair conducting website accessibility and usability walkthrough in airy Scandinavian conference room',
+    'Close-up hands of business founder updating online catalog products on modern laptop',
   ],
   'AI & Business Automation': [
-    'Automated order processing or logistics monitoring with status indicator panels',
-    'Data scientist verifying neural network predictions on minimalist dashboard',
-    'Specialist reviewing robotic automation or automated workflow trigger in clean environment',
-    'System architect discussing workflow blueprint with team over architectural drafts',
+    'Small business owner organizing automated delivery notifications on phone while packing customer orders',
+    'Cafe owner observing automated inventory tracking dashboard while preparing artisanal coffee',
+    'Team reviewing automated client booking calendar in sunlit Scandinavian office',
+    'Consultant showing boutique retailer an automated email workflow on tablet across timber counter',
+    'Independent entrepreneur relaxed at home office desk as automated invoicing finishes running',
+    'Warehouse manager with clipboard reviewing automated dispatch status at clean packing bay',
   ],
   'Marketing & Customer Acquisition': [
-    'Multi-channel campaign planning with physical sticky notes and digital funnel metrics',
-    'Content creator adjusting directional studio lighting for product presentation',
-    'Marketing manager presenting lead conversion trends to colleague',
-    'Customer acquisition workshop in an airy Scandinavian co-working lounge',
+    'Retailer and marketing strategist reviewing printed customer feedback cards in bright storefront',
+    'Marketing consultant and boutique owner brainstorming campaign goals over notebooks and coffee',
+    'Small business founder reviewing organic search growth metrics with colleague on sunny balcony office',
+    'Content creator arranging natural product display by bright window for local social campaign',
+    'Entrepreneur mapping customer journey stages with sticky notes on clean glass partition',
   ],
   'Sales & Conversion Process': [
-    'Tangible contract or commercial agreement signing with client in sunny boardroom',
-    'Sales executive reviewing qualified pipeline metrics with subtle satisfied smile',
-    'Boutique owner demonstrating product benefits to engaged customer',
-    'Customer onboarding walkthrough in contemporary Nordic retail or consulting space',
+    'Boutique owner warmly handing wrapped purchase to smiling customer across wooden sales counter',
+    'Client and account manager signing agreement with fountain pen in sunlit meeting space',
+    'Independent service provider presenting transparent pricing options to customer in quiet reception',
+    'Retail associate demonstrating product features to engaged patron in modern Nordic shop',
+    'Entrepreneur reviewing conversion milestones with quiet pride at minimalist desk',
   ],
   'Small Business Productivity & Ops': [
-    'Workshop craftsman or warehouse manager performing digital inventory audit',
-    'Entrepreneur preparing packages for daily shipment in neat packaging bay',
-    'Team standup meeting around physical Kanban schedule board',
-    'Operations specialist streamlining order fulfillment process',
+    'Craftsman in tidy workshop checking digital inventory on wall-mounted tablet',
+    'Business partners prioritizing weekly operational tasks on physical whiteboard',
+    'Entrepreneur organizing neat shipment packages ready for morning courier pickup',
+    'Small team conducting quick 5-minute morning standup in open studio workspace',
+    'Office manager streamlining digital document filing at plant-filled workstation',
   ],
   'Customer Experience & Trust': [
-    'Friendly, unhurried customer consultation at a clean reception desk',
-    'Support specialist with headset attentively assisting customer via chat interface',
-    'Satisfied client shaking hands with account manager in bright lobby',
-    'Delighted customer experiencing responsive customer service on mobile',
+    'Friendly customer specialist greeting client with genuine smile at bright modern reception desk',
+    'Customer comfortably relaxing in consulting chair discussing project with approachable advisor',
+    'Business owner shaking hands with satisfied client near open storefront entrance',
+    'Service professional attentively answering customer questions with open body language',
+    'Delighted customer experiencing smooth appointment booking on smartphone in comfortable waiting lounge',
   ],
   'Local Business & Regional Context': [
-    'Local shopkeeper welcoming patron into cozy neighborhood storefront',
-    'Artisanal coffee roaster or local service provider greeting regular customer',
-    'Community business owner adjusting shop window display on quiet Nordic street',
-    'Regional contractor discussing architectural blueprint with homeowner on site',
+    'Neighborhood bakery or coffee shop owner opening welcoming storefront door in morning light',
+    'Local tradesperson and homeowner reviewing architectural renovation sketch on site',
+    'Specialty shop owner arranging artisanal goods on wooden display shelves on quiet European street',
+    'Regional business owner conversing with regular customer outside boutique in Nordic town',
   ],
   'General': [
     'Contemporary Scandinavian workplace with natural timber, plants, and calm lighting',
-    'Collaborative pair discussing architectural project sketches in modern office',
-    'Strategic planning session with clean minimalist visual aids',
+    'Collaborative pair discussing architectural project sketches across uncluttered oak table',
+    'Quiet focused business owner organizing workday with notebook, pen, and coffee at sunny desk',
   ],
 };
+
 
 /**
  * Summarizes the dominant motifs and situations in the existing history
@@ -410,6 +423,13 @@ export function validateConceptNovelty(
 
   const candSitLower = candidate.situation.toLowerCase().trim();
   const candActLower = candidate.action.toLowerCase().trim();
+  const candDescLower = candidate.promptDescription.toLowerCase().trim();
+
+  // Guard against repetitive futuristic / sci-fi template defaulting
+  const futuristicTropes = ['futuristic room', 'holographic', 'hologram', 'sci-fi machinery', 'neon tech lab', 'cybernetic'];
+  if (futuristicTropes.some((trope) => candDescLower.includes(trope) || candSitLower.includes(trope))) {
+    return { valid: false, reason: 'Candidate contains generic futuristic or sci-fi machinery tropes.' };
+  }
 
   for (const item of history) {
     if (item.situation && item.situation.trim().length > 10) {
@@ -441,7 +461,12 @@ export function validateConceptNovelty(
 /**
  * Generates an authentic, novel scene concept using Cloudflare Workers AI (Llama 3.1 8B Instruct).
  * The AI analyzes the post narrative, determines the emotional intent, and conceives a fresh
- * scene contrasting with representative category history.
+ * scene contrasting with representative category history across 5 creative dimensions:
+ * People, Setting, Action, Composition, and Visual treatment.
+ *
+ * Produces two explicitly separated outputs:
+ * 1. promptDescription: Detailed, visually specific commercial scene for FLUX.1 Schnell text-to-image.
+ * 2. searchQuery: Concise 3–8 word English noun-phrase query optimized for stock photograph search.
  */
 export async function generateNovelImageConcept(
   aiProvider: IAIProvider,
@@ -456,6 +481,18 @@ export async function generateNovelImageConcept(
   const categoryVectors = CATEGORY_CREATIVE_VECTORS[category] || CATEGORY_CREATIVE_VECTORS['General'] || [];
   const creativeDirectionsText = categoryVectors.map((v) => `* ${v}`).join('\n');
 
+  // Extract recent prompt actions/settings to explicitly discourage repeating the same immediate setups
+  const recentHistorySnippets = history
+    .slice(0, 8)
+    .map((h) => {
+      const parts: string[] = [];
+      if (h.situation) parts.push(`Situation: "${h.situation}"`);
+      if (h.action) parts.push(`Action: "${h.action}"`);
+      if (h.visualMotif) parts.push(`Motif: "${h.visualMotif}"`);
+      return parts.join(' | ');
+    })
+    .filter(Boolean);
+
   for (let attempt = 1; attempt <= 2; attempt++) {
     const promptMessages = [
       {
@@ -465,17 +502,29 @@ Your role is to conceive ONE completely fresh, authentic commercial photography 
 
 AI RESPONSIBILITIES & CREATIVE MANDATE:
 1. SEMANTIC EMOTIONAL INTENT: Analyze the post context and theme. Autonomously choose the appropriate emotional intent ('positive', 'neutral', 'problem-aware', or 'collaborative') based on what serves the narrative, rather than relying on keywords.
-2. NO CLICHÉ OR COSMETIC REPETITION: Do NOT simply swap a laptop for a tablet, change a character's gender/ethnicity, or alter the camera angle while keeping the same core situation.
-3. HISTORICAL LIBRARY CONTEXT (What we already have — do NOT repeat these situations):
-${historyOverview}
+2. CREATIVE DIVERSITY ACROSS 5 DIMENSIONS:
+   - People: business owner, customer, client, consultant, artisan, small team, or still life / no visible people.
+   - Setting: small business office, retail storefront, workshop, cafe counter, sunny client meeting space, warehouse packing station, home office, outdoor Nordic street.
+   - Action: discussion, decision-making, customer interaction, unhurried planning, hands-on crafting, packaging, reviewing blueprints or physical samples.
+   - Composition: close-up on hands/tools, medium over-the-shoulder, wide environmental documentary, low-angle natural perspective, candid side profile.
+   - Visual Treatment: natural daylight documentary photography, authentic candid editorial, warm Scandinavian interior tones, crisp commercial still life.
+3. STRICT PROHIBITION ON SCI-FI & REPETITIVE TROPES:
+   - NEVER generate futuristic clichés: NO glowing holographic screens, NO futuristic rooms, NO sci-fi machinery, NO neon tech laboratories.
+   - DO NOT default to a repetitive setup of "a specialist in a futuristic room staring at complex innovation screens".
+   - The scene must depict a credible, contemporary, photorealistic business situation.
+4. TWO EXPLICITLY SEPARATE OUTPUTS:
+   - "promptDescription": 2-3 sentences rich, visually specific commercial scene description for FLUX.1 text-to-image generation.
+   - "searchQuery": Concise 3-8 word English noun-phrase query optimized for stock photography search (e.g. "small business AI automation", "satisfied customer business meeting", "person using smartphone shopping", "small business owner planning work"). Do NOT include camera instructions, lighting words, or full narrative sentences in the search query.
+5. RECENT SCENES & SITUATIONS TO CONTRAST WITH (do NOT repeat these):
+${recentHistorySnippets.length > 0 ? recentHistorySnippets.map((r) => `* ${r}`).join('\n') : (historyOverview || dominantThemes.map((t) => `* ${t}`).join('\n'))}
 
 Frequent motifs already well-covered in library (explore outside these):
 ${dominantThemes.map((t) => `* ${t}`).join('\n')}
 
-4. INSPIRATIONAL VECTORS (Explore one of these directions or conceive an equally novel situation):
+6. INSPIRATIONAL VECTORS (Explore one of these directions or conceive an equally novel situation):
 ${creativeDirectionsText}
 
-5. EDITORIAL CONTEXT:
+7. EDITORIAL CONTEXT:
 ${postContext ? `Accompanying post/article: "${postContext.slice(0, 350)}"` : 'General category editorial photography.'}
 ${userHint ? `User preference/query: "${userHint}"` : ''}
 
@@ -488,13 +537,14 @@ OUTPUT FORMAT: You MUST return strictly valid JSON matching this schema:
   "emotionalTone": "positive" | "neutral" | "problem-aware" | "collaborative",
   "visualMotif": "Key physical visual motif (e.g. oak sample board, architectural glass partition, rugged clipboard)",
   "promptDescription": "2-3 sentences clear candid scene description suitable for text-to-image prompt (what the person does, what they look at, realistic posture)",
+  "searchQuery": "Concise 3-8 word English noun phrase for stock search (e.g. 'small business owner planning work')",
   "compositionGuidance": "1 sentence on camera distance, daylight direction, and uncluttered composition",
   "rationale": "Clear analytical reasoning explaining how this concept provides fresh narrative value compared to existing history"
 }`,
       },
       {
         role: 'user' as const,
-        content: `Analyze the context and history for "${category}", determine the narrative emotional tone, and conceive a semantically fresh, authentic photography concept. Return strictly the JSON object.`,
+        content: `Analyze the context and history for "${category}", determine the narrative emotional tone, and conceive a semantically fresh, authentic photography concept with separate promptDescription and searchQuery. Return strictly the JSON object.`,
       },
     ];
 
@@ -524,6 +574,14 @@ OUTPUT FORMAT: You MUST return strictly valid JSON matching this schema:
           ? (parsedTone as EmotionalIntent)
           : 'neutral';
 
+        const rawPromptDesc = String(parsed.promptDescription).trim();
+        const rawSearchQuery = parsed.searchQuery ? String(parsed.searchQuery).trim() : '';
+
+        // Enforce separate, clean 3-8 word search query
+        const resolvedSearchQuery = (rawSearchQuery.length >= 5 && rawSearchQuery.split(/\s+/).length <= 8 && !rawSearchQuery.includes('.'))
+          ? rawSearchQuery
+          : deriveImageSearchQuery(rawSearchQuery || rawPromptDesc, category);
+
         const concept: GeneratedSceneConcept = {
           id: `concept-${crypto.randomUUID().slice(0, 8)}`,
           situation: String(parsed.situation).trim(),
@@ -532,7 +590,8 @@ OUTPUT FORMAT: You MUST return strictly valid JSON matching this schema:
           businessNeed: String(parsed.businessNeed || '').trim(),
           emotionalTone: resolvedTone,
           visualMotif: String(parsed.visualMotif || '').trim(),
-          promptDescription: String(parsed.promptDescription).trim(),
+          promptDescription: rawPromptDesc,
+          searchQuery: resolvedSearchQuery,
           compositionGuidance: String(parsed.compositionGuidance || 'natural daylight, uncluttered workspace, clean photographic composition').trim(),
           rationale: String(parsed.rationale || 'Novel situational perspective for category').trim(),
         };
@@ -560,6 +619,7 @@ OUTPUT FORMAT: You MUST return strictly valid JSON matching this schema:
 
   throw new AppError('Unable to generate a sufficiently distinct scene concept within attempt limit.', 422, 'CONCEPT_DIVERSITY_LIMIT');
 }
+
 
 /**
  * Builds an editorial, photographic business prompt tailored for NorthSoft and FLUX.1 Schnell.

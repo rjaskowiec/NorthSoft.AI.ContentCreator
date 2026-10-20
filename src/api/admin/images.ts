@@ -71,39 +71,56 @@ imagesRouter.get('/images/discovery-topics', async (c) => {
 /**
  * POST /api/admin/images/candidate-discovery
  * Triggers candidate collection for candidate topics or custom search query.
+ * Strictly uses concise 3-8 word search query, preserving detailed prompts separately.
  */
 imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
   const db = c.env.DB;
-  const body = (await c.req.json().catch(() => ({}))) as { query?: string; category?: string };
-  const query = (body.query || 'technology business').trim();
-  if (!query) {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    query?: string;
+    searchQuery?: string;
+    category?: string;
+  };
+  const rawInput = (body.searchQuery || body.query || 'technology business').trim();
+  if (!rawInput) {
     return c.json({ success: false, error: 'Topic or search query is required.' }, 400);
   }
 
   const { determineContentPillar, CONTENT_PILLARS } = await import('../../services/research/taxonomy');
-  const pillarKey = determineContentPillar(query, query);
+  const { deriveImageSearchQuery, buildDiscoveryQueryHierarchy } = await import('../../services/content/image-service');
+  const pillarKey = determineContentPillar(rawInput, rawInput);
   const pillarInfo = CONTENT_PILLARS[pillarKey];
   const category = (body.category || pillarInfo?.name || 'Technology').trim();
 
+  // Ensure concise 3-8 word search query for Openverse
+  const cleanSearchQuery = deriveImageSearchQuery(rawInput, category);
+
   const openverse = new OpenverseImageService(c.env);
   const imgService = new ImageLibraryService(db);
-  const { buildDiscoveryQueryHierarchy } = await import('../../services/content/image-service');
   const { evaluateImageRelevance, filterDiverseCandidates } = await import('../../services/content/image-relevance-evaluator');
   const { checkEditorialBrandSafety } = await import('../../services/content/editorial-policy');
 
   try {
-    // Generate bounded retry queries: initial query -> broader business query -> category scene
-    const searchQueries = buildDiscoveryQueryHierarchy(query, category);
-    let chosenQuery = query;
+    // Generate bounded retry queries starting with concise search query -> broader business query -> category scene
+    const searchQueries = buildDiscoveryQueryHierarchy(cleanSearchQuery, category);
+    let chosenQuery = cleanSearchQuery;
     let rawCandidates: import('../../services/content/image-service.interface').ImageCandidate[] = [];
     let relevantCandidatesWithScore: Array<{
       cand: import('../../services/content/image-service.interface').ImageCandidate;
       relevance: import('../../services/content/image-relevance-evaluator').ImageRelevanceResult;
     }> = [];
 
+    let totalRawFound = 0;
+    let brandSafetyRejected = 0;
+    let relevanceRejected = 0;
+    let lastSearchDiagnostics: import('../../services/content/image-service.interface').SearchDiagnostics | undefined;
+
     for (const q of searchQueries) {
       chosenQuery = q;
-      const candidates = await openverse.searchImages(q, 10);
+      const searchRes = await openverse.searchImagesWithDiagnostics(q, 10);
+      lastSearchDiagnostics = searchRes.diagnostics;
+      const candidates = searchRes.candidates;
+      totalRawFound += candidates.length;
+
       if (candidates.length === 0) continue;
 
       rawCandidates = candidates;
@@ -114,6 +131,7 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
           title: cand.title,
           summary: (cand.tags || []).join(' '),
         });
+        if (!safety.passed) brandSafetyRejected++;
         return safety.passed;
       });
 
@@ -130,6 +148,7 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
             },
             `${q} ${category}`,
           );
+          if (!relevance.qualified) relevanceRejected++;
           return { cand, relevance };
         })
         .filter(({ relevance }) => relevance.qualified);
@@ -152,6 +171,7 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 
     let addedCount = 0;
     let skippedCount = 0;
+    let unreachableSkipped = 0;
 
     const { validateImageUrl } = await import('../../services/publishing/image-validator');
 
@@ -166,32 +186,33 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
       if (cand.url) {
         const urlCheck = await validateImageUrl(cand.url, 4000);
         if (!urlCheck.valid) {
+          unreachableSkipped++;
           skippedCount++;
           continue;
         }
       }
 
       const id = await imgService.addCandidate({
-          title: cand.title,
-          sourceUrl: cand.url,
-          originalPageUrl: cand.sourceUrl,
-          author: cand.author,
-          authorUrl: cand.authorUrl,
-          license: cand.license,
-          licenseUrl: cand.licenseUrl,
-          category,
-          keywords: (cand.tags || []).join(', '),
-          description: `Discovered from Openverse topic: "${chosenQuery}"`,
-          discoveryQuery: chosenQuery,
-          score: cand.relevanceScore,
-          visualRelevanceScore: cand.relevanceScore ? cand.relevanceScore / 100 : 0.7,
-          visualRelevanceReason: cand.relevanceReason || 'Verified business relevance',
-        });
-        if (id) {
-          addedCount++;
-        } else {
-          skippedCount++;
-        }
+        title: cand.title,
+        sourceUrl: cand.url,
+        originalPageUrl: cand.sourceUrl,
+        author: cand.author,
+        authorUrl: cand.authorUrl,
+        license: cand.license,
+        licenseUrl: cand.licenseUrl,
+        category,
+        keywords: (cand.tags || []).join(', '),
+        description: `Discovered from Openverse topic: "${chosenQuery}"`,
+        discoveryQuery: chosenQuery,
+        score: cand.relevanceScore,
+        visualRelevanceScore: cand.relevanceScore ? cand.relevanceScore / 100 : 0.7,
+        visualRelevanceReason: cand.relevanceReason || 'Verified business relevance',
+      });
+      if (id) {
+        addedCount++;
+      } else {
+        skippedCount++;
+      }
     }
 
     let aiGeneratedCount = 0;
@@ -208,7 +229,7 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 
         if (quotaCheck.allowed) {
           await aiGenerator.generateAndPersistImage(db, c.req.url, {
-            description: query,
+            description: cleanSearchQuery,
             category,
           });
           aiGeneratedCount = 1;
@@ -222,11 +243,29 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
       }
     }
 
+    const providerErrorNotice = lastSearchDiagnostics?.error ? ` (${lastSearchDiagnostics.error})` : '';
     const steps = [
-      { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed' },
-      { step: 'search', label: `Searching image sources (Query: "${chosenQuery}")`, status: 'completed', details: `Found ${rawCandidates.length} candidate(s)` },
-      { step: 'metadata', label: 'Evaluating candidate metadata & quality', status: 'completed' },
-      { step: 'dedup', label: 'Checking duplicates & reuse window', status: 'completed', details: `${skippedCount} duplicate(s) skipped` },
+      { step: 'strategy', label: 'Topic & strategy initialized', status: 'completed', details: `Search query: "${chosenQuery}"` },
+      {
+        step: 'search',
+        label: `Searching image sources (Query: "${chosenQuery}")`,
+        status: lastSearchDiagnostics?.providerSuccess ? 'completed' : 'completed',
+        details: lastSearchDiagnostics?.providerSuccess
+          ? `Found ${rawCandidates.length} candidate(s)`
+          : `Provider: ${lastSearchDiagnostics?.error || 'No results'}${providerErrorNotice}`,
+      },
+      {
+        step: 'metadata',
+        label: 'Evaluating candidate metadata & quality',
+        status: 'completed',
+        details: `${relevantCandidatesWithScore.length} qualified (${brandSafetyRejected} unsafe, ${relevanceRejected} irrelevant rejected)`,
+      },
+      {
+        step: 'dedup',
+        label: 'Checking duplicates & reuse window',
+        status: 'completed',
+        details: `${skippedCount} skipped (${unreachableSkipped} unreachable)`,
+      },
     ];
 
     if (aiGeneratedCount > 0) {
@@ -245,16 +284,35 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
       details: `${addedCount} new candidate(s) saved as PENDING (${aiGeneratedCount} AI generated)`,
     });
 
+    const diagnostics = {
+      searchQuery: chosenQuery,
+      originalInput: rawInput,
+      provider: 'Openverse',
+      providerSuccess: lastSearchDiagnostics?.providerSuccess ?? false,
+      httpStatus: lastSearchDiagnostics?.httpStatus,
+      latencyMs: lastSearchDiagnostics?.providerLatencyMs ?? 0,
+      totalRawFound,
+      brandSafetyRejected,
+      relevanceRejected,
+      relevanceQualified: relevantCandidatesWithScore.length,
+      duplicatesSkipped: skippedCount,
+      unreachableSkipped,
+      savedCount: addedCount,
+      error: lastSearchDiagnostics?.error,
+      errorType: lastSearchDiagnostics?.errorType ?? 'NONE',
+    };
+
     return c.json({
       success: true,
-      topic: query,
-      chosenQuery,
+      topic: rawInput,
+      searchQuery: chosenQuery,
       category,
       totalDiscovered: rawCandidates.length + aiGeneratedCount,
       addedCount,
       skippedCount,
       aiGeneratedCount,
       aiGenerationNotice,
+      diagnostics,
       steps,
     });
   } catch (err: unknown) {
@@ -266,8 +324,8 @@ imagesRouter.post('/images/candidate-discovery', csrfProtection, async (c) => {
 /**
  * GET /api/admin/images/suggest-prompt
  * Conceives an authentic, novel scene concept using Cloudflare Workers AI based on
- * category history (published, approved, pending, rejected) and post context.
- * Never uses hardcoded scene lists or templates.
+ * category history (published, approved, pending, rejected) and post context across 5 dimensions.
+ * Produces both a detailed text-to-image prompt and a concise stock search query.
  */
 imagesRouter.get('/images/suggest-prompt', async (c) => {
   const db = c.env.DB;
@@ -292,6 +350,7 @@ imagesRouter.get('/images/suggest-prompt', async (c) => {
       success: true,
       category,
       prompt: concept.promptDescription,
+      searchQuery: concept.searchQuery,
       conceptId: concept.id,
       situation: concept.situation,
       action: concept.action,
@@ -312,6 +371,7 @@ imagesRouter.get('/images/suggest-prompt', async (c) => {
     }, 503);
   }
 });
+
 
 /**
  * GET /api/admin/images/quota
