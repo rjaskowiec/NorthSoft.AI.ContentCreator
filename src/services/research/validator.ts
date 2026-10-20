@@ -114,7 +114,16 @@ export function validateCandidateIdeaOutput(
   const errors: string[] = [];
 
   // Title validation
-  const title = typeof obj.title === 'string' ? obj.title.trim() : '';
+  const title =
+    typeof obj.title === 'string'
+      ? obj.title.trim()
+      : typeof obj.topic === 'string'
+        ? obj.topic.trim()
+        : typeof obj.headline === 'string'
+          ? obj.headline.trim()
+          : typeof obj.post_title === 'string'
+            ? obj.post_title.trim()
+            : '';
   if (!title || title.length < 5 || title.length > 250) {
     errors.push('title must be a string between 5 and 250 characters');
   }
@@ -123,9 +132,13 @@ export function validateCandidateIdeaOutput(
   const angle =
     typeof obj.angle === 'string'
       ? obj.angle.trim()
-      : typeof obj.whyRelevant === 'string'
-        ? obj.whyRelevant.trim()
-        : title;
+      : typeof obj.business_angle === 'string'
+        ? obj.business_angle.trim()
+        : typeof obj.content_angle === 'string'
+          ? obj.content_angle.trim()
+          : typeof obj.whyRelevant === 'string'
+            ? obj.whyRelevant.trim()
+            : title;
 
   // Hook validation
   const hook =
@@ -380,12 +393,42 @@ export function validateBatchCandidateIdeasOutput(
       rawList = obj.topics;
     } else if (Array.isArray(obj.angles)) {
       rawList = obj.angles;
-    } else if (obj.usefulAngle === false || obj.status === 'NO_USEFUL_ANGLE') {
-      const singleRes = validateCandidateIdeaOutput(JSON.stringify(obj));
-      return { valid: true, data: singleRes.data ? [singleRes.data] : [] };
-    } else {
-      // Single idea object fallback
+    } else if (Array.isArray(obj.posts)) {
+      rawList = obj.posts;
+    } else if (Array.isArray(obj.items)) {
+      rawList = obj.items;
+    } else if (Array.isArray(obj.content_ideas)) {
+      rawList = obj.content_ideas;
+    } else if (Array.isArray(obj.post_ideas)) {
+      rawList = obj.post_ideas;
+    } else if (
+      typeof obj.title === 'string' ||
+      typeof obj.topic === 'string' ||
+      typeof obj.headline === 'string' ||
+      obj.usefulAngle !== undefined
+    ) {
+      // Direct single idea object
       rawList = [obj];
+    } else {
+      const arrayKey = Object.keys(obj).find((k) => {
+        const val = obj[k];
+        return (
+          Array.isArray(val) &&
+          val.length > 0 &&
+          typeof val[0] === 'object' &&
+          val[0] !== null &&
+          !Array.isArray(val[0])
+        );
+      });
+      if (arrayKey) {
+        rawList = obj[arrayKey] as unknown[];
+      } else if (obj.usefulAngle === false || obj.status === 'NO_USEFUL_ANGLE') {
+        const singleRes = validateCandidateIdeaOutput(JSON.stringify(obj));
+        return { valid: true, data: singleRes.data ? [singleRes.data] : [] };
+      } else {
+        // Single idea object fallback
+        rawList = [obj];
+      }
     }
   }
 

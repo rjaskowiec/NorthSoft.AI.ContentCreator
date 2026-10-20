@@ -618,6 +618,23 @@ Return ONLY a valid JSON object matching this schema:
               title: selectedCandidates[0]?.item.title,
             });
 
+            await this.auditLogger.log({
+              eventType: 'AI_RESEARCH_COMPLETED',
+              entityType: 'research_run',
+              entityId: runId,
+              actor: 'ai',
+              level: 'INFO',
+              operation: 'Batch Inference Output',
+              correlationId: runId,
+              details: {
+                contentSnippet: completion.content.slice(0, 1500),
+                contentLength: completion.content.length,
+                batchValid: batchVal.valid,
+                batchErrors: batchVal.errors,
+                batchCount: batchVal.data?.length ?? 0,
+              },
+            });
+
             if (!batchVal.valid || !batchVal.data) {
               aiInvalidResponses++;
             } else if (batchVal.data.length === 0) {
