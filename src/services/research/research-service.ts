@@ -62,6 +62,15 @@ export interface ResearchRunSummary {
   aiInferenceSuccessful: number;
   aiInferenceFailed: number;
   fallbackExecutions: number;
+  /** AI replied but the payload failed schema validation (counted separately from quality rejections). */
+  aiInvalidResponses?: number;
+  /** Seeds read from the pool / skipped because their cluster is in cooldown. */
+  seedsConsidered?: number;
+  seedsSkippedCooldown?: number;
+  /** Candidates that actually reached an AI request. */
+  candidatesEvaluated?: number;
+  /** Distinct reasons topics were deferred (retained for later) rather than discarded. */
+  deferralReasons?: string[];
   topicsCreated: number; // Backward compatibility
   duplicatesFound: number; // Backward compatibility
   itemsDiscovered: number; // Backward compatibility
@@ -215,6 +224,11 @@ export class ResearchService {
     let aiInferenceSuccessful = 0;
     let aiInferenceFailed = 0;
     let fallbackExecutions = 0;
+    let aiInvalidResponses = 0;
+    let seedsConsidered = 0;
+    let seedsSkippedCooldown = 0;
+    let candidatesEvaluated = 0;
+    const deferralReasons: string[] = [];
 
     if (this.aiProvider.name === 'mock') {
       fallbackExecutions++;
@@ -325,6 +339,8 @@ export class ResearchService {
         // Fallback to 7 days
       }
 
+      // Items that were fetched but never analyzed (e.g. a run that was quota-limited) stay eligible for 14 days
+      const unanalyzedCutoffIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
       let candidateItems: RawItemRecord[] = [];
       try {
         const candidateRes = await this.db
@@ -335,12 +351,12 @@ export class ResearchService {
                AND (active_angles_count IS NULL OR active_angles_count < 3)
                AND (
                  (published_at IS NOT NULL AND published_at >= ?) OR 
-                 (fetched_at >= ?)
+                 (fetched_at >= ?) OR (status = 'NEW' AND fetched_at >= ?)
                )
              ORDER BY fetched_at DESC
              LIMIT 50`,
           )
-          .bind(watermarkIso, watermarkIso)
+          .bind(watermarkIso, watermarkIso, unanalyzedCutoffIso)
           .all<RawItemRecord>();
         candidateItems = candidateRes.results || [];
       } catch {
@@ -375,9 +391,9 @@ export class ResearchService {
                FROM editorial_seeds
                WHERE enabled = 1
                ORDER BY times_used ASC, last_used_at ASC NULLS FIRST
-               LIMIT ?`,
+               LIMIT 40`,
             )
-            .bind(seedSlotsNeeded)
+            .bind()
             .all<{
               id: string;
               pillar: string;
@@ -390,12 +406,15 @@ export class ResearchService {
 
           const seeds = seedsRes.results || [];
           for (const seed of seeds) {
-            // Check cluster cooldown on seed before injecting
+            seedsConsidered++;
+            if (candidateItems.length >= 5) break;
+            // Check cluster cooldown on seed before injecting (seed is NOT consumed; it stays available)
             const clusterCheck = TopicRegistry.isClusterInCooldown(
               seed.cluster_key as TopicClusterKey,
               history,
             );
             if (clusterCheck.inCooldown) {
+              seedsSkippedCooldown++;
               continue;
             }
 
@@ -417,12 +436,14 @@ export class ResearchService {
 
       sourceReuseCandidates = candidateItems.length;
       const selectableCandidates: SelectableCandidate<RawItemRecord>[] = [];
+      const prefilterRejectedIds: string[] = [];
 
       for (const item of candidateItems) {
         // Exclusion check (politics, entertainment, clickbait)
         const exclusion = isExcludedTopic(item.title, item.content_summary);
         if (exclusion.excluded) {
           rejectedIrrelevant++;
+          if (!item.id.startsWith('seed-')) prefilterRejectedIds.push(item.id);
           continue;
         }
 
@@ -430,6 +451,7 @@ export class ResearchService {
         const relEval = evaluateRelevance(item.title, item.content_summary);
         if (!relEval.passed) {
           rejectedTooTechnical++;
+          if (!item.id.startsWith('seed-')) prefilterRejectedIds.push(item.id);
           continue;
         }
 
@@ -438,6 +460,23 @@ export class ResearchService {
           pillar: relEval.pillar,
           score: relEval.score,
         });
+      }
+
+      // Persist deterministic pre-filter rejections so the same items are not re-evaluated every night
+      if (prefilterRejectedIds.length > 0) {
+        try {
+          for (let i = 0; i < prefilterRejectedIds.length; i += 50) {
+            const chunk = prefilterRejectedIds.slice(i, i + 50);
+            await this.db
+              .prepare(
+                `UPDATE research_items SET status = 'REJECTED' WHERE status = 'NEW' AND id IN (${chunk.map(() => '?').join(',')})`,
+              )
+              .bind(...chunk)
+              .run();
+          }
+        } catch {
+          // Best-effort: failure only means the items are re-checked next run
+        }
       }
 
       // Step 3: Multi-Pillar Diversity Selection
@@ -450,7 +489,8 @@ export class ResearchService {
       potentialAnglesDiscovered = selectedCandidates.length;
 
       // Step 4: Execute Workers AI completion to extract social post angles for selected candidate sources
-      for (const candidate of selectedCandidates) {
+      for (let candidateIndex = 0; candidateIndex < selectedCandidates.length; candidateIndex++) {
+        const candidate = selectedCandidates[candidateIndex]!;
         const item = candidate.item;
 
         // Enforce AI Quota Capacity Check
@@ -461,7 +501,9 @@ export class ResearchService {
         );
 
         if (!capacity.allowed) {
-          ideasDeferred++;
+          // Every candidate not yet evaluated is deferred (not lost): count them all, not just the first
+          ideasDeferred += selectedCandidates.length - candidateIndex;
+          deferralReasons.push(`AI quota: ${capacity.reason || 'capacity unavailable'}`);
           await this.auditLogger.log({
             eventType: 'AI_QUOTA_EXCEEDED',
             entityType: 'research_item',
@@ -557,6 +599,18 @@ Return ONLY a valid JSON object matching this schema:
 
         try {
           aiInferenceRequests++;
+          candidatesEvaluated++;
+          if (item.id.startsWith('seed-')) {
+            // Rotate seeds on attempt (not only on success) so one unproductive seed cannot starve the rest
+            try {
+              await this.db
+                .prepare('UPDATE editorial_seeds SET last_used_at = ? WHERE id = ?')
+                .bind(nowIso, item.id.replace('seed-', ''))
+                .run();
+            } catch {
+              // Ignore if seeds table is unavailable
+            }
+          }
           const completion = await this.aiProvider.complete({
             role: 'researcher',
             messages: [
@@ -580,7 +634,7 @@ Return ONLY a valid JSON object matching this schema:
 
           const valRes = validateCandidateIdeaOutput(completion.content);
           if (!valRes.valid || !valRes.data) {
-            rejectedTooTechnical++;
+            aiInvalidResponses++;
             continue;
           }
 
@@ -608,24 +662,9 @@ Return ONLY a valid JSON object matching this schema:
             continue;
           }
 
-          // Step 4.1: Topic Cluster Memory & Topic Fatigue Check (First line of diversity)
+          // A cluster in cooldown does NOT make the topic worthless: it is retained as 'deferred'
+          // with a future date (see below) instead of being discarded.
           const clusterCooldown = TopicRegistry.isClusterInCooldown(ideaData.clusterKey, history);
-
-          if (clusterCooldown.inCooldown) {
-            rejectedRecentCooldown++;
-            await this.auditLogger.log({
-              eventType: 'CLUSTER_COOLDOWN_REJECTED',
-              entityType: 'content_idea',
-              entityId: item.id,
-              actor: 'ai',
-              details: {
-                clusterKey: ideaData.clusterKey,
-                conflictingCluster: clusterCooldown.conflictingCluster,
-                reason: clusterCooldown.reason,
-              },
-            });
-            continue;
-          }
 
           // Step 4.2: Duplicate Detection Check against history and active angles (Last line of defense)
           const scheduling = topicRegistry.calculateSuggestedPublishDate(
@@ -665,6 +704,10 @@ Return ONLY a valid JSON object matching this schema:
           }
 
           const ideaId = crypto.randomUUID();
+          const isDeferredByCooldown = clusterCooldown.inCooldown;
+          const deferredUntilIso = isDeferredByCooldown
+            ? TopicRegistry.getClusterCooldownEnd(ideaData.clusterKey, history).toISOString()
+            : undefined;
           const pillar = ideaData.contentPillar;
           pillarBreakdown[pillar] = (pillarBreakdown[pillar] || 0) + 1;
 
@@ -754,29 +797,40 @@ Return ONLY a valid JSON object matching this schema:
             }
           }
 
-          // Record in Topic History with cluster_key
-          await topicRegistry.recordTopicHistory({
-            idea_id: ideaId,
-            content_pillar: pillar,
-            content_angle: ideaData.angle,
-            title: ideaData.title,
-            cluster_key: ideaData.clusterKey,
-            status: 'queued',
-            suggested_publish_date: scheduling.suggestedDate,
-          });
+          if (isDeferredByCooldown && deferredUntilIso) {
+            // Retain the unique idea: status 'deferred' + future date. It is NOT written to topic history yet,
+            // so it cannot itself block other topics; it is promoted to 'queued' once its cooldown elapses.
+            await this.db
+              .prepare(
+                "UPDATE content_ideas SET status = 'deferred', suggested_publish_date = ?, updated_at = ? WHERE id = ?",
+              )
+              .bind(deferredUntilIso, nowIso, ideaId)
+              .run();
+          } else {
+            // Record in Topic History with cluster_key
+            await topicRegistry.recordTopicHistory({
+              idea_id: ideaId,
+              content_pillar: pillar,
+              content_angle: ideaData.angle,
+              title: ideaData.title,
+              cluster_key: ideaData.clusterKey,
+              status: 'queued',
+              suggested_publish_date: scheduling.suggestedDate,
+            });
 
-          // Add to in-memory history so subsequent candidates in this run respect cluster cooldown
-          history.push({
-            id: ideaId,
-            idea_id: ideaId,
-            content_pillar: pillar,
-            content_angle: ideaData.angle,
-            title: ideaData.title,
-            cluster_key: ideaData.clusterKey,
-            status: 'queued',
-            suggested_publish_date: scheduling.suggestedDate,
-            created_at: nowIso,
-          });
+            // Add to in-memory history so subsequent candidates in this run respect cluster cooldown
+            history.push({
+              id: ideaId,
+              idea_id: ideaId,
+              content_pillar: pillar,
+              content_angle: ideaData.angle,
+              title: ideaData.title,
+              cluster_key: ideaData.clusterKey,
+              status: 'queued',
+              suggested_publish_date: scheduling.suggestedDate,
+              created_at: nowIso,
+            });
+          }
 
           // If derived from an editorial seed, increment seed usage
           if (item.id.startsWith('seed-')) {
@@ -805,7 +859,13 @@ Return ONLY a valid JSON object matching this schema:
             // Fallback
           }
 
-          ideasQueued++;
+          if (isDeferredByCooldown) {
+            rejectedRecentCooldown++;
+            ideasDeferred++;
+            deferralReasons.push(clusterCooldown.reason || 'cluster cooldown');
+          } else {
+            ideasQueued++;
+          }
 
           await this.auditLogger.log({
             eventType: 'TOPIC_CREATED',
@@ -827,7 +887,7 @@ Return ONLY a valid JSON object matching this schema:
           });
         } catch (aiErr: unknown) {
           aiInferenceFailed++;
-          rejectedTooTechnical++;
+          // Transport/AI errors are tracked via aiInferenceFailed only; they are not quality rejections.
           const aiErrMsg = aiErr instanceof Error ? aiErr.message : 'AI completion failed';
 
           await this.quotaManager.recordUsage(this.db, {
@@ -919,6 +979,11 @@ Return ONLY a valid JSON object matching this schema:
         aiInferenceSuccessful,
         aiInferenceFailed,
         fallbackExecutions,
+        aiInvalidResponses,
+        seedsConsidered,
+        seedsSkippedCooldown,
+        candidatesEvaluated,
+        deferralReasons: Array.from(new Set(deferralReasons)).slice(0, 5),
         localEstimatedTokens: localEstTokens,
         cloudflareVerifiedUsage: cfVerifiedNeurons,
         usageSource,
@@ -964,6 +1029,11 @@ Return ONLY a valid JSON object matching this schema:
       aiInferenceSuccessful,
       aiInferenceFailed,
       fallbackExecutions,
+      aiInvalidResponses,
+      seedsConsidered,
+      seedsSkippedCooldown,
+      candidatesEvaluated,
+      deferralReasons: Array.from(new Set(deferralReasons)).slice(0, 5),
       topicsCreated: ideasQueued,
       duplicatesFound: rejectedDuplicateAngle,
       itemsDiscovered: rawItemsDiscovered,

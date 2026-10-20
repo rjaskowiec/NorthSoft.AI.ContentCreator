@@ -31,12 +31,23 @@ import { CloudflareUsageService } from '../cloudflare/cloudflare-usage-service';
 import { D1QuotaService } from '../cloudflare/d1-quota-service';
 import { IntelligentSchedulingService } from '../publishing/intelligent-scheduler-service';
 import { ResearchService } from '../research/research-service';
+import { TopicRegistry } from '../research/topic-registry';
 import { ContentPlannerService } from './content-planner-service';
 import { ImageLibraryService } from './image-library-service';
 import { OpenverseImageService } from './image-service';
 
 export type PipelineStage = 'topics' | 'posts' | 'images' | 'scheduling';
 export type PipelineActor = 'admin' | 'system';
+
+/**
+ * Business outcome of a run, distinct from technical execution status (completed/failed):
+ *  - COMPLETED_WITH_OUTPUT: at least one durable artefact was produced (topic, deferred topic, post, image, schedule)
+ *  - COMPLETED_NO_WORK:     ran correctly but there was nothing eligible to do (legitimate idle state)
+ *  - BLOCKED:               eligible work exists but a named blocker prevents progress
+ *  - FAILED:                a stage threw or produced only failures
+ */
+export type PipelineOutcome = 'COMPLETED_WITH_OUTPUT' | 'COMPLETED_NO_WORK' | 'BLOCKED' | 'FAILED';
+
 
 const ACTIVE_TOPIC_STATUSES = "('queued', 'new', 'accepted', 'discovered', 'pending')";
 
@@ -52,6 +63,12 @@ export interface DiscoveryStageResult {
   duplicatesFound: number;
   rejectedCount: number;
   newProposalsCount: number;
+  deferredCount: number;
+  invalidResponses: number;
+  candidatesEvaluated: number;
+  seedsSkippedCooldown: number;
+  deferralReasons: string[];
+  researchError?: string;
   proposals: Array<{
     id: string;
     title: string;
@@ -109,12 +126,16 @@ export interface StageRunResult {
   success: boolean;
   summary: string;
   result?: DiscoveryStageResult | GenerationStageResult | ImagesStageResult | SchedulingStageResult;
+  outcome?: PipelineOutcome;
   error?: string;
 }
 
 export interface AutomationTickResult {
   ran: boolean;
   reason: string;
+  outcome?: PipelineOutcome;
+  /** Named blockers when outcome is BLOCKED (e.g. posts awaiting an approved image). */
+  blockers?: string[];
   steps: StageRunResult[];
 }
 
@@ -266,6 +287,12 @@ export class PipelineOrchestratorService {
         duplicatesFound: res.duplicatesFound,
         rejectedCount: (res.rejectedIrrelevant || 0) + (res.rejectedTooTechnical || 0) + (res.rejectedRecentCooldown || 0),
         newProposalsCount: res.topicsCreated,
+        deferredCount: res.ideasDeferred,
+        invalidResponses: res.aiInvalidResponses ?? 0,
+        candidatesEvaluated: res.candidatesEvaluated ?? res.aiInferenceRequests,
+        seedsSkippedCooldown: res.seedsSkippedCooldown ?? 0,
+        deferralReasons: res.deferralReasons ?? [],
+        researchError: res.status === 'failed' ? res.errorMessage || 'Research pipeline failed' : undefined,
         proposals: (recentProposals.results || []).map((p) => ({
           id: p.id,
           title: p.title,
@@ -622,21 +649,42 @@ export class PipelineOrchestratorService {
           const found = r.rawItemsDiscovered;
           const accepted = r.newProposalsCount;
           const rejected = r.rejectedCount + r.duplicatesFound + r.noUsefulAngleCount;
+          const outcome: PipelineOutcome = r.researchError
+            ? 'FAILED'
+            : accepted + r.deferredCount > 0
+              ? 'COMPLETED_WITH_OUTPUT'
+              : r.candidatesEvaluated === 0 && r.aiInferenceRequests === 0
+                ? 'COMPLETED_NO_WORK'
+                : 'BLOCKED';
           res = {
             stage,
-            success: true,
+            success: !r.researchError,
             result: r,
-            summary: `Znaleziono ${found} tematów, odrzucono ${rejected}, zaakceptowano ${accepted}`,
+            outcome,
+            summary:
+              `Znaleziono ${found} elementów źródłowych, oceniono AI ${r.candidatesEvaluated}, ` +
+              `odrzucono ${rejected}, odroczono ${r.deferredCount}, zaakceptowano ${accepted}` +
+              (r.invalidResponses ? `, nieprawidłowe odpowiedzi AI ${r.invalidResponses}` : '') +
+              (r.aiInferenceFailed ? `, błędy AI ${r.aiInferenceFailed}` : ''),
           };
-          await this.recordRunEnd(runId, 'completed', 'topics', {
+          await this.recordRunEnd(runId, r.researchError ? 'failed' : 'completed', 'topics', {
             topicsDiscovered: accepted,
             message: res.summary,
             neuronsUsed: r.cloudflareVerifiedNeurons ?? 0,
             details: {
+              outcome,
               itemsFound: found,
               itemsAccepted: accepted,
               itemsRejected: rejected,
+              itemsDeferred: r.deferredCount,
+              candidatesEvaluated: r.candidatesEvaluated,
               duplicates: r.duplicatesFound,
+              noUsefulAngle: r.noUsefulAngleCount,
+              invalidAiResponses: r.invalidResponses,
+              aiFailures: r.aiInferenceFailed,
+              seedsSkippedCooldown: r.seedsSkippedCooldown,
+              deferralReasons: r.deferralReasons,
+              researchError: r.researchError,
               proposals: r.proposals.map((p) => ({ id: p.id, title: p.title, pillar: p.contentPillar, status: 'accepted' })),
               sourcesChecked: r.sourcesChecked,
               aiRequests: r.aiInferenceRequests,
@@ -647,10 +695,16 @@ export class PipelineOrchestratorService {
         case 'posts': {
           const r = await this.runPostGeneration(undefined, actor);
           const ok = r.finalDecision === 'PASS';
+          const postOutcome: PipelineOutcome = ok
+            ? 'COMPLETED_WITH_OUTPUT'
+            : r.finalDecision === 'DEFERRED' || r.finalDecision === 'BLOCKED'
+              ? 'BLOCKED'
+              : 'FAILED';
           res = {
             stage,
             success: ok,
             result: r,
+            outcome: postOutcome,
             summary: ok ? `Wygenerowano post: "${r.title}"` : `Post odrzucony (${r.finalDecision}): ${r.rejectionReason || ''}`,
           };
           await this.recordRunEnd(runId, ok ? 'completed' : r.finalDecision === 'DEFERRED' ? 'deferred' : 'failed', 'posts', {
@@ -658,6 +712,7 @@ export class PipelineOrchestratorService {
             topicsSelected: 1,
             message: res.summary,
             details: {
+              outcome: postOutcome,
               postId: r.postId,
               ideaId: r.ideaId,
               title: r.title,
@@ -671,17 +726,26 @@ export class PipelineOrchestratorService {
         }
         case 'images': {
           const r = await this.runImagesStage(actor);
-          const assigned = r.assignedFromLibrary + r.assignedFromOpenverse + r.generatedFromAi;
+          // Only a library match actually attaches an image. Openverse/AI results are PENDING candidates
+          // that still need manual approval, so the post remains blocked until then.
+          const attached = r.assignedFromLibrary;
+          const candidatesCreated = r.assignedFromOpenverse + r.generatedFromAi;
+          const imageOutcome: PipelineOutcome =
+            r.processed === 0 ? 'COMPLETED_NO_WORK' : attached > 0 ? 'COMPLETED_WITH_OUTPUT' : 'BLOCKED';
           res = {
             stage,
             success: true,
             result: r,
-            summary: `Ilustracje: przetworzono ${r.processed}, przypisano ${assigned} (biblioteka ${r.assignedFromLibrary}, Openverse ${r.assignedFromOpenverse}), brak ${r.notFound}`,
+            outcome: imageOutcome,
+            summary: `Ilustracje: przetworzono ${r.processed}, dołączono ${attached} z biblioteki, kandydaci do akceptacji ${candidatesCreated} (Openverse ${r.assignedFromOpenverse}, AI ${r.generatedFromAi}), bez wyniku ${r.notFound}`,
           };
           await this.recordRunEnd(runId, 'completed', 'images', {
             message: res.summary,
             details: {
+              outcome: imageOutcome,
               processed: r.processed,
+              attachedFromLibrary: attached,
+              candidatesAwaitingApproval: candidatesCreated,
               assignedFromLibrary: r.assignedFromLibrary,
               assignedFromOpenverse: r.assignedFromOpenverse,
               generatedFromAi: r.generatedFromAi,
@@ -693,10 +757,13 @@ export class PipelineOrchestratorService {
         }
         case 'scheduling': {
           const r = await this.runSchedulingStage(actor);
+          const schedOutcome: PipelineOutcome =
+            r.scheduledCount > 0 ? 'COMPLETED_WITH_OUTPUT' : r.skippedWithoutImage > 0 ? 'BLOCKED' : 'COMPLETED_NO_WORK';
           res = {
             stage,
             success: true,
             result: r,
+            outcome: schedOutcome,
             summary: `Zaplanowano ${r.scheduledCount} post(ów)` + (r.skippedWithoutImage ? `, ${r.skippedWithoutImage} czeka na obraz` : ''),
           };
           await this.recordRunEnd(runId, 'completed', 'scheduling', {
@@ -764,14 +831,23 @@ export class PipelineOrchestratorService {
     if (!inAiWindow) {
       // Outside AI background window: the only possible work is scheduling approved posts.
       // Fast-gate check with index seek on posts(status) avoids acquiring locks or running multi-table counts:
+      // Only a post that can actually be scheduled (approved + image + no pending schedule) justifies waking up;
+      // an approved post still waiting for an image is handled by the in-window images stage, not by 5-minute polling.
       const hasApprovedPost = await this.db
-        .prepare("SELECT id FROM posts WHERE status = 'approved' LIMIT 1")
+        .prepare(
+          `SELECT p.id FROM posts p
+           WHERE p.status = 'approved'
+             AND EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)
+             AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing'))
+           LIMIT 1`,
+        )
         .first<{ id: string }>();
 
       if (!hasApprovedPost) {
         return {
           ran: false,
           reason: 'Outside AI background window and no approved posts awaiting scheduling.',
+          outcome: 'COMPLETED_NO_WORK',
           steps: [],
         };
       }
@@ -785,24 +861,40 @@ export class PipelineOrchestratorService {
 
     const steps: StageRunResult[] = [];
     try {
+      // Independent of discovery: deferred topics whose cooldown elapsed return to the queue first,
+      // so an empty discovery result can never starve topics that are already waiting.
+      let promotedFromDeferred = 0;
+      if (inAiWindow) {
+        try {
+          promotedFromDeferred = (await new TopicRegistry(this.db).promoteDeferredTopics(now)).promoted;
+        } catch {
+          // Promotion is best-effort; deferred topics are retried on the next tick
+        }
+      }
+
       const counts = await this.getCounts(now);
       const needs = this.evaluateNeeds(config, counts);
 
       const d1QuotaService = new D1QuotaService();
       const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
 
-      if (isWithinAiBackgroundWindow(now)) {
+      let deferredByProtection = false;
+      if (inAiWindow) {
+        // One bounded AI step per tick. Each stage is gated per night so a stage that cannot make progress
+        // (e.g. images awaiting manual approval) cannot monopolize every tick and starve topics/posts.
         let aiStage: PipelineStage | null = null;
-        if (needs.images) aiStage = 'images';
+        if (needs.images && !(await this.stageRanTonight('images', now))) aiStage = 'images';
         else if (needs.topics && !(await this.stageRanTonight('topics', now))) aiStage = 'topics';
-        else if (needs.posts) aiStage = 'posts';
+        else if (needs.posts && (await this.postAttemptsTonight(now)) < config.maxPostsPerNight * 2) aiStage = 'posts';
 
         if (aiStage) {
           const deferCheck = d1QuotaService.shouldDeferStage(aiStage, d1Status, false);
           if (deferCheck.defer) {
+            deferredByProtection = true;
             steps.push({
               stage: aiStage,
               success: false,
+              outcome: 'BLOCKED',
               summary: deferCheck.reason || 'Deferred by D1 Protective Mode',
               error: deferCheck.reason,
             });
@@ -817,9 +909,31 @@ export class PipelineOrchestratorService {
         steps.push(await this.runStage('scheduling', 'system'));
       }
 
+      const blockers: string[] = [];
+      if (deferredByProtection) blockers.push('D1 protective mode deferred the AI stage');
+      if (countsAfter.postsWithoutImage > 0) {
+        blockers.push(`${countsAfter.postsWithoutImage} post(s) awaiting an approved image`);
+      }
+
+      const executed = steps.filter((s) => s.outcome !== undefined || s.success !== undefined);
+      let outcome: PipelineOutcome;
+      if (steps.some((s) => s.outcome === 'COMPLETED_WITH_OUTPUT') || promotedFromDeferred > 0) {
+        outcome = 'COMPLETED_WITH_OUTPUT';
+      } else if (executed.length > 0 && executed.every((s) => s.outcome === 'FAILED' || (!s.success && s.outcome === undefined))) {
+        outcome = 'FAILED';
+      } else if (blockers.length > 0 || steps.some((s) => s.outcome === 'BLOCKED')) {
+        outcome = 'BLOCKED';
+      } else {
+        outcome = 'COMPLETED_NO_WORK';
+      }
+
+      const stepSummary = steps.map((s) => s.summary).join(' | ');
+      const promotionNote = promotedFromDeferred > 0 ? `Przywrócono z odroczonych: ${promotedFromDeferred}` : '';
       return {
         ran: steps.length > 0,
-        reason: steps.length > 0 ? steps.map((s) => s.summary).join(' | ') : 'Nothing to do.',
+        reason: [stepSummary, promotionNote].filter(Boolean).join(' | ') || 'Nothing to do.',
+        outcome,
+        blockers: blockers.length > 0 ? blockers : undefined,
         steps,
       };
     } finally {
@@ -859,6 +973,20 @@ export class PipelineOrchestratorService {
       .bind(stage, this.tonightWindowStartIso(now))
       .first<{ id: string }>();
     return Boolean(row);
+  }
+
+  private async postAttemptsTonight(now: Date): Promise<number> {
+    try {
+      const row = await this.db
+        .prepare(
+          "SELECT COUNT(*) as cnt FROM orchestrator_runs WHERE trigger_type = 'cron' AND stage = 'posts' AND started_at >= ?",
+        )
+        .bind(this.tonightWindowStartIso(now))
+        .first<{ cnt: number }>();
+      return Number(row?.cnt ?? 0);
+    } catch {
+      return 0;
+    }
   }
 
   async getCounts(now: Date = new Date()): Promise<PipelineStatus['counts']> {

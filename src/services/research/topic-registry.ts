@@ -210,6 +210,126 @@ export class TopicRegistry {
   }
 
   /**
+   * Returns the earliest moment at which the given cluster is no longer blocked by cooldown.
+   * Pending (queued/scheduled) conflicts have no natural expiry, so they are re-evaluated after 2 days.
+   * Used to DEFER a unique topic to a future date instead of discarding it.
+   */
+  static getClusterCooldownEnd(
+    clusterKey: TopicClusterKey,
+    history: TopicHistoryRecord[],
+    baseDate = new Date(),
+    clusterCooldownDays = 21,
+    familyCooldownDays = 12,
+  ): Date {
+    const DAY = 24 * 60 * 60 * 1000;
+    const neighbors = new Set(getNeighborClusters(clusterKey));
+    let end = baseDate.getTime();
+
+    for (const item of history || []) {
+      const itemCluster = item.cluster_key as TopicClusterKey | undefined;
+      if (!itemCluster) continue;
+      const isDirect = itemCluster === clusterKey;
+      if (!isDirect && !neighbors.has(itemCluster)) continue;
+
+      const isPending = item.status === 'queued' || item.status === 'scheduled';
+      const days = isDirect ? clusterCooldownDays : familyCooldownDays;
+      const expiry = isPending
+        ? baseDate.getTime() + 2 * DAY
+        : new Date(item.created_at).getTime() + days * DAY;
+      if (Number.isFinite(expiry) && expiry > end) end = expiry;
+    }
+
+    const result = new Date(end);
+    result.setUTCHours(9, 0, 0, 0);
+    if (result.getTime() < baseDate.getTime()) result.setUTCDate(result.getUTCDate() + 1);
+    return result;
+  }
+
+  /**
+   * Promotes deferred topics whose cooldown has elapsed back to 'queued' so the posts stage can use them.
+   * Idempotent: only rows still in 'deferred' are touched, and each promotion is a single guarded UPDATE.
+   * Topics still blocked by cooldown get their suggested_publish_date pushed forward instead.
+   */
+  async promoteDeferredTopics(
+    now = new Date(),
+    limit = 5,
+  ): Promise<{ checked: number; promoted: number; stillDeferred: number }> {
+    const nowIso = now.toISOString();
+    const due = await this.db
+      .prepare(
+        `SELECT id, title, content_pillar, content_angle, cluster_key
+         FROM content_ideas
+         WHERE status = 'deferred' AND (suggested_publish_date IS NULL OR suggested_publish_date <= ?)
+         ORDER BY relevance_score DESC, created_at ASC
+         LIMIT ?`,
+      )
+      .bind(nowIso, limit)
+      .all<{
+        id: string;
+        title: string;
+        content_pillar: string | null;
+        content_angle: string | null;
+        cluster_key: string | null;
+      }>();
+
+    const rows = due.results || [];
+    if (rows.length === 0) return { checked: 0, promoted: 0, stillDeferred: 0 };
+
+    const history = await this.getRecentTopicHistory(21);
+    let promoted = 0;
+    let stillDeferred = 0;
+
+    for (const row of rows) {
+      const clusterKey = (row.cluster_key || '') as TopicClusterKey;
+      const cooldown = clusterKey
+        ? TopicRegistry.isClusterInCooldown(clusterKey, history, now)
+        : { inCooldown: false };
+
+      if (cooldown.inCooldown) {
+        const nextCheck = TopicRegistry.getClusterCooldownEnd(clusterKey, history, now);
+        await this.db
+          .prepare(
+            "UPDATE content_ideas SET suggested_publish_date = ?, updated_at = ? WHERE id = ? AND status = 'deferred'",
+          )
+          .bind(nextCheck.toISOString(), nowIso, row.id)
+          .run();
+        stillDeferred++;
+        continue;
+      }
+
+      const res = await this.db
+        .prepare("UPDATE content_ideas SET status = 'queued', updated_at = ? WHERE id = ? AND status = 'deferred'")
+        .bind(nowIso, row.id)
+        .run();
+      if ((res.meta?.changes ?? 1) === 0) continue;
+
+      promoted++;
+      const pillar = (row.content_pillar || 'SMALL_BUSINESS') as ContentPillar;
+      await this.recordTopicHistory({
+        idea_id: row.id,
+        content_pillar: pillar,
+        content_angle: row.content_angle || '',
+        title: row.title,
+        cluster_key: row.cluster_key || undefined,
+        status: 'queued',
+      });
+      history.push({
+        id: row.id,
+        idea_id: row.id,
+        content_pillar: pillar,
+        content_angle: row.content_angle || '',
+        title: row.title,
+        cluster_key: row.cluster_key || undefined,
+        status: 'queued',
+        created_at: nowIso,
+      });
+    }
+
+    return { checked: rows.length, promoted, stillDeferred };
+  }
+
+
+  /**
    * Fetches recent topic history from D1 database.
    */
   async getRecentTopicHistory(days = 21): Promise<TopicHistoryRecord[]> {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { imagesRouter } from '../../src/api/admin/images';
 import type { AppEnv } from '../../src/index';
@@ -95,6 +95,31 @@ function createMockApp(initialImages: any[] = [], systemTopics: any[] = []) {
 }
 
 describe('UX Redesign — Image Candidate Discovery', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          {
+            id: 'mock-openverse-1',
+            url: 'https://images.example.com/ai-support.jpg',
+            thumbnail: 'https://images.example.com/ai-support-thumb.jpg',
+            title: 'Modern AI Business Technology Workspace',
+            license: 'cc0',
+            creator: 'Photographer',
+            foreign_landing_url: 'https://example.com/image-1',
+            tags: ['ai', 'technology', 'business', 'computer', 'support'],
+          },
+        ],
+      }),
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('1. GET /images/discovery-topics returns standard content pillars and system topics', async () => {
     const { app, env } = createMockApp([], [{ id: 'idea-1', title: 'AI Customer Support Trends', category: 'AI & Automation' }]);
     const req = new Request('http://localhost/images/discovery-topics');

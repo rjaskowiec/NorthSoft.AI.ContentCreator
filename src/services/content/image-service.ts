@@ -237,12 +237,23 @@ export class OpenverseImageService implements ImageService {
     url.searchParams.set('license', 'cc0,pdm,by,by-sa');
     url.searchParams.set('page_size', limit.toString());
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': 'NorthSoft.AI.ContentCreator/0.1.0',
-        'Accept': 'application/json',
-      },
-    });
+    let response: Response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+      response = await fetch(url.toString(), {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'NorthSoft.AI.ContentCreator/0.1.0',
+          'Accept': 'application/json',
+        },
+      });
+    } catch (err: unknown) {
+      console.warn(`[OpenverseImageService] Network error searching openverse: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       console.warn(`[OpenverseImageService] Failed to search openverse: ${response.statusText}`);
