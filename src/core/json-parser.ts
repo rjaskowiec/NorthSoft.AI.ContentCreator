@@ -8,6 +8,7 @@
 
 export interface ParseAiJsonOptions {
   allowPlainTextFallback?: boolean;
+  allowArray?: boolean;
 }
 
 export function parseAiJsonResponse<T = Record<string, unknown>>(
@@ -31,25 +32,46 @@ export function parseAiJsonResponse<T = Record<string, unknown>>(
       .trim();
   }
 
+  // Helper to validate whether result matches expected object/array type
+  const isValidParsed = (val: unknown): boolean => {
+    if (!val || typeof val !== 'object') return false;
+    if (Array.isArray(val)) return !!options.allowArray;
+    return true;
+  };
+
   // 2. Direct JSON Parse Attempt
   try {
     const res = JSON.parse(cleaned);
-    if (res && typeof res === 'object' && !Array.isArray(res)) {
+    if (isValidParsed(res)) {
       return res as T;
     }
   } catch {
     // Fall through to extraction heuristics
   }
 
-  // 3. Extract JSON object substring between first '{' and last '}'
-  const startIdx = cleaned.indexOf('{');
-  const endIdx = cleaned.lastIndexOf('}');
+  // 3. Extract JSON array or object substring
+  const startObj = cleaned.indexOf('{');
+  const endObj = cleaned.lastIndexOf('}');
+  const startArr = options.allowArray ? cleaned.indexOf('[') : -1;
+  const endArr = options.allowArray ? cleaned.lastIndexOf(']') : -1;
+
+  // Determine whether object or array appears first / is more outer
+  let startIdx = -1;
+  let endIdx = -1;
+
+  if (startArr !== -1 && endArr > startArr && (startObj === -1 || startArr < startObj)) {
+    startIdx = startArr;
+    endIdx = endArr;
+  } else if (startObj !== -1 && endObj > startObj) {
+    startIdx = startObj;
+    endIdx = endObj;
+  }
 
   if (startIdx !== -1 && endIdx > startIdx) {
     const jsonSub = cleaned.substring(startIdx, endIdx + 1);
     try {
       const res = JSON.parse(jsonSub);
-      if (res && typeof res === 'object' && !Array.isArray(res)) {
+      if (isValidParsed(res)) {
         return res as T;
       }
     } catch {
@@ -60,7 +82,7 @@ export function parseAiJsonResponse<T = Record<string, unknown>>(
           return `"${cleanedString}"`;
         });
         const res = JSON.parse(sanitized);
-        if (res && typeof res === 'object' && !Array.isArray(res)) {
+        if (isValidParsed(res)) {
           return res as T;
         }
       } catch {

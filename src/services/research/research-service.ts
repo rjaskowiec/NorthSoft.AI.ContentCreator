@@ -15,16 +15,13 @@ import {
   type RawResearchItem,
   type ResearchSourceRecord,
 } from './source-adapter';
-import { validateCandidateIdeaOutput } from './validator';
+import { validateBatchCandidateIdeasOutput } from './validator';
 import {
   evaluateRelevance,
   isExcludedTopic,
   selectDiverseCandidates,
-  MAX_AI_RESEARCH_CANDIDATES_PER_RUN,
-  MAX_CANDIDATES_PER_PILLAR,
   type SelectableCandidate,
   type ContentPillar,
-  type TopicClusterKey,
 } from './taxonomy';
 import { TopicRegistry } from './topic-registry';
 
@@ -36,6 +33,8 @@ interface RawItemRecord {
   url_hash: string;
   content_summary: string;
   published_at: string;
+  fetched_at?: string;
+  status?: string;
   active_angles_count?: number;
 }
 
@@ -226,16 +225,17 @@ export class ResearchService {
     let fallbackExecutions = 0;
     let aiInvalidResponses = 0;
     let seedsConsidered = 0;
-    let seedsSkippedCooldown = 0;
+    const seedsSkippedCooldown = 0;
     let candidatesEvaluated = 0;
     const deferralReasons: string[] = [];
+    let actualAiModel = '@cf/meta/llama-3.1-8b-instruct-fp8';
 
     if (this.aiProvider.name === 'mock') {
       fallbackExecutions++;
     }
 
     let rejectedIrrelevant = 0;
-    let rejectedTooTechnical = 0;
+    const rejectedTooTechnical = 0;
     let rejectedDuplicateAngle = 0;
     let rejectedRecentCooldown = 0;
     let ideasQueued = 0;
@@ -291,22 +291,41 @@ export class ResearchService {
             } else {
               newSourcesCount++;
               const itemId = crypto.randomUUID();
-              await this.db
-                .prepare(
-                  `INSERT INTO research_items (id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status, active_angles_count)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', 0)`,
-                )
-                .bind(
-                  itemId,
-                  item.sourceId,
-                  item.title,
-                  item.url,
-                  item.urlHash,
-                  item.summary,
-                  item.publishedAt,
-                  checkTimeIso,
-                )
-                .run();
+              try {
+                await this.db
+                  .prepare(
+                    `INSERT INTO research_items (id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status, active_angles_count)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', 0)`,
+                  )
+                  .bind(
+                    itemId,
+                    item.sourceId,
+                    item.title,
+                    item.url,
+                    item.urlHash,
+                    item.summary,
+                    item.publishedAt,
+                    checkTimeIso,
+                  )
+                  .run();
+              } catch {
+                await this.db
+                  .prepare(
+                    `INSERT INTO research_items (id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW')`,
+                  )
+                  .bind(
+                    itemId,
+                    item.sourceId,
+                    item.title,
+                    item.url,
+                    item.urlHash,
+                    item.summary,
+                    item.publishedAt,
+                    checkTimeIso,
+                  )
+                  .run();
+              }
             }
           }
         } catch (err: unknown) {
@@ -321,54 +340,29 @@ export class ResearchService {
       }
 
       // Step 2: Fetch source items eligible for angle extraction
-      // Strictly enforce source freshness: only process items fetched/published since the last completed run.
-      // Prevents re-analyzing the same old 50 records when RSS feeds have no new updates.
-      let watermarkIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      try {
-        const lastCompletedRun = await this.db
-          .prepare(
-            "SELECT started_at, completed_at FROM research_runs WHERE status = 'completed' AND id != ? ORDER BY started_at DESC LIMIT 1",
-          )
-          .bind(runId)
-          .first<{ started_at?: string; completed_at?: string }>();
-
-        if (lastCompletedRun?.started_at) {
-          watermarkIso = lastCompletedRun.started_at;
-        }
-      } catch {
-        // Fallback to 7 days
-      }
-
-      // Items that were fetched but never analyzed (e.g. a run that was quota-limited) stay eligible for 14 days
-      const unanalyzedCutoffIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      // Sources serve as inspiration springboards; unanalyzed (NEW) items are prioritized
       let candidateItems: RawItemRecord[] = [];
       try {
         const candidateRes = await this.db
           .prepare(
-            `SELECT id, source_id, title, url, url_hash, content_summary, published_at, active_angles_count
+            `SELECT id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status, active_angles_count
              FROM research_items
              WHERE status != 'REJECTED' 
                AND (active_angles_count IS NULL OR active_angles_count < 3)
-               AND (
-                 (published_at IS NOT NULL AND published_at >= ?) OR 
-                 (fetched_at >= ?) OR (status = 'NEW' AND fetched_at >= ?)
-               )
-             ORDER BY fetched_at DESC
-             LIMIT 50`,
+             ORDER BY (status = 'NEW') DESC, fetched_at DESC
+             LIMIT 60`,
           )
-          .bind(watermarkIso, watermarkIso, unanalyzedCutoffIso)
           .all<RawItemRecord>();
         candidateItems = candidateRes.results || [];
       } catch {
         try {
           const candidateRes = await this.db
             .prepare(
-              `SELECT id, source_id, title, url, url_hash, content_summary, published_at
+              `SELECT id, source_id, title, url, url_hash, content_summary, published_at, fetched_at, status
                FROM research_items
-               WHERE (fetched_at >= ? OR published_at >= ?)
-               ORDER BY fetched_at DESC LIMIT 50`,
+               WHERE status != 'REJECTED'
+               ORDER BY (status = 'NEW') DESC, fetched_at DESC LIMIT 60`,
             )
-            .bind(watermarkIso, watermarkIso)
             .all<RawItemRecord>();
           candidateItems = candidateRes.results || [];
         } catch {
@@ -380,10 +374,11 @@ export class ResearchService {
       const history = await topicRegistry.getRecentTopicHistory(21);
 
       // Editorial Seeds Layer:
-      // If fresh RSS items are scarce (or zero), inject evergreen editorial seeds
+      // If fresh items from RSS are few, inject evergreen editorial seeds
       // representing fundamental small-business client problems for NorthSoft.
+      // Cooldown does NOT prevent seeds from inspiring new creative angles.
       try {
-        const seedSlotsNeeded = Math.max(0, 5 - candidateItems.length);
+        const seedSlotsNeeded = Math.max(0, 10 - candidateItems.length);
         if (seedSlotsNeeded > 0) {
           const seedsRes = await this.db
             .prepare(
@@ -391,9 +386,9 @@ export class ResearchService {
                FROM editorial_seeds
                WHERE enabled = 1
                ORDER BY times_used ASC, last_used_at ASC NULLS FIRST
-               LIMIT 40`,
+               LIMIT ?`,
             )
-            .bind()
+            .bind(seedSlotsNeeded)
             .all<{
               id: string;
               pillar: string;
@@ -407,17 +402,6 @@ export class ResearchService {
           const seeds = seedsRes.results || [];
           for (const seed of seeds) {
             seedsConsidered++;
-            if (candidateItems.length >= 5) break;
-            // Check cluster cooldown on seed before injecting (seed is NOT consumed; it stays available)
-            const clusterCheck = TopicRegistry.isClusterInCooldown(
-              seed.cluster_key as TopicClusterKey,
-              history,
-            );
-            if (clusterCheck.inCooldown) {
-              seedsSkippedCooldown++;
-              continue;
-            }
-
             candidateItems.push({
               id: `seed-${seed.id}`,
               source_id: 'editorial_seeds',
@@ -436,25 +420,17 @@ export class ResearchService {
 
       sourceReuseCandidates = candidateItems.length;
       const selectableCandidates: SelectableCandidate<RawItemRecord>[] = [];
-      const prefilterRejectedIds: string[] = [];
 
       for (const item of candidateItems) {
-        // Exclusion check (politics, entertainment, clickbait)
+        // Hard exclusion check (scams, adult, gambling, war, clickbait)
         const exclusion = isExcludedTopic(item.title, item.content_summary);
         if (exclusion.excluded) {
           rejectedIrrelevant++;
-          if (!item.id.startsWith('seed-')) prefilterRejectedIds.push(item.id);
           continue;
         }
 
-        // Relevance & quality score
+        // Determine pillar and baseline score for multi-pillar sampling
         const relEval = evaluateRelevance(item.title, item.content_summary);
-        if (!relEval.passed) {
-          rejectedTooTechnical++;
-          if (!item.id.startsWith('seed-')) prefilterRejectedIds.push(item.id);
-          continue;
-        }
-
         selectableCandidates.push({
           item,
           pillar: relEval.pillar,
@@ -462,37 +438,15 @@ export class ResearchService {
         });
       }
 
-      // Persist deterministic pre-filter rejections so the same items are not re-evaluated every night
-      if (prefilterRejectedIds.length > 0) {
-        try {
-          for (let i = 0; i < prefilterRejectedIds.length; i += 50) {
-            const chunk = prefilterRejectedIds.slice(i, i + 50);
-            await this.db
-              .prepare(
-                `UPDATE research_items SET status = 'REJECTED' WHERE status = 'NEW' AND id IN (${chunk.map(() => '?').join(',')})`,
-              )
-              .bind(...chunk)
-              .run();
-          }
-        } catch {
-          // Best-effort: failure only means the items are re-checked next run
-        }
-      }
-
-      // Step 3: Multi-Pillar Diversity Selection
+      // Step 3: Multi-Pillar Diversity Selection (sample up to 15 diverse candidate inspirations)
       const selectedCandidates = selectDiverseCandidates(
         selectableCandidates,
-        MAX_AI_RESEARCH_CANDIDATES_PER_RUN,
-        MAX_CANDIDATES_PER_PILLAR,
+        15,
+        3,
       );
 
-      potentialAnglesDiscovered = selectedCandidates.length;
-
-      // Step 4: Execute Workers AI completion to extract social post angles for selected candidate sources
-      for (let candidateIndex = 0; candidateIndex < selectedCandidates.length; candidateIndex++) {
-        const candidate = selectedCandidates[candidateIndex]!;
-        const item = candidate.item;
-
+      // Step 4: AI Creative Angle Generation over diverse inspirations
+      if (selectedCandidates.length > 0) {
         // Enforce AI Quota Capacity Check
         const capacity = await this.quotaManager.checkCapacity(
           this.db,
@@ -501,403 +455,418 @@ export class ResearchService {
         );
 
         if (!capacity.allowed) {
-          // Every candidate not yet evaluated is deferred (not lost): count them all, not just the first
-          ideasDeferred += selectedCandidates.length - candidateIndex;
+          ideasDeferred += selectedCandidates.length;
           deferralReasons.push(`AI quota: ${capacity.reason || 'capacity unavailable'}`);
           await this.auditLogger.log({
             eventType: 'AI_QUOTA_EXCEEDED',
             entityType: 'research_item',
-            entityId: item.id,
+            entityId: selectedCandidates[0]?.item.id || 'batch',
             actor: 'system',
             level: 'WARNING',
             status: 'DEFERRED',
-            operation: item.title,
+            operation: 'Batch Content Discovery',
             correlationId: runId,
             details: { reason: capacity.reason },
           });
-          break;
-        }
+        } else {
+          const aiStartTime = Date.now();
+          aiInferenceRequests++;
+          candidatesEvaluated = selectedCandidates.length;
 
-        const aiStartTime = Date.now();
+          // Rotate seeds on attempt so one unproductive seed cannot starve the rest
+          for (const candidate of selectedCandidates) {
+            if (candidate.item.id.startsWith('seed-')) {
+              try {
+                await this.db
+                  .prepare('UPDATE editorial_seeds SET last_used_at = ? WHERE id = ?')
+                  .bind(nowIso, candidate.item.id.replace('seed-', ''))
+                  .run();
+              } catch {
+                // Ignore if seeds table is unavailable
+              }
+            }
+          }
 
-        const systemInstructions = `You are a Content Scout for NorthSoft AI.
-NorthSoft builds websites, landing pages, local SEO, online marketing, automation, and AI solutions for small and local businesses.
-Your objective is to read a source item and discover a genuine business opportunity for small-business owners, then derive a focused social-media post topic (Facebook/Instagram).
+          // Build context of recently used topics and clusters to guide diversity
+          const recentHistoryTopics = history
+            .slice(-15)
+            .map((h) => `- [${h.cluster_key || 'general'}] ${h.title}`)
+            .join('\n');
+
+          // Build formatted inspirations payload (up to 12 items for optimal prompt length)
+          const inspirationsList = selectedCandidates
+            .slice(0, 12)
+            .map((c, idx) => {
+              const it = c.item;
+              return `[Inspiration #${idx + 1}]\nTitle: ${it.title}\nSource: ${it.url}\nSummary: ${it.content_summary.slice(0, 400)}`;
+            })
+            .join('\n\n');
+
+          const systemInstructions = `You are a Senior Creative Content Scout for NorthSoft AI.
+NorthSoft delivers high-performing websites, modern landing pages, local SEO, online marketing, automation, and AI solutions for small and local business owners (e.g., trade contractors, healthcare clinics, boutique law firms, accounting practices, local retailers, specialty service providers).
+
+CORE PRINCIPLE:
+Sources are INSPIRATION and SPRINGBOARDS, NOT rigid thematic filters or texts to summarize.
+Your job is NOT to repeat technical release notes or summarize news articles.
+Instead, observe the trends, technology shifts, or real-world consumer patterns described in the inspirations, and translate them into fresh, compelling, actionable business angles and social media post topics for small business owners.
+You can draw inspiration from one source, or synthesize ideas connecting multiple sources.
 
 CRITICAL LANGUAGE REQUIREMENT:
 - ALL OUTPUT MUST BE WRITTEN STRICTLY AND 100% IN ENGLISH. All topic titles, hooks, angles, summaries, key points, and questions MUST be in clean, human, conversational English.
 
-CORE REASONING DISCOVERY PROCESS (Insight → Opportunity → Cluster → Topic):
-1. MARKET PHENOMENON: Identify the observable market trend, consumer shift, platform change, or tech development from the source.
-2. CUSTOMER PAIN / OPPORTUNITY: Translate that phenomenon into a direct, concrete business problem or opportunity for a small business owner (e.g. lost website inquiries, slow response times, customer confusion, manual admin overload).
-3. CONTROLLED TOPIC CLUSTER: Select the single best matching cluster from the approved NorthSoft cluster taxonomy:
-   - ai_search_visibility (AI search like ChatGPT/Perplexity finding local services)
-   - aeo_answer_engines (Answer Engine Optimization and structured answers)
-   - local_seo_maps (Google Business Profile and local map rankings)
-   - website_speed_conversion (Load speed impacting mobile bounce rates)
-   - mobile_first_experience (Smartphone UX and tap navigation)
-   - landing_page_clarity (Clear value proposition and removing clutter)
-   - lead_response_time (Speed to lead and avoiding lost inquiries)
-   - contact_form_friction (Simplifying contact pages to double quote submissions)
-   - pricing_service_transparency (Publishing starting rates to build buyer trust)
-   - chatbot_first_touch (24/7 AI chat answering routine questions after hours)
-   - internal_workflow_automation (Automating repetitive spreadsheet busywork)
-   - ai_content_overload (Standing out with authentic proof against generic AI noise)
-   - reviews_social_proof (Systematic Google reviews and client proof)
-   - brand_credibility_trust (Modern website credibility and looking established)
-   - customer_communication_channels (Meeting customer preferences: messaging vs phone tag)
-   - time_management_entrepreneur (Owner bottleneck and delegating repetitive tech)
-   - tech_stack_simplification (Reducing software tool sprawl and subscriptions)
-   - local_competition_positioning (Competing directly without paying middleman commissions)
-   - seasonal_demand_shifts (Preparing digital channels for seasonal traffic shifts)
-   - local_service_booking (Frictionless online booking for appointment-based services)
-4. BUSINESS ANGLE: How a NorthSoft service (website overhaul, local SEO, speed optimization, workflow automation, AI assistant) naturally solves this without sounding like a forced sales pitch.
-5. FINAL TOPIC: A mid-level, focused social post topic (NOT just the article headline).
+APPROVED NORTHSOFT TOPIC CLUSTERS:
+1. ai_search_visibility (AI search like ChatGPT/Perplexity finding local services)
+2. aeo_answer_engines (Answer Engine Optimization and structured answers)
+3. local_seo_maps (Google Business Profile and local map rankings)
+4. website_speed_conversion (Load speed impacting mobile bounce rates)
+5. mobile_first_experience (Smartphone UX and tap navigation)
+6. landing_page_clarity (Clear value proposition and removing clutter)
+7. lead_response_time (Speed to lead and avoiding lost inquiries)
+8. contact_form_friction (Simplifying contact pages to double quote submissions)
+9. pricing_service_transparency (Publishing starting rates to build buyer trust)
+10. chatbot_first_touch (24/7 AI chat answering routine questions after hours)
+11. internal_workflow_automation (Automating repetitive spreadsheet busywork)
+12. ai_content_overload (Standing out with authentic proof against generic AI noise)
+13. reviews_social_proof (Systematic Google reviews and client proof)
+14. brand_credibility_trust (Modern website credibility and looking established)
+15. customer_communication_channels (Meeting customer preferences: messaging vs phone tag)
+16. time_management_entrepreneur (Owner bottleneck and delegating repetitive tech)
+17. tech_stack_simplification (Reducing software tool sprawl and subscriptions)
+18. local_competition_positioning (Competing directly without paying middleman commissions)
+19. seasonal_demand_shifts (Preparing digital channels for seasonal traffic shifts)
+20. local_service_booking (Frictionless online booking for appointment-based services)
 
-CRITICAL RULES & BRAND SAFETY:
-1. ABSOLUTELY NO CORPORATE / MARKETING JARGON. Forbidden: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
-2. EDITORIAL BRAND SAFETY — STRICTLY FORBIDDEN TOPICS:
-   Never select, generate, or suggest topics touching on:
-   - Religion and religious celebrations (e.g. churches, scriptures, theological holidays, prayers, rituals).
+EDITORIAL BRAND SAFETY & FORBIDDEN TOPICS:
+1. ABSOLUTELY NO CORPORATE JARGON. Forbidden: "unlock potential", "digital transformation", "game changer", "holistic approach", "scaling your business", "new era of entrepreneurship", "revolutionizing the way", "leverage synergy", "maximize conversion".
+2. STRICTLY FORBIDDEN TOPICS:
+   - Religion and religious celebrations (churches, scriptures, holidays, rituals).
    - Sexuality, erotica, and adult entertainment.
-   - Occultism, astrology, horoscopes, tarot, witchcraft, or supernatural folklore.
+   - Occultism, astrology, tarot, witchcraft, or supernatural folklore.
    - Gambling, sports betting, casinos, and lotteries.
    - Recreational intoxicants, entertainment violence, or vulgarity.
-   NEUTRAL COMMERCIAL SEASONS ARE PERMITTED: You may freely discuss commercial and seasonal demand (e.g. Q4 holiday shopping preparation, Black Friday website load readiness, January business goal planning, seasonal tourist booking spikes), framed STRICTLY around operational readiness, customer conversion, and capacity — NEVER religious or cultural rituals.
-3. TIMELINESS & BUSINESS OPPORTUNITIES:
-   Highlight emerging economic trends, buying periods, and seasonal spikes WITH ADVANCE NOTICE so business owners have time to prepare websites, booking calendars, and automation before the opportunity passes.
-4. COMPELLING HOOKS & HONEST CURIOSITY:
-   Craft titles and hooks that pique honest curiosity — highlight hidden costs, missed customer inquiries, unneeded friction, or surprising contrasts without resorting to deceptive clickbait or fake urgency.
-5. SOURCE AS INSPIRATION: The article is a loose springboard, not something to summarize. Do NOT merely repeat tech release details.
-6. FACT PRESERVATION: Never invent fake numbers, percentages, or false statistics.
-7. If the source touches a prohibited topic or cannot yield any credible small-business angle, return {"usefulAngle": false, "reason": "NO_USEFUL_ANGLE"}.
+   NEUTRAL COMMERCIAL SEASONS ARE PERMITTED (e.g. Q4 retail prep, holiday website capacity, January planning), framed strictly around digital operations and customer experience.
+3. FACT PRESERVATION: Never invent fake numbers, percentages, or false statistics.
+
+DISCOVERY INSTRUCTIONS:
+Propose between 3 and 5 distinct, high-quality, practical post ideas.
+Make sure the ideas cover DIFFERENT topic clusters and diverse pillars (WEBSITE, MARKETING, SALES, AI, SMALL_BUSINESS, CUSTOMER_EXPERIENCE, LOCAL_BUSINESS).
+Avoid duplicating angles from the recent history.
 
 Return ONLY a valid JSON object matching this schema:
 {
-  "usefulAngle": true,
-  "marketPhenomenon": "What observable trend or change is happening in the market or technology",
-  "customerOpportunity": "The concrete pain point, risk, or opportunity for a small business owner",
-  "clusterKey": "One exact cluster key from the approved taxonomy list above",
-  "title": "A focused, conversational social post topic for business owners",
-  "angle": "How the customer opportunity connects to a practical digital solution",
-  "hook": "A concise question or observation that opens the finished post",
-  "summary": "A short summary of the advice to share in social copy",
-  "keyPoints": ["One concrete implication for an owner", "One practical next step"],
-  "contentPillar": "WEBSITE | MARKETING | SALES | AI | SMALL_BUSINESS | CUSTOMER_EXPERIENCE | LOCAL_BUSINESS",
-  "postType": "LIST | CHECKLIST | QUESTION | STAT_INSIGHT | MYTH | TIPS | COMPARISON | PROBLEM_SOLUTION | ENGAGEMENT",
-  "engagementQuestion": "Simple question at the end encouraging readers to comment",
-  "commercialRelevance": 85,
-  "engagementPotential": 90,
-  "relevanceScore": 80
+  "ideas": [
+    {
+      "title": "A compelling, conversational social post topic for business owners",
+      "angle": "How the customer opportunity connects to a practical digital solution",
+      "hook": "A concise question or observation that opens the post",
+      "summary": "Short summary of the advice to share in social copy",
+      "keyPoints": ["One concrete implication for an owner", "One practical next step"],
+      "contentPillar": "WEBSITE | MARKETING | SALES | AI | SMALL_BUSINESS | CUSTOMER_EXPERIENCE | LOCAL_BUSINESS",
+      "postType": "LIST | CHECKLIST | QUESTION | STAT_INSIGHT | MYTH | TIPS | COMPARISON | PROBLEM_SOLUTION | ENGAGEMENT",
+      "engagementQuestion": "Simple question at the end encouraging readers to comment",
+      "commercialRelevance": 85,
+      "engagementPotential": 90,
+      "relevanceScore": 85,
+      "sourceUrl": "Source URL from the inspirations used",
+      "sourceName": "Source name or title",
+      "marketPhenomenon": "What observable trend or change is happening in the market or technology",
+      "customerOpportunity": "The concrete pain point, risk, or opportunity for a small business owner",
+      "clusterKey": "One exact cluster key from the approved taxonomy list above"
+    }
+  ]
 }`;
 
-        const unparsedPayload = `Title: ${item.title}\nURL: ${item.url}\nSummary: ${item.content_summary}`;
-        const { systemPrompt, userPrompt } = formatResearchPromptPayload(
-          systemInstructions,
-          unparsedPayload,
-        );
+          const userPayload = `RECENT TOPIC HISTORY (Do not duplicate these angles):\n${recentHistoryTopics || 'None yet'}\n\nDIVERSE INSPIRATIONS AVAILABLE THIS RUN:\n${inspirationsList}`;
 
-        try {
-          aiInferenceRequests++;
-          candidatesEvaluated++;
-          if (item.id.startsWith('seed-')) {
-            // Rotate seeds on attempt (not only on success) so one unproductive seed cannot starve the rest
-            try {
-              await this.db
-                .prepare('UPDATE editorial_seeds SET last_used_at = ? WHERE id = ?')
-                .bind(nowIso, item.id.replace('seed-', ''))
-                .run();
-            } catch {
-              // Ignore if seeds table is unavailable
-            }
-          }
-          const completion = await this.aiProvider.complete({
-            role: 'researcher',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.3,
-            responseFormat: 'json',
-          });
-          aiInferenceSuccessful++;
-
-          await this.quotaManager.recordUsage(this.db, {
-            provider: completion.provider,
-            model: completion.model,
-            role: 'researcher',
-            inputTokens: completion.usage.promptTokens,
-            outputTokens: completion.usage.completionTokens,
-            success: true,
-            durationMs: completion.durationMs,
-          });
-
-          const valRes = validateCandidateIdeaOutput(completion.content);
-          if (!valRes.valid || !valRes.data) {
-            aiInvalidResponses++;
-            continue;
-          }
-
-          const ideaData = valRes.data;
-
-          if (ideaData.usefulAngle === false) {
-            noUsefulAngleCount++;
-            await this.auditLogger.log({
-              eventType: 'AI_RESEARCH_COMPLETED',
-              entityType: 'research_item',
-              entityId: item.id,
-              actor: 'ai',
-              level: 'INFO',
-              status: 'COMPLETED',
-              operation: 'Content Scout Inference',
-              correlationId: runId,
-              durationMs: completion.durationMs,
-              details: {
-                provider: completion.provider,
-                model: completion.model,
-                result: 'NO_USEFUL_ANGLE',
-                reason: ideaData.noUsefulAngleReason || 'NO_USEFUL_ANGLE',
-              },
-            });
-            continue;
-          }
-
-          // A cluster in cooldown does NOT make the topic worthless: it is retained as 'deferred'
-          // with a future date (see below) instead of being discarded.
-          const clusterCooldown = TopicRegistry.isClusterInCooldown(ideaData.clusterKey, history);
-
-          // Step 4.2: Duplicate Detection Check against history and active angles (Last line of defense)
-          const scheduling = topicRegistry.calculateSuggestedPublishDate(
-            ideaData.contentPillar as ContentPillar,
-            ideaData.angle,
-            history,
+          const { systemPrompt, userPrompt } = formatResearchPromptPayload(
+            systemInstructions,
+            userPayload,
           );
 
-          if (scheduling.isDuplicateAngle) {
-            rejectedDuplicateAngle++;
-            await this.auditLogger.log({
-              eventType: 'DUPLICATE_ANGLE_REJECTED',
-              entityType: 'content_idea',
-              entityId: item.id,
-              actor: 'ai',
-              details: { angle: ideaData.angle, title: ideaData.title },
-            });
-            continue;
-          }
-
-          // Check if title is a duplicate or near-duplicate against existing content_ideas
-          const existingIdeasRes = await this.db
-            .prepare('SELECT title FROM content_ideas ORDER BY created_at DESC LIMIT 100')
-            .all<{ title: string }>();
-          const existingIdeaTitles = (existingIdeasRes.results || []).map((row) => row.title);
-
-          if (TopicRegistry.isDuplicateAngle(ideaData.title, existingIdeaTitles)) {
-            rejectedDuplicateAngle++;
-            await this.auditLogger.log({
-              eventType: 'DUPLICATE_TITLE_REJECTED',
-              entityType: 'content_idea',
-              entityId: item.id,
-              actor: 'ai',
-              details: { title: ideaData.title },
-            });
-            continue;
-          }
-
-          const ideaId = crypto.randomUUID();
-          const isDeferredByCooldown = clusterCooldown.inCooldown;
-          const deferredUntilIso = isDeferredByCooldown
-            ? TopicRegistry.getClusterCooldownEnd(ideaData.clusterKey, history).toISOString()
-            : undefined;
-          const pillar = ideaData.contentPillar;
-          pillarBreakdown[pillar] = (pillarBreakdown[pillar] || 0) + 1;
-
-          // Insert into content_ideas (queued) with cluster_key, market_phenomenon, and customer_opportunity
           try {
-            await this.db
-              .prepare(
-                `INSERT INTO content_ideas (
-                  id, title, description, short_description, content_angle, hook, category, content_pillar,
-                  source_type, source_url, source_title, source_published_at, relevance_score,
-                  engagement_potential, commercial_relevance, suggested_publish_date, priority, status,
-                  cluster_key, market_phenomenon, customer_opportunity, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
-              )
-              .bind(
-                ideaId,
-                ideaData.title,
-                ideaData.summary,
-                ideaData.summary,
-                ideaData.angle,
-                ideaData.hook,
-                pillar,
-                pillar,
-                item.url,
-                item.title,
-                item.published_at,
-                ideaData.relevanceScore,
-                ideaData.engagementPotential,
-                ideaData.commercialRelevance,
-                scheduling.suggestedDate,
-                ideaData.commercialRelevance,
-                ideaData.clusterKey,
-                ideaData.marketPhenomenon,
-                ideaData.customerOpportunity,
-                nowIso,
-                nowIso,
-              )
-              .run();
-          } catch {
-            // Fallback for older database schema
-            try {
-              await this.db
-                .prepare(
-                  `INSERT INTO content_ideas (
-                    id, title, description, short_description, content_angle, hook, category, content_pillar,
-                    source_type, source_url, source_title, source_published_at, relevance_score,
-                    engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at, updated_at
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
-                )
-                .bind(
-                  ideaId,
-                  ideaData.title,
-                  ideaData.summary,
-                  ideaData.summary,
+            const completion = await this.aiProvider.complete({
+              role: 'researcher',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+              temperature: 0.4,
+              maxTokens: 2500,
+              responseFormat: 'json',
+            });
+            aiInferenceSuccessful++;
+            actualAiModel = completion.model || actualAiModel;
+
+            await this.quotaManager.recordUsage(this.db, {
+              provider: completion.provider,
+              model: completion.model,
+              role: 'researcher',
+              inputTokens: completion.usage.promptTokens,
+              outputTokens: completion.usage.completionTokens,
+              success: true,
+              durationMs: completion.durationMs,
+            });
+
+            // Fetch existing titles to check duplicates against existing content_ideas
+            const existingIdeasRes = await this.db
+              .prepare('SELECT title FROM content_ideas ORDER BY created_at DESC LIMIT 100')
+              .all<{ title: string }>();
+            const existingIdeaTitles = (existingIdeasRes.results || []).map((row) => row.title);
+
+            const batchVal = validateBatchCandidateIdeasOutput(completion.content, {
+              url: selectedCandidates[0]?.item.url,
+              title: selectedCandidates[0]?.item.title,
+            });
+
+            if (!batchVal.valid || !batchVal.data) {
+              aiInvalidResponses++;
+            } else if (batchVal.data.length === 0) {
+              noUsefulAngleCount++;
+            } else {
+              const proposedIdeas = batchVal.data;
+              potentialAnglesDiscovered = proposedIdeas.length;
+
+              for (const ideaData of proposedIdeas) {
+                if (ideaData.usefulAngle === false) {
+                  noUsefulAngleCount++;
+                  continue;
+                }
+
+                // A cluster in cooldown does NOT make the topic worthless: it is retained as 'deferred'
+                const clusterCooldown = TopicRegistry.isClusterInCooldown(ideaData.clusterKey, history);
+
+                // Duplicate Detection Check against history and active angles
+                const scheduling = topicRegistry.calculateSuggestedPublishDate(
+                  ideaData.contentPillar as ContentPillar,
                   ideaData.angle,
-                  ideaData.hook,
-                  pillar,
-                  pillar,
-                  item.url,
-                  item.title,
-                  item.published_at,
-                  ideaData.relevanceScore,
-                  ideaData.engagementPotential,
-                  ideaData.commercialRelevance,
-                  scheduling.suggestedDate,
-                  ideaData.commercialRelevance,
-                  nowIso,
-                  nowIso,
-                )
-                .run();
-            } catch {
-              await this.db
-                .prepare(
-                  `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 'research', ?, 'queued', ?, ?)`,
-                )
-                .bind(
-                  ideaId,
-                  ideaData.title,
-                  ideaData.summary,
-                  pillar,
-                  ideaData.relevanceScore,
-                  nowIso,
-                  nowIso,
-                )
-                .run();
+                  history,
+                );
+
+                if (scheduling.isDuplicateAngle) {
+                  rejectedDuplicateAngle++;
+                  await this.auditLogger.log({
+                    eventType: 'DUPLICATE_ANGLE_REJECTED',
+                    entityType: 'content_idea',
+                    entityId: runId,
+                    actor: 'ai',
+                    details: { angle: ideaData.angle, title: ideaData.title },
+                  });
+                  continue;
+                }
+
+                // Check duplicate title against existing ideas
+                if (TopicRegistry.isDuplicateAngle(ideaData.title, existingIdeaTitles)) {
+                  rejectedDuplicateAngle++;
+                  await this.auditLogger.log({
+                    eventType: 'DUPLICATE_TITLE_REJECTED',
+                    entityType: 'content_idea',
+                    entityId: runId,
+                    actor: 'ai',
+                    details: { title: ideaData.title },
+                  });
+                  continue;
+                }
+
+                // Track title so sibling ideas in this same batch don't duplicate each other
+                existingIdeaTitles.push(ideaData.title);
+
+                const ideaId = crypto.randomUUID();
+                const isDeferredByCooldown = clusterCooldown.inCooldown;
+                const deferredUntilIso = isDeferredByCooldown
+                  ? TopicRegistry.getClusterCooldownEnd(ideaData.clusterKey, history).toISOString()
+                  : undefined;
+                const pillar = ideaData.contentPillar;
+                pillarBreakdown[pillar] = (pillarBreakdown[pillar] || 0) + 1;
+
+                const initialStatus = isDeferredByCooldown ? 'deferred' : 'queued';
+                const publishDate = isDeferredByCooldown
+                  ? deferredUntilIso
+                  : scheduling.suggestedDate;
+
+                // Insert into content_ideas
+                try {
+                  await this.db
+                    .prepare(
+                      `INSERT INTO content_ideas (
+                        id, title, description, short_description, content_angle, hook, category, content_pillar,
+                        source_type, source_url, source_title, source_published_at, relevance_score,
+                        engagement_potential, commercial_relevance, suggested_publish_date, priority, status,
+                        cluster_key, market_phenomenon, customer_opportunity, created_at, updated_at
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    )
+                    .bind(
+                      ideaId,
+                      ideaData.title,
+                      ideaData.summary,
+                      ideaData.summary,
+                      ideaData.angle,
+                      ideaData.hook,
+                      pillar,
+                      pillar,
+                      ideaData.sourceUrl || selectedCandidates[0]?.item.url || 'https://ai.northsoft.is',
+                      ideaData.sourceName || selectedCandidates[0]?.item.title || 'NorthSoft Research',
+                      ideaData.publishedAt || nowIso,
+                      ideaData.relevanceScore,
+                      ideaData.engagementPotential,
+                      ideaData.commercialRelevance,
+                      publishDate,
+                      ideaData.commercialRelevance,
+                      initialStatus,
+                      ideaData.clusterKey,
+                      ideaData.marketPhenomenon,
+                      ideaData.customerOpportunity,
+                      nowIso,
+                      nowIso,
+                    )
+                    .run();
+                } catch {
+                  // Fallback for older schema
+                  try {
+                    await this.db
+                      .prepare(
+                        `INSERT INTO content_ideas (
+                          id, title, description, short_description, content_angle, hook, category, content_pillar,
+                          source_type, source_url, source_title, source_published_at, relevance_score,
+                          engagement_potential, commercial_relevance, suggested_publish_date, priority, status, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                      )
+                      .bind(
+                        ideaId,
+                        ideaData.title,
+                        ideaData.summary,
+                        ideaData.summary,
+                        ideaData.angle,
+                        ideaData.hook,
+                        pillar,
+                        pillar,
+                        ideaData.sourceUrl || selectedCandidates[0]?.item.url || 'https://ai.northsoft.is',
+                        ideaData.sourceName || selectedCandidates[0]?.item.title || 'NorthSoft Research',
+                        ideaData.publishedAt || nowIso,
+                        ideaData.relevanceScore,
+                        ideaData.engagementPotential,
+                        ideaData.commercialRelevance,
+                        publishDate,
+                        ideaData.commercialRelevance,
+                        initialStatus,
+                        nowIso,
+                        nowIso,
+                      )
+                      .run();
+                  } catch {
+                    await this.db
+                      .prepare(
+                        `INSERT INTO content_ideas (id, title, description, category, source_type, priority, status, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, 'research', ?, ?, ?, ?)`,
+                      )
+                      .bind(
+                        ideaId,
+                        ideaData.title,
+                        ideaData.summary,
+                        pillar,
+                        ideaData.relevanceScore,
+                        initialStatus,
+                        nowIso,
+                        nowIso,
+                      )
+                      .run();
+                  }
+                }
+
+                if (isDeferredByCooldown) {
+                  rejectedRecentCooldown++;
+                  ideasDeferred++;
+                  deferralReasons.push(clusterCooldown.reason || 'cluster cooldown');
+                } else {
+                  ideasQueued++;
+                  // Record in Topic History with cluster_key
+                  await topicRegistry.recordTopicHistory({
+                    idea_id: ideaId,
+                    content_pillar: pillar,
+                    content_angle: ideaData.angle,
+                    title: ideaData.title,
+                    cluster_key: ideaData.clusterKey,
+                    status: 'queued',
+                    suggested_publish_date: scheduling.suggestedDate,
+                  });
+
+                  // Add to in-memory history so subsequent ideas respect cluster cooldown
+                  history.push({
+                    id: ideaId,
+                    idea_id: ideaId,
+                    content_pillar: pillar,
+                    content_angle: ideaData.angle,
+                    title: ideaData.title,
+                    cluster_key: ideaData.clusterKey,
+                    status: 'queued',
+                    suggested_publish_date: scheduling.suggestedDate,
+                    created_at: nowIso,
+                  });
+                }
+
+                await this.auditLogger.log({
+                  eventType: 'TOPIC_CREATED',
+                  entityType: 'content_idea',
+                  entityId: ideaId,
+                  actor: 'ai',
+                  level: 'SUCCESS',
+                  status: 'COMPLETED',
+                  operation: ideaData.title,
+                  correlationId: runId,
+                  details: {
+                    title: ideaData.title,
+                    pillar,
+                    clusterKey: ideaData.clusterKey,
+                    angle: ideaData.angle,
+                    status: initialStatus,
+                    suggestedDate: publishDate,
+                    relevanceScore: ideaData.relevanceScore,
+                    engagementPotential: ideaData.engagementPotential,
+                  },
+                });
+              }
             }
-          }
 
-          if (isDeferredByCooldown && deferredUntilIso) {
-            // Retain the unique idea: status 'deferred' + future date. It is NOT written to topic history yet,
-            // so it cannot itself block other topics; it is promoted to 'queued' once its cooldown elapses.
-            await this.db
-              .prepare(
-                "UPDATE content_ideas SET status = 'deferred', suggested_publish_date = ?, updated_at = ? WHERE id = ?",
-              )
-              .bind(deferredUntilIso, nowIso, ideaId)
-              .run();
-          } else {
-            // Record in Topic History with cluster_key
-            await topicRegistry.recordTopicHistory({
-              idea_id: ideaId,
-              content_pillar: pillar,
-              content_angle: ideaData.angle,
-              title: ideaData.title,
-              cluster_key: ideaData.clusterKey,
-              status: 'queued',
-              suggested_publish_date: scheduling.suggestedDate,
-            });
-
-            // Add to in-memory history so subsequent candidates in this run respect cluster cooldown
-            history.push({
-              id: ideaId,
-              idea_id: ideaId,
-              content_pillar: pillar,
-              content_angle: ideaData.angle,
-              title: ideaData.title,
-              cluster_key: ideaData.clusterKey,
-              status: 'queued',
-              suggested_publish_date: scheduling.suggestedDate,
-              created_at: nowIso,
-            });
-          }
-
-          // If derived from an editorial seed, increment seed usage
-          if (item.id.startsWith('seed-')) {
-            const realSeedId = item.id.replace('seed-', '');
-            try {
-              await this.db
-                .prepare(
-                  'UPDATE editorial_seeds SET times_used = times_used + 1, last_used_at = ? WHERE id = ?',
-                )
-                .bind(nowIso, realSeedId)
-                .run();
-            } catch {
-              // Ignore fallback
+            // Mark analyzed items in research_items
+            for (const candidate of selectedCandidates) {
+              const item = candidate.item;
+              if (item.id.startsWith('seed-')) {
+                const realSeedId = item.id.replace('seed-', '');
+                try {
+                  await this.db
+                    .prepare(
+                      'UPDATE editorial_seeds SET times_used = times_used + 1, last_used_at = ? WHERE id = ?',
+                    )
+                    .bind(nowIso, realSeedId)
+                    .run();
+                } catch {
+                  // Ignore
+                }
+              } else {
+                try {
+                  await this.db
+                    .prepare(
+                      "UPDATE research_items SET active_angles_count = COALESCE(active_angles_count, 0) + 1, last_angle_generated_at = ?, status = 'ANALYZED' WHERE id = ?",
+                    )
+                    .bind(nowIso, item.id)
+                    .run();
+                } catch {
+                  // Fallback
+                }
+              }
             }
+          } catch (aiErr: unknown) {
+            aiInferenceFailed++;
+            const aiErrMsg = aiErr instanceof Error ? aiErr.message : 'AI completion failed';
+
+            await this.quotaManager.recordUsage(this.db, {
+              provider: this.aiProvider.name,
+              model: actualAiModel,
+              role: 'researcher',
+              success: false,
+              durationMs: Date.now() - aiStartTime,
+              errorMessage: aiErrMsg,
+            });
           }
-
-          // Increment active_angles_count on source material
-          try {
-            await this.db
-              .prepare(
-                "UPDATE research_items SET active_angles_count = COALESCE(active_angles_count, 0) + 1, last_angle_generated_at = ?, status = 'ANALYZED' WHERE id = ?",
-              )
-              .bind(nowIso, item.id)
-              .run();
-          } catch {
-            // Fallback
-          }
-
-          if (isDeferredByCooldown) {
-            rejectedRecentCooldown++;
-            ideasDeferred++;
-            deferralReasons.push(clusterCooldown.reason || 'cluster cooldown');
-          } else {
-            ideasQueued++;
-          }
-
-          await this.auditLogger.log({
-            eventType: 'TOPIC_CREATED',
-            entityType: 'content_idea',
-            entityId: ideaId,
-            actor: 'ai',
-            level: 'SUCCESS',
-            status: 'COMPLETED',
-            operation: ideaData.title,
-            correlationId: runId,
-            details: {
-              title: ideaData.title,
-              pillar,
-              angle: ideaData.angle,
-              suggestedDate: scheduling.suggestedDate,
-              relevanceScore: ideaData.relevanceScore,
-              engagementPotential: ideaData.engagementPotential,
-            },
-          });
-        } catch (aiErr: unknown) {
-          aiInferenceFailed++;
-          // Transport/AI errors are tracked via aiInferenceFailed only; they are not quality rejections.
-          const aiErrMsg = aiErr instanceof Error ? aiErr.message : 'AI completion failed';
-
-          await this.quotaManager.recordUsage(this.db, {
-            provider: this.aiProvider.name,
-            model: 'unknown',
-            role: 'researcher',
-            success: false,
-            durationMs: Date.now() - aiStartTime,
-            errorMessage: aiErrMsg,
-          });
         }
       }
     } catch (globalErr: unknown) {
@@ -974,7 +943,7 @@ Return ONLY a valid JSON object matching this schema:
         ideasDeferred,
         pillarBreakdown,
         aiProviderName: this.aiProvider.name,
-        aiModelName: '@cf/meta/llama-3.1-8b-instruct-fp8',
+        aiModelName: actualAiModel,
         aiInferenceRequests,
         aiInferenceSuccessful,
         aiInferenceFailed,
@@ -994,7 +963,7 @@ Return ONLY a valid JSON object matching this schema:
     console.log(
       `[AI DISCOVERY METRICS]\n` +
         `AI provider: ${this.aiProvider.name}\n` +
-        `Model: @cf/meta/llama-3.1-8b-instruct-fp8\n` +
+        `Model: ${actualAiModel}\n` +
         `Inference requests: ${aiInferenceRequests}\n` +
         `Successful responses: ${aiInferenceSuccessful}\n` +
         `Failed responses: ${aiInferenceFailed}\n` +
@@ -1024,7 +993,7 @@ Return ONLY a valid JSON object matching this schema:
       ideasQueued,
       ideasDeferred,
       aiProviderName: this.aiProvider.name,
-      aiModelName: '@cf/meta/llama-3.1-8b-instruct-fp8',
+      aiModelName: actualAiModel,
       aiInferenceRequests,
       aiInferenceSuccessful,
       aiInferenceFailed,

@@ -347,3 +347,79 @@ export function validateCandidateTopicOutput(
     },
   };
 }
+
+/**
+ * Parses and validates raw AI completion string that may contain multiple ideas
+ * formatted as { "ideas": [ ... ] } or [ ... ] or a single idea object { ... }.
+ * Returns all valid CandidateIdeaPayload items.
+ */
+export function validateBatchCandidateIdeasOutput(
+  rawAiOutput: string,
+  defaultSource?: { url?: string; title?: string },
+): ValidationResult<CandidateIdeaPayload[]> {
+  if (!rawAiOutput || typeof rawAiOutput !== 'string') {
+    return { valid: false, errors: ['AI output is empty or not a string'] };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseAiJsonResponse(rawAiOutput, { allowArray: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown JSON parse error';
+    return { valid: false, errors: [`Failed to parse AI output as JSON: ${msg}`] };
+  }
+
+  let rawList: unknown[] = [];
+  if (Array.isArray(parsed)) {
+    rawList = parsed;
+  } else if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.ideas)) {
+      rawList = obj.ideas;
+    } else if (Array.isArray(obj.topics)) {
+      rawList = obj.topics;
+    } else if (Array.isArray(obj.angles)) {
+      rawList = obj.angles;
+    } else if (obj.usefulAngle === false || obj.status === 'NO_USEFUL_ANGLE') {
+      const singleRes = validateCandidateIdeaOutput(JSON.stringify(obj));
+      return { valid: true, data: singleRes.data ? [singleRes.data] : [] };
+    } else {
+      // Single idea object fallback
+      rawList = [obj];
+    }
+  }
+
+  if (rawList.length === 0) {
+    return { valid: true, data: [] };
+  }
+
+  const validIdeas: CandidateIdeaPayload[] = [];
+  const errors: string[] = [];
+
+  for (let i = 0; i < rawList.length; i++) {
+    const item = rawList[i];
+    if (!item || typeof item !== 'object') continue;
+
+    const itemObj = item as Record<string, unknown>;
+    if (!itemObj.sourceUrl && defaultSource?.url) itemObj.sourceUrl = defaultSource.url;
+    if (!itemObj.sourceTitle && defaultSource?.title) itemObj.sourceTitle = defaultSource.title;
+
+    const singleRes = validateCandidateIdeaOutput(JSON.stringify(item));
+    if (singleRes.valid && singleRes.data) {
+      if (singleRes.data.usefulAngle === false) {
+        validIdeas.push(singleRes.data);
+      } else if (singleRes.data.title) {
+        validIdeas.push(singleRes.data);
+      }
+    } else if (singleRes.errors) {
+      errors.push(`Idea #${i + 1}: ${singleRes.errors.join(', ')}`);
+    }
+  }
+
+  return {
+    valid: validIdeas.length > 0 || errors.length === 0,
+    data: validIdeas,
+    errors: errors.length > 0 ? errors : undefined,
+  };
+}
+

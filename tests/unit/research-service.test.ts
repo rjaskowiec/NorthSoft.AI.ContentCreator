@@ -369,4 +369,108 @@ describe('ResearchService Pipeline', () => {
     expect(summary.rejectedRecentCooldown).toBe(1);
     expect(summary.ideasQueued).toBe(0);
   });
+
+  it('generates multiple distinct ideas in a batch call and accurately reports the executed AI model', async () => {
+    const mockSources = [
+      {
+        id: 'src-mult',
+        name: 'Tech & Business Feed',
+        url: 'https://biz.example.com/feed',
+        type: 'rss',
+        category: 'WEBSITE',
+        enabled: 1,
+        priority: 10,
+      },
+    ];
+
+    const mockItems = [
+      {
+        id: 'item-batch-1',
+        source_id: 'src-mult',
+        title: 'Core Web Vitals Updates Impacting Mobile Conversion in 2026',
+        url: 'https://biz.example.com/vitals-2026',
+        url_hash: 'hash-batch-1',
+        content_summary: 'New metrics measure real user latency and button responsiveness.',
+        published_at: new Date().toISOString(),
+      },
+      {
+        id: 'item-batch-2',
+        source_id: 'src-mult',
+        title: 'Small Business Lead Response Benchmarks',
+        url: 'https://biz.example.com/response-benchmarks',
+        url_hash: 'hash-batch-2',
+        content_summary: 'Businesses responding within 15 minutes convert 3x more phone quotes.',
+        published_at: new Date().toISOString(),
+      },
+    ];
+
+    const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes("status = 'running'")) return createMockStatement(null);
+      if (sql.includes('FROM research_sources')) return createMockStatement(null, mockSources);
+      if (sql.includes('FROM research_items')) return createMockStatement(null, mockItems);
+      return createMockStatement(null, []);
+    });
+
+    const mockDb = { prepare: prepareMock } as unknown as D1Database;
+    const mockAiProvider = {
+      name: 'cloudflare-workers-ai',
+      complete: vi.fn().mockResolvedValue({
+        content: JSON.stringify({
+          ideas: [
+            {
+              title: 'Mobile Load Speed: Why Every Extra Second Costs Inquiries',
+              angle: 'Connect load speed delays directly to bounce rates and lost quote forms.',
+              hook: 'Are slow page loads turning away your best mobile visitors?',
+              summary: 'Simple steps to diagnose and optimize mobile performance.',
+              keyPoints: ['Mobile users abandon after 3 seconds', 'Compressing images boosts conversions'],
+              contentPillar: 'WEBSITE',
+              postType: 'TIPS',
+              engagementQuestion: 'How fast does your website load on cellular data?',
+              commercialRelevance: 90,
+              engagementPotential: 85,
+              relevanceScore: 90,
+              sourceUrl: 'https://biz.example.com/vitals-2026',
+              sourceName: 'Tech & Business Feed',
+              marketPhenomenon: 'Mobile browser standards emphasize interaction latency.',
+              customerOpportunity: 'Small businesses lose mobile inquiries to faster competitors.',
+              clusterKey: 'website_speed_conversion',
+            },
+            {
+              title: 'The 15-Minute Rule: Converting Phone and Form Inquiries Faster',
+              angle: 'Automate instant quote acknowledgments to beat competitors to the punch.',
+              hook: 'How quickly does your team reply to quote requests?',
+              summary: 'Why speed-to-lead is the single biggest driver of small business close rates.',
+              keyPoints: ['First response wins the deal', 'Automated SMS confirms receipt instantly'],
+              contentPillar: 'SALES',
+              postType: 'STAT_INSIGHT',
+              engagementQuestion: 'What is your current average turnaround time for incoming quotes?',
+              commercialRelevance: 88,
+              engagementPotential: 90,
+              relevanceScore: 88,
+              sourceUrl: 'https://biz.example.com/response-benchmarks',
+              sourceName: 'Tech & Business Feed',
+              marketPhenomenon: 'Customer impatience expects rapid response to service inquiries.',
+              customerOpportunity: 'Slow callbacks cause high prospective customer attrition.',
+              clusterKey: 'lead_response_time',
+            },
+          ],
+        }),
+        model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        provider: 'cloudflare-workers-ai',
+        usage: { promptTokens: 600, completionTokens: 400, totalTokens: 1000 },
+        finishReason: 'stop',
+        durationMs: 850,
+      }),
+      healthCheck: vi.fn().mockResolvedValue(true),
+    };
+
+    const service = new ResearchService(mockDb, mockAiProvider as unknown as MockAIProvider);
+    const summary = await service.runResearchPipeline('manual');
+
+    expect(summary.aiInferenceRequests).toBe(1);
+    expect(summary.aiInferenceSuccessful).toBe(1);
+    expect(summary.ideasQueued).toBe(2);
+    expect(summary.aiModelName).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+    expect(summary.potentialAnglesDiscovered).toBe(2);
+  });
 });

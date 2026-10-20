@@ -125,27 +125,34 @@ export class TopicRegistry {
       const existingTokens = getTokens(existing);
       if (existingTokens.length === 0) continue;
 
-      // 1. Unigram Token Overlap Ratio
+      // 1. Unigram Token Overlap Ratio (Jaccard Similarity over union)
       const tokenSetA = new Set(newTokens);
       const tokenSetB = new Set(existingTokens);
       let commonTokens = 0;
       for (const t of tokenSetA) {
         if (tokenSetB.has(t)) commonTokens++;
       }
+      const unionTokens = new Set([...tokenSetA, ...tokenSetB]);
+      const tokenJaccard = unionTokens.size > 0 ? commonTokens / unionTokens.size : 0;
       const minTokens = Math.min(tokenSetA.size, tokenSetB.size);
-      const tokenOverlap = minTokens > 0 ? commonTokens / minTokens : 0;
 
-      // 2. Bigram Overlap Ratio
+      // 2. Bigram Overlap Ratio (Jaccard Similarity over union)
       const existingBigrams = new Set(getBigrams(existingTokens));
       let commonBigrams = 0;
       for (const b of newBigrams) {
         if (existingBigrams.has(b)) commonBigrams++;
       }
-      const minBigrams = Math.min(newBigrams.size, existingBigrams.size);
-      const bigramOverlap = minBigrams > 0 ? commonBigrams / minBigrams : 0;
+      const unionBigrams = new Set([...newBigrams, ...existingBigrams]);
+      const bigramJaccard = unionBigrams.size > 0 ? commonBigrams / unionBigrams.size : 0;
 
-      // Duplicate detected if high token overlap (>= 0.5) OR bigram overlap (>= 0.33)
-      if (tokenOverlap >= 0.5 || (bigramOverlap >= 0.33 && commonBigrams >= 1)) {
+      // Duplicate detected if:
+      // - Very high token overlap (tokenJaccard >= 0.70)
+      // - High bigram overlap (bigramJaccard >= 0.50 with at least 2 common bigrams)
+      // - Or exact subset match on concise titles (minTokens <= 4 && tokenJaccard >= 0.60)
+      if (tokenJaccard >= 0.70 || (bigramJaccard >= 0.50 && commonBigrams >= 2)) {
+        return true;
+      }
+      if (minTokens <= 4 && commonTokens === minTokens && tokenJaccard >= 0.60) {
         return true;
       }
     }

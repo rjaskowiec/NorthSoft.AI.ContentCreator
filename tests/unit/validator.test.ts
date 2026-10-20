@@ -97,4 +97,43 @@ describe('AI Output Validator', () => {
     expect(res.data?.clusterKey).toBe('ai_search_visibility');
     expect(res.data?.contentPillar).toBe('AI');
   });
+
+  it('validates a batch of candidate ideas returned as { ideas: [...] }', async () => {
+    const { validateBatchCandidateIdeasOutput } = await import('../../src/services/research/validator');
+    const batchJson = JSON.stringify({
+      ideas: [
+        {
+          title: 'Speed Up Your Mobile Site to Stop Losing Inquiries',
+          angle: 'Show local business owners why a 3-second load delay cuts inquiries in half.',
+          hook: 'How many customers click away before your mobile page even finishes loading?',
+          summary: 'Why Core Web Vitals directly determine inquiry volume for service firms.',
+          keyPoints: ['53% of mobile visits are abandoned after 3 seconds', 'Compressing images cuts load time immediately'],
+          contentPillar: 'WEBSITE',
+          clusterKey: 'website_speed_conversion',
+          commercialRelevance: 90,
+          engagementPotential: 85,
+          relevanceScore: 90,
+        },
+        {
+          title: 'Weekend Customer Inquiries: Stop Losing Leads After 5 PM',
+          angle: 'Explain how simple automated responders capture leads while the office is closed.',
+          hook: 'What happens when an excited prospect messages your business on Saturday night?',
+          summary: 'How small businesses capture 40% more leads with simple automated response workflows.',
+          keyPoints: ['Prospects expect immediate acknowledgment', 'An automated quote scheduler locks in the client'],
+          contentPillar: 'AI',
+          clusterKey: 'chatbot_first_touch',
+          commercialRelevance: 95,
+          engagementPotential: 90,
+          relevanceScore: 92,
+        },
+      ],
+    });
+
+    const res = validateBatchCandidateIdeasOutput(batchJson);
+    expect(res.valid).toBe(true);
+    expect(res.data).toHaveLength(2);
+    expect(res.data?.[0]?.title).toBe('Speed Up Your Mobile Site to Stop Losing Inquiries');
+    expect(res.data?.[1]?.clusterKey).toBe('chatbot_first_touch');
+  });
 });
+
