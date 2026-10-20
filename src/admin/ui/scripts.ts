@@ -338,6 +338,28 @@ export function getAdminScripts(): string {
       checkSession();
     }
 
+    async function initializeAuthenticatedSession(data) {
+      if (!data) return;
+      if (data.csrfToken) {
+        csrfToken = safeStr(data.csrfToken);
+      }
+      if (data.sessionToken) {
+        sessionToken = safeStr(data.sessionToken);
+        try { localStorage.setItem('admin_session_token', sessionToken); } catch (e) {}
+      }
+      showDashboard(data.user || {});
+      const hash = getHashTabName();
+      const targetTab = (hash && (VALID_TABS.includes(hash) || hash === 'manual-publisher')) ? hash : 'dashboard';
+      if (!initialSessionLoaded) {
+        initialSessionLoaded = true;
+        await switchTab(targetTab);
+      } else {
+        await switchTab(hash || currentTab || 'dashboard');
+      }
+      // Always auto-trigger Facebook Page Posts feed load for rail sidebar
+      await loadFacebookPagePosts();
+    }
+
     async function checkSession() {
       if (isCheckingSession) return;
       isCheckingSession = true;
@@ -355,23 +377,7 @@ export function getAdminScripts(): string {
         const res = await guardedFetch('/api/auth/session');
         const data = await res.json();
         if (data && data.authenticated) {
-          csrfToken = safeStr(data.csrfToken);
-          if (data.sessionToken) {
-            sessionToken = safeStr(data.sessionToken);
-            try { localStorage.setItem('admin_session_token', sessionToken); } catch (e) {}
-          }
-          showDashboard(data.user || {});
-          if (!initialSessionLoaded) {
-            initialSessionLoaded = true;
-            const hash = getHashTabName();
-            if (hash && (VALID_TABS.includes(hash) || hash === 'manual-publisher')) {
-              switchTab(hash);
-            } else {
-              switchTab('dashboard');
-            }
-          }
-          // Auto-trigger Facebook Page Posts feed load for rail sidebar
-          loadFacebookPagePosts();
+          await initializeAuthenticatedSession(data);
         } else {
           showLoginForm();
         }
@@ -541,8 +547,7 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         if (res.ok && data.success) {
-          csrfToken = safeStr(data.csrfToken);
-          showDashboard(data.user || {});
+          await initializeAuthenticatedSession(data);
         } else if (alertEl) {
           alertEl.textContent = safeStr(data.message, 'Invalid credentials.');
           alertEl.style.display = 'block';
@@ -1090,7 +1095,7 @@ export function getAdminScripts(): string {
       }
 
       // Auto-load Facebook Page Posts (non-blocking)
-      if (!fbPostsLoaded) {
+      if (!fbPostsLoaded && !fbPostsLoading) {
         loadFacebookPagePosts();
       }
     }
@@ -3195,7 +3200,7 @@ export function getAdminScripts(): string {
           if (railBadge) railBadge.innerHTML = '<span class="status-badge status-alert">HTTP ' + res.status + '</span>';
           if (pageBadge) pageBadge.innerHTML = '<span class="status-badge status-alert">HTTP ' + res.status + '</span>';
 
-          const errorHtml = '<div style="text-align:center; padding:1.5rem 0.5rem;"><div style="font-weight:600; color:var(--accent-rose); font-size:0.85rem; margin-bottom:0.25rem;">Unable to load Facebook feed</div><div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">HTTP ' + res.status + '</div><button class="btn-secondary" style="font-size:0.78rem; padding:0.3rem 0.75rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
+          const errorHtml = '<div style="text-align:center; padding:1.5rem 0.5rem;"><div style="font-weight:600; color:var(--accent-rose); font-size:0.85rem; margin-bottom:0.25rem;">Unable to load Facebook posts</div><div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">HTTP ' + res.status + '</div><button class="btn-secondary" style="font-size:0.78rem; padding:0.3rem 0.75rem;" onclick="loadFacebookPagePosts()">Retry</button></div>';
           if (railContainer && !isAppend) railContainer.innerHTML = errorHtml;
           if (pageContainer && !isAppend) pageContainer.innerHTML = errorHtml;
           if (loadMoreWrap) loadMoreWrap.style.display = 'none';

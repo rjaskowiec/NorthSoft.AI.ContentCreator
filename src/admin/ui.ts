@@ -1149,7 +1149,7 @@ export function renderAdminHtml(): string {
         <div id="fb-rail-posts-container" class="fb-rail-posts-list">
           <div style="text-align:center; padding:2rem 0; color:var(--text-muted);">
             <div class="fb-post-loading-spinner"></div>
-            <div style="margin-top:0.75rem; font-size:0.825rem;">Loading Facebook feed...</div>
+            <div style="margin-top:0.75rem; font-size:0.825rem;">Loading Facebook posts...</div>
           </div>
         </div>
 
