@@ -36,14 +36,19 @@ function createMockDb(initialData: {
         if (sql.includes('scheduler_config')) {
           return { enabled: 1, min_topic_backlog: 5, target_coverage_days: 14, max_posts_per_night: 3 } as T;
         }
-        if (sql.includes('FROM posts') && (sql.includes('SELECT p.id') || sql.includes('LIMIT 1')) && !sql.includes('COUNT')) {
+        if ((sql.includes('FROM posts') || sql.includes('UNION ALL')) && (sql.includes('SELECT p.id') || sql.includes('LIMIT 1')) && !sql.includes('COUNT')) {
           const schedulable = posts.find((p) => {
             if (p.status !== 'approved') return false;
             const hasImg = images.some((i) => i.post_id === p.id && i.version_number === (p.current_version ?? 1));
             const hasSched = schedules.some((s) => s.post_id === p.id && ['pending', 'publishing'].includes(s.status));
             return hasImg && !hasSched;
           });
-          return schedulable ? ({ id: schedulable.id } as T) : null;
+          if (schedulable) return { id: schedulable.id } as T;
+          if (sql.includes('content_ideas')) {
+            const dueDeferred = topics.find((t) => t.status === 'deferred');
+            if (dueDeferred) return { id: dueDeferred.id } as T;
+          }
+          return null;
         }
         if (sql.includes('FROM orchestrator_runs') && (sql.includes('result_status = ?') || sql.includes('stage = ?'))) {
           const stage = args[0];

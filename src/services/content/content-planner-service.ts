@@ -10,6 +10,7 @@
 import { D1AuditLogger, type IAuditLogger } from '../../core/audit';
 import { evaluatePipelineGate } from '../../core/quality-gate';
 import { ContentQualityGate } from './content-quality-gate';
+import { AI_BACKGROUND_WINDOW_LABEL, isAiExecutionPermitted } from '../../core/ai-window-policy';
 import { getAIProvider } from '../../ai/factory';
 import { OpenverseImageService } from './image-service';
 import { PolicyReviewService } from './policy-service';
@@ -61,9 +62,30 @@ export class ContentPlannerService {
   async generatePostFromTopic(
     topicId: string,
     actor: 'system' | 'admin' = 'system',
+    nowDate?: Date,
   ): Promise<GenerationResultSummary> {
     const startTime = Date.now();
     const nowIso = new Date().toISOString();
+
+    // 0. AI Window Policy Check: automated background AI generation is restricted to the nightly window
+    if (nowDate !== undefined && !isAiExecutionPermitted(actor, nowDate)) {
+      const deferMsg = `Outside AI background execution window (${AI_BACKGROUND_WINDOW_LABEL}). Post generation deferred until next nightly window.`;
+      await this.auditLogger.log({
+        eventType: 'ORCHESTRATOR_RUN_DEFERRED',
+        entityType: 'content_idea',
+        entityId: topicId,
+        actor,
+        details: { reason: deferMsg, window: AI_BACKGROUND_WINDOW_LABEL },
+      });
+
+      return {
+        topicId,
+        status: 'deferred',
+        currentVersion: 0,
+        errorMessage: deferMsg,
+        durationMs: Date.now() - startTime,
+      };
+    }
 
     // 1. Fetch Candidate Topic
     const topicRow = await this.db

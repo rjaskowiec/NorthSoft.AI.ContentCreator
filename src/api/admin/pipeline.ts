@@ -216,6 +216,18 @@ pipelineRouter.post('/pipeline/scheduler', csrfProtection, async (c) => {
 });
 
 /**
+ * POST /api/admin/pipeline/tick
+ * Triggers an automation tick on demand (evaluates 24/7 deterministic tasks and AI stages if in window).
+ * Protected by requireAdmin and csrfProtection.
+ */
+pipelineRouter.post('/pipeline/tick', csrfProtection, async (c) => {
+  const db = c.env.DB;
+  const service = new PipelineOrchestratorService(db, c.env);
+  const result = await service.runAutomationTick(new Date());
+  return c.json({ success: true, result });
+});
+
+/**
  * GET /api/admin/pipeline/activity
  * Filterable, categorized automation activity log for the Automation Activity panel.
  */

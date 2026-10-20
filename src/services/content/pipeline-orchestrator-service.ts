@@ -25,6 +25,7 @@ import {
   AI_BACKGROUND_WINDOW,
   AI_BACKGROUND_WINDOW_LABEL,
   getNextAiWindowStart,
+  isAiExecutionPermitted,
   isWithinAiBackgroundWindow,
 } from '../../core/ai-window-policy';
 import { CloudflareUsageService } from '../cloudflare/cloudflare-usage-service';
@@ -48,6 +49,11 @@ export type PipelineActor = 'admin' | 'system';
  */
 export type PipelineOutcome = 'COMPLETED_WITH_OUTPUT' | 'COMPLETED_NO_WORK' | 'BLOCKED' | 'FAILED';
 
+/** Granular classification of AI operations */
+export type AiOutcome = 'EXECUTED' | 'AWAITING_WINDOW' | 'BLOCKED_QUOTA' | 'NO_WORK_NEEDED' | 'FAILED';
+
+/** Granular classification of non-AI deterministic operations (24/7) */
+export type DeterministicOutcome = 'EXECUTED' | 'BLOCKED_DEPENDENCY' | 'NO_WORK_NEEDED' | 'FAILED';
 
 const ACTIVE_TOPIC_STATUSES = "('queued', 'new', 'accepted', 'discovered', 'pending')";
 
@@ -134,7 +140,9 @@ export interface AutomationTickResult {
   ran: boolean;
   reason: string;
   outcome?: PipelineOutcome;
-  /** Named blockers when outcome is BLOCKED (e.g. posts awaiting an approved image). */
+  aiOutcome?: AiOutcome;
+  deterministicOutcome?: DeterministicOutcome;
+  /** Named blockers when work is blocked (e.g. AI quota exhaustion or posts awaiting an approved image). */
   blockers?: string[];
   steps: StageRunResult[];
 }
@@ -161,12 +169,17 @@ export interface PipelineStatus {
     scheduledPending: number;
     coverageDays: number;
     postsGeneratedTonight: number;
+    deferredTopics?: number;
   };
   needs: {
     topics: boolean;
     posts: boolean;
     images: boolean;
     scheduling: boolean;
+  };
+  modes?: {
+    aiOperations: 'window_restricted';
+    deterministicOperations: 'always_active_24_7';
   };
 }
 
@@ -307,7 +320,29 @@ export class PipelineOrchestratorService {
     });
   }
 
-  async runPostGeneration(ideaId?: string, actor: PipelineActor = 'admin'): Promise<GenerationStageResult> {
+  async runPostGeneration(ideaId?: string, actor: PipelineActor = 'admin', nowDate: Date = new Date()): Promise<GenerationStageResult> {
+    if (!isAiExecutionPermitted(actor, nowDate)) {
+      return {
+        runId: newRunId('stage_generation_deferred'),
+        ideaId,
+        title: 'Post generation deferred',
+        body: '',
+        qualityScore: 0,
+        classification: {
+          pillar: 'GENERAL',
+          postType: 'SHORT_SOCIAL',
+          engagementPotential: 0,
+          clarity: 0,
+          practicalValue: 0,
+          brandRelevance: 0,
+          originality: 0,
+        },
+        finalDecision: 'DEFERRED',
+        rejectionReason: `Outside AI background execution window (${AI_BACKGROUND_WINDOW_LABEL}). Post generation deferred.`,
+        durationMs: 0,
+      };
+    }
+
     const d1QuotaService = new D1QuotaService();
     const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
     const deferCheck = d1QuotaService.shouldDeferStage('posts', d1Status, actor === 'admin');
@@ -340,7 +375,7 @@ export class PipelineOrchestratorService {
         .first<{ title: string }>();
 
       const planner = new ContentPlannerService(this.db, this.env, this.auditLogger);
-      const planResult = await planner.generatePostFromTopic(targetIdeaId, actor);
+      const planResult = await planner.generatePostFromTopic(targetIdeaId, actor, nowDate);
 
       const emptyClassification = {
         pillar: 'GENERAL',
@@ -409,7 +444,7 @@ export class PipelineOrchestratorService {
    * Order: best APPROVED image from the curated library, then Openverse search (the found
    * candidate is added to the library as APPROVED — same behaviour as the manual "search image").
    */
-  async runImagesStage(actor: PipelineActor = 'admin', limit = 5): Promise<ImagesStageResult> {
+  async runImagesStage(actor: PipelineActor = 'admin', limit = 5, nowDate?: Date): Promise<ImagesStageResult> {
     return this.withLock('stage_images', actor, 300, async (runId) => {
       const startTime = Date.now();
       const rows = await this.db
@@ -484,9 +519,10 @@ export class PipelineOrchestratorService {
 
           // Automatic AI Generation Fallback:
           // If web search found nothing suitable, generate a realistic business image candidate via Workers AI
-          // if Cloudflare bindings are configured and daily quota (1/day) is available.
+          // ONLY during the nightly AI window (or when manually triggered by admin)
           let aiGenerated = false;
-          if (this.env.AI && this.env.IMAGE_BUCKET) {
+          const isAiAllowed = nowDate !== undefined ? isAiExecutionPermitted(actor, nowDate) : true;
+          if (isAiAllowed && this.env.AI && this.env.IMAGE_BUCKET) {
             try {
               const { AiImageGeneratorService } = await import('./ai-image-generator');
               const aiGen = new AiImageGeneratorService(this.env);
@@ -625,7 +661,7 @@ export class PipelineOrchestratorService {
     });
   }
 
-  async runStage(stage: PipelineStage, actor: PipelineActor = 'admin'): Promise<StageRunResult> {
+  async runStage(stage: PipelineStage, actor: PipelineActor = 'admin', now: Date = new Date()): Promise<StageRunResult> {
     // Execution-layer protective mode enforcement: check quota before running expensive stages
     if (stage !== 'scheduling') {
       const d1QuotaService = new D1QuotaService();
@@ -640,6 +676,21 @@ export class PipelineOrchestratorService {
     const triggerType = actor === 'admin' ? 'manual' : 'cron';
     const runId = newRunId(`stage-${stage}`);
     await this.recordRunStart(runId, triggerType, stage);
+
+    // AI execution window policy check: non-admin automated AI stages cannot run outside the window
+    if (actor !== 'admin' && (stage === 'topics' || stage === 'posts') && !isWithinAiBackgroundWindow(now)) {
+      const deferMsg = `Outside AI background execution window (${AI_BACKGROUND_WINDOW_LABEL}). Stage '${stage}' deferred until next nightly window.`;
+      await this.recordRunEnd(runId, 'deferred', stage, {
+        message: deferMsg,
+        details: { outcome: 'BLOCKED', stage, reason: deferMsg },
+      });
+      return {
+        stage,
+        success: true,
+        outcome: 'BLOCKED',
+        summary: deferMsg,
+      };
+    }
 
     try {
       let res: StageRunResult;
@@ -693,7 +744,7 @@ export class PipelineOrchestratorService {
           break;
         }
         case 'posts': {
-          const r = await this.runPostGeneration(undefined, actor);
+          const r = await this.runPostGeneration(undefined, actor, now);
           const ok = r.finalDecision === 'PASS';
           const postOutcome: PipelineOutcome = ok
             ? 'COMPLETED_WITH_OUTPUT'
@@ -725,7 +776,7 @@ export class PipelineOrchestratorService {
           break;
         }
         case 'images': {
-          const r = await this.runImagesStage(actor);
+          const r = await this.runImagesStage(actor, 5, now);
           // Only a library match actually attaches an image. Openverse/AI results are PENDING candidates
           // that still need manual approval, so the post remains blocked until then.
           const attached = r.assignedFromLibrary;
@@ -818,8 +869,12 @@ export class PipelineOrchestratorService {
   }
 
   /**
-   * Called by the Worker cron every 5 minutes. Performs at most one AI step per tick
-   * inside the nightly window, plus non-AI scheduling whenever posts are ready.
+   * Called by the Worker cron every 5 minutes.
+   * Architecture: Decoupled two-domain scheduling:
+   *  1. Non-AI / Deterministic domain (24/7): deferred topic promotions, approved post scheduling,
+   *     and dependency status tracking run throughout the day whenever work exists.
+   *  2. AI domain: strictly restricted to the configured nightly window (20:00–23:45 UTC)
+   *     before midnight neuron reset to protect quota. Quota exhaustion never blocks deterministic tasks.
    */
   async runAutomationTick(now: Date = new Date(), preloadedConfig?: SchedulerConfig): Promise<AutomationTickResult> {
     const config = preloadedConfig ?? (await this.getSchedulerConfig());
@@ -828,26 +883,33 @@ export class PipelineOrchestratorService {
     }
 
     const inAiWindow = isWithinAiBackgroundWindow(now);
+    const nowIso = now.toISOString();
+
     if (!inAiWindow) {
-      // Outside AI background window: the only possible work is scheduling approved posts.
-      // Fast-gate check with index seek on posts(status) avoids acquiring locks or running multi-table counts:
-      // Only a post that can actually be scheduled (approved + image + no pending schedule) justifies waking up;
-      // an approved post still waiting for an image is handled by the in-window images stage, not by 5-minute polling.
-      const hasApprovedPost = await this.db
+      // Outside AI background window:
+      // Single-query index seek checks for any eligible deterministic work (approved schedulable post OR due deferred topic)
+      // to guarantee zero writes and exactly 1 fast read outside the window.
+      const deterministicWork = await this.db
         .prepare(
           `SELECT p.id FROM posts p
            WHERE p.status = 'approved'
              AND EXISTS (SELECT 1 FROM post_images pi WHERE pi.post_id = p.id AND pi.version_number = p.current_version)
              AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.post_id = p.id AND s.status IN ('pending', 'publishing'))
+           UNION ALL
+           SELECT id as id FROM content_ideas
+           WHERE status = 'deferred' AND (suggested_publish_date IS NULL OR suggested_publish_date <= ?)
            LIMIT 1`,
         )
+        .bind(nowIso)
         .first<{ id: string }>();
 
-      if (!hasApprovedPost) {
+      if (!deterministicWork) {
         return {
           ran: false,
           reason: 'Outside AI background window and no approved posts awaiting scheduling.',
           outcome: 'COMPLETED_NO_WORK',
+          aiOutcome: 'AWAITING_WINDOW',
+          deterministicOutcome: 'NO_WORK_NEEDED',
           steps: [],
         };
       }
@@ -860,57 +922,119 @@ export class PipelineOrchestratorService {
     }
 
     const steps: StageRunResult[] = [];
+    let promotedFromDeferred = 0;
+    let aiOutcome: AiOutcome = inAiWindow ? 'NO_WORK_NEEDED' : 'AWAITING_WINDOW';
+    let deterministicOutcome: DeterministicOutcome = 'NO_WORK_NEEDED';
+    let aiQuotaBlockedReason: string | undefined;
+
     try {
-      // Independent of discovery: deferred topics whose cooldown elapsed return to the queue first,
-      // so an empty discovery result can never starve topics that are already waiting.
-      let promotedFromDeferred = 0;
-      if (inAiWindow) {
-        try {
-          promotedFromDeferred = (await new TopicRegistry(this.db).promoteDeferredTopics(now)).promoted;
-        } catch {
-          // Promotion is best-effort; deferred topics are retried on the next tick
-        }
+      // 1. DETERMINISTIC STAGE: Cooldown-expired deferred topics are promoted back to 'queued' 24/7
+      try {
+        const promoRes = await new TopicRegistry(this.db).promoteDeferredTopics(now);
+        promotedFromDeferred = promoRes.promoted;
+      } catch (promoErr: unknown) {
+        console.warn('[automation_tick] promoteDeferredTopics non-fatal error:', promoErr);
       }
 
       const counts = await this.getCounts(now);
       const needs = this.evaluateNeeds(config, counts);
 
-      const d1QuotaService = new D1QuotaService();
-      const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
-
-      let deferredByProtection = false;
+      // 2. AI WORKER / AI STAGES: Executed STRICTLY inside the nightly window before midnight neuron reset
       if (inAiWindow) {
-        // One bounded AI step per tick. Each stage is gated per night so a stage that cannot make progress
-        // (e.g. images awaiting manual approval) cannot monopolize every tick and starve topics/posts.
         let aiStage: PipelineStage | null = null;
         if (needs.images && !(await this.stageRanTonight('images', now))) aiStage = 'images';
         else if (needs.topics && !(await this.stageRanTonight('topics', now))) aiStage = 'topics';
         else if (needs.posts && (await this.postAttemptsTonight(now)) < config.maxPostsPerNight * 2) aiStage = 'posts';
 
         if (aiStage) {
+          const d1QuotaService = new D1QuotaService();
+          const d1Status = await d1QuotaService.getD1UsageStatus(this.db, this.cfUsageService);
           const deferCheck = d1QuotaService.shouldDeferStage(aiStage, d1Status, false);
+
           if (deferCheck.defer) {
-            deferredByProtection = true;
+            aiOutcome = 'BLOCKED_QUOTA';
+            aiQuotaBlockedReason = deferCheck.reason || 'Deferred by D1 Protective Mode';
             steps.push({
               stage: aiStage,
               success: false,
               outcome: 'BLOCKED',
-              summary: deferCheck.reason || 'Deferred by D1 Protective Mode',
-              error: deferCheck.reason,
+              summary: aiQuotaBlockedReason,
+              error: aiQuotaBlockedReason,
             });
           } else {
-            steps.push(await this.runStage(aiStage, 'system'));
+            try {
+              const aiStepResult = await this.runStage(aiStage, 'system');
+              steps.push(aiStepResult);
+
+              if (aiStepResult.outcome === 'BLOCKED') {
+                aiOutcome = 'BLOCKED_QUOTA';
+                aiQuotaBlockedReason = aiStepResult.summary;
+              } else if (aiStepResult.outcome === 'COMPLETED_WITH_OUTPUT') {
+                aiOutcome = 'EXECUTED';
+              } else if (aiStepResult.outcome === 'FAILED' || !aiStepResult.success) {
+                aiOutcome = 'FAILED';
+              } else {
+                aiOutcome = 'NO_WORK_NEEDED';
+              }
+            } catch (aiErr: unknown) {
+              const errMsg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+              const isQuotaOrRateLimit = /quota|rate limit|429|protective mode|neuron/i.test(errMsg);
+              aiOutcome = isQuotaOrRateLimit ? 'BLOCKED_QUOTA' : 'FAILED';
+              if (isQuotaOrRateLimit) {
+                aiQuotaBlockedReason = errMsg;
+              }
+              steps.push({
+                stage: aiStage,
+                success: false,
+                outcome: isQuotaOrRateLimit ? 'BLOCKED' : 'FAILED',
+                summary: `AI stage '${aiStage}' deferred: ${errMsg}`,
+                error: errMsg,
+              });
+            }
           }
+        } else {
+          aiOutcome = 'NO_WORK_NEEDED';
         }
       }
 
+      // 3. DETERMINISTIC STAGE: Scheduling approved posts with images 24/7
+      // Runs independently of AI outcome or quota state!
       const countsAfter = steps.length > 0 ? await this.getCounts(now) : counts;
       if (countsAfter.readyToSchedule > 0) {
-        steps.push(await this.runStage('scheduling', 'system'));
+        try {
+          const schedStep = await this.runStage('scheduling', 'system');
+          steps.push(schedStep);
+          if (schedStep.success && schedStep.outcome === 'COMPLETED_WITH_OUTPUT') {
+            deterministicOutcome = 'EXECUTED';
+          } else if (schedStep.outcome === 'BLOCKED') {
+            deterministicOutcome = 'BLOCKED_DEPENDENCY';
+          } else if (schedStep.outcome === 'FAILED') {
+            deterministicOutcome = 'FAILED';
+          }
+        } catch (schedErr: unknown) {
+          const errMsg = schedErr instanceof Error ? schedErr.message : String(schedErr);
+          deterministicOutcome = 'FAILED';
+          steps.push({
+            stage: 'scheduling',
+            success: false,
+            outcome: 'FAILED',
+            summary: `Scheduling failed: ${errMsg}`,
+            error: errMsg,
+          });
+        }
+      } else if (promotedFromDeferred > 0) {
+        deterministicOutcome = 'EXECUTED';
+      } else if (countsAfter.postsWithoutImage > 0) {
+        deterministicOutcome = 'BLOCKED_DEPENDENCY';
+      } else {
+        deterministicOutcome = 'NO_WORK_NEEDED';
       }
 
+      // 4. OBSERVABILITY & OUTCOME EVALUATION
       const blockers: string[] = [];
-      if (deferredByProtection) blockers.push('D1 protective mode deferred the AI stage');
+      if (aiQuotaBlockedReason) {
+        blockers.push(`AI stage blocked: ${aiQuotaBlockedReason}`);
+      }
       if (countsAfter.postsWithoutImage > 0) {
         blockers.push(`${countsAfter.postsWithoutImage} post(s) awaiting an approved image`);
       }
@@ -919,7 +1043,10 @@ export class PipelineOrchestratorService {
       let outcome: PipelineOutcome;
       if (steps.some((s) => s.outcome === 'COMPLETED_WITH_OUTPUT') || promotedFromDeferred > 0) {
         outcome = 'COMPLETED_WITH_OUTPUT';
-      } else if (executed.length > 0 && executed.every((s) => s.outcome === 'FAILED' || (!s.success && s.outcome === undefined))) {
+      } else if (
+        executed.length > 0 &&
+        executed.every((s) => s.outcome === 'FAILED' || (!s.success && s.outcome === undefined))
+      ) {
         outcome = 'FAILED';
       } else if (blockers.length > 0 || steps.some((s) => s.outcome === 'BLOCKED')) {
         outcome = 'BLOCKED';
@@ -929,10 +1056,15 @@ export class PipelineOrchestratorService {
 
       const stepSummary = steps.map((s) => s.summary).join(' | ');
       const promotionNote = promotedFromDeferred > 0 ? `Przywrócono z odroczonych: ${promotedFromDeferred}` : '';
+      const windowNote = !inAiWindow ? `AI window: outside (${AI_BACKGROUND_WINDOW_LABEL})` : '';
+      const reason = [stepSummary, promotionNote, windowNote].filter(Boolean).join(' | ') || 'Nothing to do.';
+
       return {
-        ran: steps.length > 0,
-        reason: [stepSummary, promotionNote].filter(Boolean).join(' | ') || 'Nothing to do.',
+        ran: steps.length > 0 || promotedFromDeferred > 0,
+        reason,
         outcome,
+        aiOutcome,
+        deterministicOutcome,
         blockers: blockers.length > 0 ? blockers : undefined,
         steps,
       };
@@ -1000,7 +1132,7 @@ export class PipelineOrchestratorService {
       }
     };
 
-    const [availableTopics, postsWithoutImage, readyToSchedule, scheduledPending, postsGeneratedTonight] = await Promise.all([
+    const [availableTopics, postsWithoutImage, readyToSchedule, scheduledPending, postsGeneratedTonight, deferredTopics] = await Promise.all([
       scalar(`SELECT COUNT(*) as cnt FROM content_ideas WHERE status IN ${ACTIVE_TOPIC_STATUSES}`),
       scalar(
         `SELECT COUNT(*) as cnt FROM posts p
@@ -1018,6 +1150,7 @@ export class PipelineOrchestratorService {
         "SELECT COUNT(*) as cnt FROM orchestrator_runs WHERE trigger_type = 'cron' AND result_status = 'posts' AND status = 'completed' AND started_at >= ?",
         this.tonightWindowStartIso(now),
       ),
+      scalar("SELECT COUNT(*) as cnt FROM content_ideas WHERE status = 'deferred'"),
     ]);
 
     let coverageDays: number;
@@ -1027,7 +1160,7 @@ export class PipelineOrchestratorService {
       coverageDays = 0;
     }
 
-    return { availableTopics, postsWithoutImage, readyToSchedule, scheduledPending, coverageDays, postsGeneratedTonight };
+    return { availableTopics, postsWithoutImage, readyToSchedule, scheduledPending, coverageDays, postsGeneratedTonight, deferredTopics };
   }
 
   async getStatus(now: Date = new Date()): Promise<PipelineStatus> {
@@ -1042,6 +1175,10 @@ export class PipelineOrchestratorService {
       },
       counts,
       needs: this.evaluateNeeds(config, counts),
+      modes: {
+        aiOperations: 'window_restricted',
+        deterministicOperations: 'always_active_24_7',
+      },
     };
   }
 
