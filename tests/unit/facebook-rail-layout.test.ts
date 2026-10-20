@@ -3,17 +3,24 @@ import { renderAdminHtml } from '../../src/admin/ui.js';
 import { getAdminCss } from '../../src/admin/ui/styles.js';
 
 describe('Facebook Preview Rail Layout & Unified Scrolling Suite', () => {
-  it('renders facebook-rail with natural full-page flow styles and no 100vh trapped scrollbar', () => {
+  it('renders facebook-rail matching 100% page height without inflating parent page height', () => {
     const css = getAdminCss();
 
-    // Verify .facebook-rail has height: auto and min-height: 100%
-    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*min-height:\s*100%/);
-    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*height:\s*auto/);
+    // Verify app-layout is relative and main-content has reserved right margin
+    expect(css).toMatch(/\.app-layout\s*\{[^}]*position:\s*relative/);
+    expect(css).toMatch(/\.main-content\s*\{[^}]*margin-right:\s*400px/);
+    expect(css).toMatch(/\.main-content\.rail-collapsed\s*\{[^}]*margin-right:\s*0/);
 
-    // Verify it does NOT have sticky 100vh with overflow-y: auto on desktop rail
+    // Verify .facebook-rail is positioned absolute with 100% height and internal scrollbar when overflowing
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*position:\s*absolute/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*top:\s*0/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*bottom:\s*0/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*height:\s*100%/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*overflow-y:\s*auto/);
+
+    // Verify it does NOT use sticky 100vh on desktop
     expect(css).not.toMatch(/\.facebook-rail\s*\{[^}]*position:\s*sticky/);
     expect(css).not.toMatch(/\.facebook-rail\s*\{[^}]*height:\s*100vh/);
-    expect(css).not.toMatch(/\.facebook-rail\s*\{[^}]*overflow-y:\s*auto/);
   });
 
   it('provides rail-collapsed class and toggle buttons for full-width workspace mode', () => {
@@ -21,6 +28,7 @@ describe('Facebook Preview Rail Layout & Unified Scrolling Suite', () => {
     const html = renderAdminHtml();
 
     expect(css).toContain('.facebook-rail.rail-collapsed');
+    expect(css).toContain('.main-content.rail-collapsed');
     expect(css).toContain('.btn-rail-toggle');
 
     // Verify collapse button inside facebook rail header

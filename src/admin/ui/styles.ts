@@ -231,6 +231,7 @@ export function getAdminCss(): string {
       display: flex;
       min-height: 100vh;
       width: 100%;
+      position: relative;
     }
 
     /* 1. LEFT SIDEBAR */
@@ -334,6 +335,12 @@ export function getAdminCss(): string {
       width: 100%;
       max-width: 100vw;
       overflow-x: hidden;
+      margin-right: 400px;
+      transition: margin-right 0.2s ease;
+    }
+
+    .main-content.rail-collapsed {
+      margin-right: 0;
     }
 
     .header {
@@ -807,14 +814,34 @@ export function getAdminCss(): string {
       border-left: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      flex-shrink: 0;
-      position: relative;
-      min-height: 100%;
-      height: auto;
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      height: 100%;
+      overflow-y: auto;
       padding: 1.25rem 1rem;
       z-index: 10;
       box-sizing: border-box;
-      transition: width 0.2s ease, opacity 0.2s ease;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    }
+
+    .facebook-rail::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .facebook-rail::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .facebook-rail::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    .facebook-rail::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
     }
 
     .facebook-rail.rail-collapsed {
@@ -1073,6 +1100,10 @@ export function getAdminCss(): string {
       .facebook-rail {
         width: 340px;
       }
+
+      .main-content {
+        margin-right: 340px;
+      }
     }
 
     @media (max-width: 960px) {
@@ -1152,6 +1183,10 @@ export function getAdminCss(): string {
         border-color: var(--accent-blue);
       }
 
+      .main-content {
+        margin-right: 0;
+      }
+
       .facebook-rail {
         width: 100%;
         max-width: 100vw;
@@ -1160,6 +1195,7 @@ export function getAdminCss(): string {
         border-left: none;
         border-top: 1px solid var(--border-color);
         padding: 1.25rem 1rem;
+        overflow-y: visible;
       }
 
       .header {

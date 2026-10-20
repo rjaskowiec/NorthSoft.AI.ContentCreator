@@ -3158,6 +3158,7 @@ export function getAdminScripts(): string {
 
     function toggleFacebookRail(forceShow) {
       const rail = document.querySelector('.facebook-rail');
+      const main = document.querySelector('.main-content');
       const expandBtn = document.getElementById('fb-rail-expand-btn');
       if (!rail) return;
       const isCurrentlyHidden = rail.classList.contains('rail-collapsed');
@@ -3165,10 +3166,12 @@ export function getAdminScripts(): string {
 
       if (shouldShow) {
         rail.classList.remove('rail-collapsed');
+        if (main) main.classList.remove('rail-collapsed');
         if (expandBtn) expandBtn.style.display = 'none';
         try { localStorage.setItem('ns_fb_rail_visible', 'true'); } catch (e) {}
       } else {
         rail.classList.add('rail-collapsed');
+        if (main) main.classList.add('rail-collapsed');
         if (expandBtn) expandBtn.style.display = 'inline-flex';
         try { localStorage.setItem('ns_fb_rail_visible', 'false'); } catch (e) {}
       }
