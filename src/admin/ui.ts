@@ -183,6 +183,10 @@ export function renderAdminHtml(): string {
           </div>
 
           <div class="header-user">
+            <button id="fb-rail-expand-btn" class="btn-secondary" style="display:none; font-size:0.8rem; padding:0.3rem 0.65rem;" onclick="toggleFacebookRail(true)" title="Show Facebook feed">
+              <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:#1877f2; flex-shrink:0; margin-right:4px;"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+              Facebook Feed
+            </button>
             <span id="env-badge" class="env-tag env-production">PRODUCTION</span>
             <div class="user-pill">
               <span class="user-avatar" style="display:inline-flex; align-items:center;">
@@ -1123,7 +1127,12 @@ export function renderAdminHtml(): string {
             <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:#1877f2; flex-shrink:0;"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
             <span>Facebook Feed</span>
           </div>
-          <div id="fb-rail-status-badge"><span class="status-badge status-healthy">LIVE</span></div>
+          <div style="display:flex; align-items:center; gap:0.35rem;">
+            <div id="fb-rail-status-badge"><span class="status-badge status-healthy">LIVE</span></div>
+            <button id="fb-rail-collapse-btn" class="btn-rail-toggle" onclick="toggleFacebookRail(false)" title="Hide Facebook Feed" aria-label="Hide Facebook Feed">
+              <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
         </div>
 
         <div class="fb-rail-page-box">

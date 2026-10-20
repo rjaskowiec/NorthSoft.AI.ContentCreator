@@ -356,6 +356,12 @@ export function getAdminScripts(): string {
       } else {
         await switchTab(hash || currentTab || 'dashboard');
       }
+      // Restore Facebook rail visibility preference
+      try {
+        if (localStorage.getItem('ns_fb_rail_visible') === 'false') {
+          toggleFacebookRail(false);
+        }
+      } catch (e) {}
       // Always auto-trigger Facebook Page Posts feed load for rail sidebar
       await loadFacebookPagePosts();
     }
@@ -3147,6 +3153,24 @@ export function getAdminScripts(): string {
         loadFacebookPublications(false);
         loadSchedulesData();
         loadContentData();
+      }
+    }
+
+    function toggleFacebookRail(forceShow) {
+      const rail = document.querySelector('.facebook-rail');
+      const expandBtn = document.getElementById('fb-rail-expand-btn');
+      if (!rail) return;
+      const isCurrentlyHidden = rail.classList.contains('rail-collapsed');
+      const shouldShow = typeof forceShow === 'boolean' ? forceShow : isCurrentlyHidden;
+
+      if (shouldShow) {
+        rail.classList.remove('rail-collapsed');
+        if (expandBtn) expandBtn.style.display = 'none';
+        try { localStorage.setItem('ns_fb_rail_visible', 'true'); } catch (e) {}
+      } else {
+        rail.classList.add('rail-collapsed');
+        if (expandBtn) expandBtn.style.display = 'inline-flex';
+        try { localStorage.setItem('ns_fb_rail_visible', 'false'); } catch (e) {}
       }
     }
 
@@ -7128,6 +7152,7 @@ export function getAdminScripts(): string {
     window.publishNow = publishNow;
     window.retryPub = retryPub;
     window.loadFacebookPagePosts = loadFacebookPagePosts;
+    window.toggleFacebookRail = toggleFacebookRail;
     window.setAuditCategory = setAuditCategory;
     window.executeAuditSearch = executeAuditSearch;
     window.handleAuditSearch = handleAuditSearch;

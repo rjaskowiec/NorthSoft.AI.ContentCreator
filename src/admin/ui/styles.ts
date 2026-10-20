@@ -808,12 +808,36 @@ export function getAdminCss(): string {
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      overflow-y: auto;
+      position: relative;
+      min-height: 100%;
+      height: auto;
       padding: 1.25rem 1rem;
-      z-index: 90;
+      z-index: 10;
+      box-sizing: border-box;
+      transition: width 0.2s ease, opacity 0.2s ease;
+    }
+
+    .facebook-rail.rail-collapsed {
+      display: none;
+    }
+
+    .btn-rail-toggle {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 0.25rem 0.45rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-rail-toggle:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border-color: var(--border-color-hover);
     }
 
     .fb-rail-header {
