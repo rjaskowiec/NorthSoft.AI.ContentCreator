@@ -16,6 +16,7 @@ import {
 import {
   generateNovelImageConcept,
   validateConceptNovelty,
+  buildBusinessImagePrompt,
   type CategoryHistoryItem,
   type GeneratedSceneConcept,
 } from '../../src/services/content/ai-image-generator';
@@ -238,6 +239,39 @@ describe('Phase 3 — Creative Diversity & Anti-Trope Guard', () => {
 
     expect(capturedSystemMessage).toContain('Team gathered around tablet at kitchen island');
     expect(capturedSystemMessage).toContain('SCENES & SITUATIONS TO CONTRAST WITH');
+  });
+
+  it('enforces natural human photorealism (skin micro-texture, fine pores, hair flyaways, eye moisture, and anti-CGI directives)', () => {
+    const prompt = buildBusinessImagePrompt(
+      'consultant reviewing website UX with founder in sunlit studio',
+      'Websites & Landing Pages',
+      'Auditing user navigation and conversion rates',
+      {
+        compositionGuidance: 'natural eye-level documentary shot',
+        emotionalTone: 'collaborative',
+        promptDescription: 'A website consultant and female founder seated side-by-side at an oak table reviewing wireframe sketches.',
+      },
+    );
+
+    // Natural skin micro-textures and subsurface scattering
+    expect(prompt).toContain('realistic skin texture with fine pores');
+    expect(prompt).toContain('subsurface scattering');
+    expect(prompt).toContain('fine imperfections');
+
+    // Natural hair texture and flyaways
+    expect(prompt).toContain('individual hair strands with natural texture');
+    expect(prompt).toContain('subtle organic flyaways');
+
+    // Eye moisture and facial realism
+    expect(prompt).toContain('natural eye moisture');
+    expect(prompt).toContain('realistic eyelid folds');
+    expect(prompt).toContain('authentic communicative micro-expressions');
+
+    // Anti-CGI and anti-plastic safeguards
+    expect(prompt).toContain('zero digital smoothing');
+    expect(prompt).toContain('no plastic skin');
+    expect(prompt).toContain('no CGI render');
+    expect(prompt).toContain('raw documentary photography aesthetic');
   });
 });
 

@@ -512,10 +512,14 @@ AI RESPONSIBILITIES & CREATIVE MANDATE:
    - NEVER generate futuristic clichés: NO glowing holographic screens, NO futuristic rooms, NO sci-fi machinery, NO neon tech laboratories.
    - DO NOT default to a repetitive setup of "a specialist in a futuristic room staring at complex innovation screens".
    - The scene must depict a credible, contemporary, photorealistic business situation.
-4. TWO EXPLICITLY SEPARATE OUTPUTS:
+4. MAXIMUM PHOTOREALISM & NATURAL HUMAN APPEARANCE MANDATE:
+   - People must look 100% indistinguishable from real documentary photographs to the naked eye.
+   - STRICTLY FORBID the CGI look, 3D computer graphics, plastic waxy skin, or artificial airbrushing.
+   - Emphasize authentic human features: realistic skin micro-texture, fine pores, natural hair strands with subtle organic flyaways, relaxed candid posture, genuine human micro-expressions, and soft natural directional window lighting.
+5. TWO EXPLICITLY SEPARATE OUTPUTS:
    - "promptDescription": 2-3 sentences rich, visually specific commercial scene description for FLUX.1 text-to-image generation.
    - "searchQuery": Concise 3-8 word English noun-phrase query optimized for stock photography search (e.g. "small business AI automation", "satisfied customer business meeting", "person using smartphone shopping", "small business owner planning work"). Do NOT include camera instructions, lighting words, or full narrative sentences in the search query.
-5. RECENT SCENES & SITUATIONS TO CONTRAST WITH (do NOT repeat these):
+6. RECENT SCENES & SITUATIONS TO CONTRAST WITH (do NOT repeat these):
 ${recentHistorySnippets.length > 0 ? recentHistorySnippets.map((r) => `* ${r}`).join('\n') : (historyOverview || dominantThemes.map((t) => `* ${t}`).join('\n'))}
 
 Frequent motifs already well-covered in library (explore outside these):
@@ -626,10 +630,10 @@ OUTPUT FORMAT: You MUST return strictly valid JSON matching this schema:
  * Directly integrates promptDescription, compositionGuidance, and AI-determined emotionalTone.
  */
 export const EMOTIONAL_EXPRESSION_DIRECTIONS: Record<EmotionalIntent, string> = {
-  positive: 'Expression: calm satisfaction, relaxed facial features, subtle natural crinkles around eyes, unhurried posture.',
-  neutral: 'Expression: focused concentration, neutral composed brow, quiet professionalism, eyes directed at the work.',
-  'problem-aware': 'Expression: analytical contemplation, attentive focus, hand touching chin or holding pen, inspecting data with serious diligence.',
-  collaborative: 'Expression: approachable engagement, receptive listening posture, natural head angle during conversational exchange.',
+  positive: 'Expression: calm satisfaction, relaxed facial features, subtle natural crinkles around eyes, authentic smile without forced posing, unhurried posture.',
+  neutral: 'Expression: focused concentration, neutral composed brow, quiet professionalism, eyes directed at the work with natural catchlight.',
+  'problem-aware': 'Expression: analytical contemplation, attentive focus, hand touching chin or holding pen, inspecting data with serious diligence, natural thoughtful brow.',
+  collaborative: 'Expression: approachable engagement, receptive listening posture, natural head angle during conversational exchange, authentic communicative micro-expressions.',
 };
 
 export function buildBusinessImagePrompt(
@@ -656,8 +660,8 @@ export function buildBusinessImagePrompt(
   const emotion = sceneConcept?.emotionalTone || detectEmotionalIntent(postContext || primaryDescription);
   const emotionalSegment = EMOTIONAL_EXPRESSION_DIRECTIONS[emotion];
 
-  // 3. Photographic Style & Environment
-  const photoSegment = 'Style: 35mm lens, natural directional window daylight, f/4 aperture with gentle background separation, realistic skin texture with fine pores, believable fabric folds, neutral color grading.';
+  // 3. Photographic Style & Environment - Explicit Photorealism, Natural Skin, Hair & Eyes
+  const photoSegment = 'Style: 35mm lens, natural directional window daylight, f/4 aperture with gentle background separation, realistic skin texture with fine pores, individual hair strands with natural texture and subtle organic flyaways, authentic skin subsurface scattering with fine imperfections, natural eye moisture and realistic eyelid folds, believable fabric folds, zero digital smoothing, no plastic skin, no CGI render, raw documentary photography aesthetic, neutral color grading.';
 
   // 4. Device Screen Composition
   const screenSegment = 'Screens: any visible monitor, tablet or phone displays clean minimalist geometric blocks and wireframe sections, without pseudo-text or cluttered charts.';
@@ -870,11 +874,19 @@ export class AiImageGeneratorService {
     const startTime = Date.now();
     let imageBytes: ArrayBuffer;
 
+    const envObj = this.env as unknown as Record<string, unknown> | undefined;
+    const modelToUse = (typeof envObj?.AI_IMAGE_MODEL === 'string' && envObj.AI_IMAGE_MODEL.trim())
+      ? envObj.AI_IMAGE_MODEL.trim()
+      : AI_IMAGE_GENERATION_MODEL;
+
+    // Use 8 steps for FLUX.1 Schnell to resolve high-frequency skin pores, individual hair strands, and eye geometry
+    const stepsToUse = modelToUse.includes('flux') ? 8 : 20;
+
     try {
-      // Call Cloudflare Workers AI text-to-image model (FLUX.1 Schnell is distilled for 4 steps)
-      const aiResponse = await this.env.AI.run(AI_IMAGE_GENERATION_MODEL as Parameters<Ai['run']>[0], {
+      // Call Cloudflare Workers AI text-to-image model (FLUX.1 Schnell at maximum 8 steps for photorealistic skin/hair)
+      const aiResponse = await this.env.AI.run(modelToUse as Parameters<Ai['run']>[0], {
         prompt,
-        steps: 4,
+        steps: stepsToUse,
       });
 
       if (aiResponse instanceof ReadableStream) {
