@@ -202,7 +202,7 @@ export function getAdminScripts(): string {
     }
 
     function setupSortableTable(table) {
-      if (observedSortableTables.has(table)) return;
+      if (!table || (typeof table.hasAttribute === 'function' && table.hasAttribute('data-managed')) || observedSortableTables.has(table)) return;
       observedSortableTables.add(table);
       const headerRow = table.tHead && table.tHead.rows[0];
       if (!headerRow) return;
@@ -238,8 +238,9 @@ export function getAdminScripts(): string {
 
     function activateTableSort(header) {
       const table = header.closest('table');
+      if (!table || (typeof table.hasAttribute === 'function' && table.hasAttribute('data-managed'))) return;
       const column = Number(header.dataset.sortColumn);
-      if (!table || !Number.isInteger(column)) return;
+      if (!Number.isInteger(column)) return;
       const previous = tableSortStates.get(table);
       const direction = previous && previous.column === column && previous.direction === 'asc' ? 'desc' : 'asc';
       tableSortStates.set(table, { column, direction });
@@ -267,6 +268,412 @@ export function getAdminScripts(): string {
     });
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeSortableTables, { once: true });
     else initializeSortableTables();
+
+    // Universal Section Table Architecture
+    function classifyTopicClient(topic) {
+      if (!topic) return 'active';
+      const hasPost = Number(topic.post_count || 0) > 0;
+      const rawStatus = safeLower(topic.status);
+      if (hasPost || ['published', 'used', 'post_generated', 'scheduled'].includes(rawStatus)) {
+        return 'converted';
+      }
+      if (rawStatus === 'rejected') {
+        return 'archived';
+      }
+      return 'active';
+    }
+
+    function classifyPostClient(post) {
+      if (!post) return 'draft';
+      if (isPublishedPost(post)) return 'published';
+      if (isScheduledPost(post)) return 'scheduled';
+      return 'draft';
+    }
+
+    function classifyScheduleClient(sched) {
+      if (!sched) return 'upcoming';
+      const st = safeLower(sched.status);
+      const pst = safeLower(sched.post_status);
+      if (st === 'published' || pst === 'published') return 'past';
+      return 'upcoming';
+    }
+
+    class UniversalSectionTable {
+      constructor(config) {
+        this.containerId = config.containerId;
+        this.sectionKey = config.sectionKey;
+        this.title = config.title;
+        this.subtitle = config.subtitle || '';
+        this.badgeClass = config.badgeClass || 'badge-accent';
+        this.iconSvg = config.iconSvg || '';
+        this.columns = config.columns || [];
+        this.renderRow = config.renderRow;
+        this.rowIdKey = config.rowIdKey || 'id';
+        this.hasSelection = Boolean(config.hasSelection);
+        this.emptyMessage = config.emptyMessage || 'No records in this section.';
+        this.onSelectionChange = config.onSelectionChange || null;
+
+        this.defaultSortKey = config.defaultSortKey || '';
+        this.defaultSortDir = config.defaultSortDir || 'desc';
+        this.sortKey = this.defaultSortKey;
+        this.sortDir = this.defaultSortDir;
+
+        let savedSize = null;
+        try { savedSize = sessionStorage.getItem('ns_tablesec_pagesize_' + this.sectionKey); } catch (e) {}
+        this.pageSize = savedSize ? Number(savedSize) : (config.pageSize || 10);
+        if (![5, 10, 25, 50].includes(this.pageSize)) this.pageSize = 10;
+
+        let savedCollapsed = null;
+        try { savedCollapsed = sessionStorage.getItem('ns_tablesec_collapsed_' + this.sectionKey); } catch (e) {}
+        this.isCollapsed = savedCollapsed !== null ? (savedCollapsed === 'true') : Boolean(config.defaultCollapsed);
+
+        this.currentPage = 1;
+        this.items = [];
+        this.sortedItems = [];
+        this.selectedIds = new Set();
+
+        window.__universalTables = window.__universalTables || {};
+        window.__universalTables[this.sectionKey] = this;
+      }
+
+      setItems(newItems) {
+        this.items = Array.isArray(newItems) ? newItems : [];
+        const validIds = new Set(this.items.map(item => String(item[this.rowIdKey])));
+        for (const id of this.selectedIds) {
+          if (!validIds.has(id)) {
+            this.selectedIds.delete(id);
+          }
+        }
+        this.applySort();
+        this.render();
+      }
+
+      applySort() {
+        if (!this.sortKey) {
+          this.sortedItems = this.items.slice();
+          return;
+        }
+        const key = this.sortKey;
+        const dir = this.sortDir;
+        const isDate = /date|time|published|timestamp|created|scheduled/i.test(key);
+        const isNumeric = /views|reactions|comments|shares|count|items|topics|score|priority/i.test(key);
+
+        const keyed = this.items.map((item, originalIndex) => {
+          let rawVal = item ? item[key] : undefined;
+          if (rawVal === null || rawVal === undefined) rawVal = '';
+          const str = String(rawVal).trim();
+          let sortVal = str.toLowerCase();
+          let isEmpty = str === '' || str === '—' || str === '-';
+
+          if (isDate && !isEmpty) {
+            const parsed = Date.parse(str);
+            if (Number.isFinite(parsed)) sortVal = parsed;
+            else isEmpty = true;
+          } else if (isNumeric && !isEmpty) {
+            const parsed = Number(str.replace(/[^0-9.-]/g, ''));
+            if (Number.isFinite(parsed)) sortVal = parsed;
+          } else if (!isEmpty && /^-?[0-9]+(?:[.,][0-9]+)?$/.test(str)) {
+            sortVal = Number(str.replace(',', '.'));
+          }
+
+          return { item, sortVal, isEmpty, originalIndex };
+        });
+
+        keyed.sort((a, b) => {
+          if (a.isEmpty !== b.isEmpty) return a.isEmpty ? 1 : -1;
+          let cmp = 0;
+          if (typeof a.sortVal === 'number' && typeof b.sortVal === 'number') {
+            cmp = a.sortVal - b.sortVal;
+          } else {
+            cmp = String(a.sortVal).localeCompare(String(b.sortVal), undefined, {
+              numeric: true,
+              sensitivity: 'base'
+            });
+          }
+          if (dir === 'desc') cmp *= -1;
+          return cmp || (a.originalIndex - b.originalIndex);
+        });
+
+        this.sortedItems = keyed.map(k => k.item);
+      }
+
+      setSort(key) {
+        if (this.sortKey === key) {
+          this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          this.sortKey = key;
+          this.sortDir = 'asc';
+        }
+        this.currentPage = 1;
+        this.applySort();
+        this.render();
+      }
+
+      setPage(page) {
+        const totalPages = Math.max(1, Math.ceil(this.sortedItems.length / this.pageSize));
+        this.currentPage = Math.max(1, Math.min(page, totalPages));
+        this.render();
+      }
+
+      setPageSize(size) {
+        const s = Number(size);
+        if ([5, 10, 25, 50].includes(s)) {
+          this.pageSize = s;
+          try { sessionStorage.setItem('ns_tablesec_pagesize_' + this.sectionKey, String(s)); } catch (e) {}
+          this.currentPage = 1;
+          this.render();
+        }
+      }
+
+      toggleCollapse() {
+        this.isCollapsed = !this.isCollapsed;
+        try { sessionStorage.setItem('ns_tablesec_collapsed_' + this.sectionKey, String(this.isCollapsed)); } catch (e) {}
+        const panel = document.getElementById(this.containerId);
+        if (panel) {
+          if (this.isCollapsed) panel.classList.add('is-collapsed');
+          else panel.classList.remove('is-collapsed');
+          const toggleBtn = panel.querySelector('.table-section-toggle-btn');
+          if (toggleBtn) {
+            toggleBtn.setAttribute('aria-expanded', String(!this.isCollapsed));
+            toggleBtn.setAttribute('title', this.isCollapsed ? 'Expand section' : 'Collapse section');
+          }
+        }
+      }
+
+      toggleSelectRow(id, checked) {
+        const idStr = String(id);
+        if (checked) {
+          this.selectedIds.add(idStr);
+        } else {
+          this.selectedIds.delete(idStr);
+        }
+        this.render();
+        if (this.onSelectionChange) this.onSelectionChange(this.selectedIds);
+      }
+
+      toggleSelectPage(checked) {
+        const slice = this.getCurrentPageSlice();
+        slice.pageItems.forEach(item => {
+          const id = String(item[this.rowIdKey]);
+          if (checked) this.selectedIds.add(id);
+          else this.selectedIds.delete(id);
+        });
+        this.render();
+        if (this.onSelectionChange) this.onSelectionChange(this.selectedIds);
+      }
+
+      selectAllInSection() {
+        this.items.forEach(item => {
+          this.selectedIds.add(String(item[this.rowIdKey]));
+        });
+        this.render();
+        if (this.onSelectionChange) this.onSelectionChange(this.selectedIds);
+      }
+
+      clearSelection() {
+        this.selectedIds.clear();
+        this.render();
+        if (this.onSelectionChange) this.onSelectionChange(this.selectedIds);
+      }
+
+      getCurrentPageSlice() {
+        const totalItems = this.sortedItems.length;
+        const totalPages = Math.max(1, Math.ceil(totalItems / this.pageSize));
+        const currentPage = Math.max(1, Math.min(this.currentPage, totalPages));
+        this.currentPage = currentPage;
+
+        if (totalItems === 0) {
+          return { pageItems: [], currentPage: 1, totalPages: 1, totalItems: 0, rangeStart: 0, rangeEnd: 0 };
+        }
+        const start = (currentPage - 1) * this.pageSize;
+        const pageItems = this.sortedItems.slice(start, start + this.pageSize);
+        return {
+          pageItems,
+          currentPage,
+          totalPages,
+          totalItems,
+          rangeStart: start + 1,
+          rangeEnd: Math.min(start + pageItems.length, totalItems)
+        };
+      }
+
+      render() {
+        const container = document.getElementById(this.containerId);
+        if (!container) return;
+
+        const totalCount = this.sortedItems.length;
+        const slice = this.getCurrentPageSlice();
+        const pageItemIds = slice.pageItems.map(item => String(item[this.rowIdKey]));
+
+        let masterChecked = false;
+        let masterIndeterminate = false;
+        let pageSelectedCount = 0;
+
+        if (this.hasSelection && pageItemIds.length > 0) {
+          pageSelectedCount = pageItemIds.filter(id => this.selectedIds.has(id)).length;
+          if (pageSelectedCount === pageItemIds.length) {
+            masterChecked = true;
+          } else if (pageSelectedCount > 0) {
+            masterIndeterminate = true;
+          }
+        }
+
+        const showSelectBanner = this.hasSelection &&
+          pageSelectedCount === pageItemIds.length &&
+          pageItemIds.length > 0 &&
+          totalCount > pageItemIds.length &&
+          this.selectedIds.size < totalCount;
+
+        const showClearBanner = this.hasSelection &&
+          this.selectedIds.size === totalCount &&
+          totalCount > pageItemIds.length;
+
+        const headerHtml = '<div class="table-section-header" onclick="window.__universalTables[\\x27' + this.sectionKey + '\\x27].toggleCollapse()">' +
+          '<div class="table-section-header-left">' +
+            '<button type="button" class="table-section-toggle-btn" aria-expanded="' + (!this.isCollapsed) + '" aria-label="Toggle ' + escapeHtml(this.title) + ' section" title="' + (this.isCollapsed ? 'Expand section' : 'Collapse section') + '" onclick="event.stopPropagation(); window.__universalTables[\\x27' + this.sectionKey + '\\x27].toggleCollapse()">' +
+              '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="6 9 12 15 18 9"/></svg>' +
+            '</button>' +
+            '<div class="table-section-title-wrap">' +
+              '<div class="table-section-title">' +
+                this.iconSvg +
+                '<span>' + escapeHtml(this.title) + '</span>' +
+                '<span class="table-section-count-badge ' + this.badgeClass + '">' + totalCount + '</span>' +
+              '</div>' +
+              (this.subtitle ? '<div class="table-section-subtitle">' + escapeHtml(this.subtitle) + '</div>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="table-section-header-right" onclick="event.stopPropagation()"></div>' +
+        '</div>';
+
+        let bannerHtml = '';
+        if (showSelectBanner) {
+          bannerHtml = '<div class="table-section-select-banner">' +
+            '<span>All <strong>' + pageSelectedCount + '</strong> records on this page are selected.</span> ' +
+            '<button type="button" onclick="window.__universalTables[\\x27' + this.sectionKey + '\\x27].selectAllInSection()">Select all ' + totalCount + ' records in ' + escapeHtml(this.title) + '</button>' +
+          '</div>';
+        } else if (showClearBanner) {
+          bannerHtml = '<div class="table-section-select-banner">' +
+            '<span>All <strong>' + totalCount + '</strong> records in this section are selected.</span> ' +
+            '<button type="button" onclick="window.__universalTables[\\x27' + this.sectionKey + '\\x27].clearSelection()">Clear selection</button>' +
+          '</div>';
+        }
+
+        const theadCols = this.columns.map(col => {
+          if (col.isSelectAll) {
+            return '<th style="width:' + (col.width || '44px') + '; text-align:center;">' +
+              '<input type="checkbox" class="section-select-all" aria-label="Select all on current page in ' + escapeHtml(this.title) + '" ' + (masterChecked ? 'checked' : '') + ' onchange="window.__universalTables[\\x27' + this.sectionKey + '\\x27].toggleSelectPage(this.checked)" />' +
+            '</th>';
+          }
+          const alignStyle = col.align ? 'text-align:' + col.align + ';' : '';
+          const widthStyle = col.width ? 'width:' + col.width + ';' : '';
+          if (!col.sortable) {
+            return '<th style="' + widthStyle + ' ' + alignStyle + '">' + escapeHtml(col.label) + '</th>';
+          }
+          const isSorted = this.sortKey === col.key;
+          const dirIndicator = isSorted ? (this.sortDir === 'asc' ? '▲' : '▼') : '↕';
+          const ariaSort = isSorted ? (this.sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
+          return '<th class="sortable-header" style="' + widthStyle + ' ' + alignStyle + '" tabindex="0" role="columnheader" aria-sort="' + ariaSort + '" aria-label="Sort by ' + escapeHtml(col.label) + '" onclick="window.__universalTables[\\x27' + this.sectionKey + '\\x27].setSort(\\x27' + col.key + '\\x27)" onkeydown="if(event.key===\\x27Enter\\x27||event.key===\\x27 \\x27){event.preventDefault(); window.__universalTables[\\x27' + this.sectionKey + '\\x27].setSort(\\x27' + col.key + '\\x27);}">' +
+            escapeHtml(col.label) + ' <span class="table-sort-indicator" aria-hidden="true">' + dirIndicator + '</span>' +
+          '</th>';
+        }).join('');
+
+        let rowsHtml = '';
+        if (slice.pageItems.length === 0) {
+          const colSpan = this.columns.length;
+          rowsHtml = '<tr><td colspan="' + colSpan + '" style="text-align:center; color:var(--text-muted); padding:2rem 1rem;">' + this.emptyMessage + '</td></tr>';
+        } else {
+          rowsHtml = slice.pageItems.map(item => {
+            const id = String(item[this.rowIdKey]);
+            const isChecked = this.selectedIds.has(id);
+            return this.renderRow(item, isChecked);
+          }).join('');
+        }
+
+        const totalPages = slice.totalPages;
+        const curPage = slice.currentPage;
+        const footerHtml = '<div class="table-section-footer">' +
+          '<div style="font-size:0.75rem; color:var(--text-muted);">' +
+            (totalCount === 0 ? 'No records' : 'Showing <strong>' + slice.rangeStart + '–' + slice.rangeEnd + '</strong> of <strong>' + totalCount + '</strong> records') +
+          '</div>' +
+          '<div class="table-section-pagination">' +
+            '<label style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:0.35rem;">' +
+              '<span>Rows:</span>' +
+              '<select class="table-section-page-size-select" aria-label="Rows per page for ' + escapeHtml(this.title) + '" onchange="window.__universalTables[\\x27' + this.sectionKey + '\\x27].setPageSize(this.value)">' +
+                '<option value="5" ' + (this.pageSize === 5 ? 'selected' : '') + '>5</option>' +
+                '<option value="10" ' + (this.pageSize === 10 ? 'selected' : '') + '>10</option>' +
+                '<option value="25" ' + (this.pageSize === 25 ? 'selected' : '') + '>25</option>' +
+                '<option value="50" ' + (this.pageSize === 50 ? 'selected' : '') + '>50</option>' +
+              '</select>' +
+            '</label>' +
+            '<span style="font-size:0.75rem; color:var(--text-muted); margin:0 0.35rem;">Page <strong>' + curPage + '</strong> of <strong>' + totalPages + '</strong></span>' +
+            '<button type="button" class="table-section-pagination-btn" aria-label="Previous page" title="Previous page" ' + (curPage <= 1 ? 'disabled' : '') + ' onclick="window.__universalTables[\\x27' + this.sectionKey + '\\x27].setPage(' + (curPage - 1) + ')">' +
+              '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="15 18 9 12 15 6"/></svg>' +
+            '</button>' +
+            '<button type="button" class="table-section-pagination-btn" aria-label="Next page" title="Next page" ' + (curPage >= totalPages ? 'disabled' : '') + ' onclick="window.__universalTables[\\x27' + this.sectionKey + '\\x27].setPage(' + (curPage + 1) + ')">' +
+              '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"/></svg>' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+
+        container.className = 'table-section-panel' + (this.isCollapsed ? ' is-collapsed' : '');
+        container.innerHTML = headerHtml +
+          '<div class="table-section-body">' +
+            bannerHtml +
+            '<div class="table-responsive">' +
+              '<table class="data-table" data-managed="true">' +
+                '<thead><tr>' + theadCols + '</tr></thead>' +
+                '<tbody>' + rowsHtml + '</tbody>' +
+              '</table>' +
+            '</div>' +
+            footerHtml +
+          '</div>';
+
+        if (this.hasSelection) {
+          const masterCheckbox = container.querySelector('.section-select-all');
+          if (masterCheckbox) {
+            masterCheckbox.indeterminate = masterIndeterminate;
+          }
+        }
+      }
+    }
+
+    let topicsActiveTable = null;
+    let topicsConvertedTable = null;
+    let topicsArchivedTable = null;
+
+    let postsDraftsTable = null;
+    let postsScheduledTable = null;
+    let postsPublishedTable = null;
+
+    let schedulesUpcomingTable = null;
+    let schedulesPastTable = null;
+
+    function syncTopicSelectionsFromSections() {
+      selectedTopicIds = new Set();
+      [topicsActiveTable, topicsConvertedTable, topicsArchivedTable].forEach(sec => {
+        if (sec && sec.selectedIds) {
+          sec.selectedIds.forEach(id => selectedTopicIds.add(id));
+        }
+      });
+      const toolbar = document.getElementById('topic-bulk-toolbar');
+      const countEl = document.getElementById('topic-selected-count');
+      if (countEl) countEl.textContent = selectedTopicIds.size;
+      if (toolbar) toolbar.style.display = selectedTopicIds.size > 0 ? 'flex' : 'none';
+    }
+
+    function syncPostSelectionsFromSections() {
+      selectedPostIds = new Set();
+      [postsDraftsTable, postsScheduledTable, postsPublishedTable].forEach(sec => {
+        if (sec && sec.selectedIds) {
+          sec.selectedIds.forEach(id => selectedPostIds.add(id));
+        }
+      });
+      const toolbar = document.getElementById('post-bulk-toolbar');
+      const countEl = document.getElementById('post-selected-count');
+      if (countEl) countEl.textContent = selectedPostIds.size;
+      if (toolbar) toolbar.style.display = selectedPostIds.size > 0 ? 'flex' : 'none';
+    }
+
 
     let isCheckingSession = false;
     let initialSessionLoaded = false;
@@ -2048,87 +2455,135 @@ export function getAdminScripts(): string {
             '<div style="width:100%; font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Pillars: ' + pillarStr + '</div>';
         }
 
-        // Topics Table — Lifecycle Separated: Active Queue vs Used
+        // Topics Table — Universal Section Tables (Active vs Converted vs Archived)
         cachedTopics = Array.isArray(data.topics) ? data.topics : [];
+        const secContainer = document.getElementById('topics-sections-container');
         const topicsBody = document.getElementById('topics-table-body');
-        if (topicsBody) {
+
+        function renderTopicRow(t, isChecked, sectionKey) {
+          const id = safeStr(t.id);
+          const title = safeStr(t.title, '');
+          const desc = safeStr(t.description, '');
+          const primaryText = escapeHtml(desc || title || 'Post idea');
+          const category = escapeHtml(safeStr(t.content_pillar || t.category, 'WEBSITE'));
+          const hasPost = Number(t.post_count || 0) > 0;
+          const rawStatus = safeStr(t.status || 'queued').toLowerCase();
+          const status = (!hasPost && ['post_generated', 'scheduled', 'published', 'used'].includes(rawStatus))
+            ? 'queued'
+            : rawStatus;
+          const statusUpper = status.toUpperCase();
+          const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered' || status === 'ready') 
+            ? 'status-active' 
+            : (status === 'post_generated' || status === 'scheduled')
+            ? 'status-active'
+            : (status === 'used' || status === 'published')
+            ? 'status-healthy' 
+            : 'status-disabled';
+
+          const sourceTitle = safeStr(t.source_title);
+          const sourceUrl = safeStr(t.source_url);
+          const sourceLink = sourceUrl && (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://'))
+            ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle || 'Source article') + '</a>'
+            : escapeHtml(sourceTitle);
+
+          const deleteBtnHtml = hasPost
+            ? '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem; opacity:0.4; cursor:not-allowed;" title="Cannot delete topic linked to an existing post" disabled>Delete</button>'
+            : '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic(&quot;' + id + '&quot;)">Delete</button>';
+
+          return '<tr data-id="' + id + '" id="topic-row-' + id + '" class="clickable-table-row" onclick="handleTopicRowClick(event, &quot;' + id + '&quot;)" title="Click row to edit idea">' +
+            '<td style="text-align:center;" onclick="event.stopPropagation()">' +
+              '<input type="checkbox" class="topic-select-checkbox" data-id="' + id + '" ' + (isChecked ? 'checked' : '') + ' onchange="window.__universalTables[\\x27' + sectionKey + '\\x27].toggleSelectRow(\\x27' + id + '\\x27, this.checked)" />' +
+            '</td>' +
+            '<td>' +
+              '<div style="font-size:0.875rem; color:var(--text-main); line-height:1.45;">' + primaryText + '</div>' +
+              (sourceTitle ? '<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + sourceLink + '</div>' : '') +
+            '</td>' +
+            '<td><span class="code-tag">' + category + '</span></td>' +
+            '<td>' + renderWorkflowStages(t) + (hasPost && t.latest_post_id ? '<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="event.stopPropagation(); openPostFromTopic(&quot;' + escapeHtml(safeStr(t.latest_post_id)) + '&quot;)">Open post</button>' : '') + '</td>' +
+            '<td><span class="status-badge ' + statusClass + '">' + statusUpper + '</span></td>' +
+            '<td onclick="event.stopPropagation()">' +
+              '<div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">' +
+                '<button class="btn-primary" title="' + (hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic') + '" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic(&quot;' + id + '&quot;)">' + (hasPost ? 'Regenerate post' : 'Generate post') + '</button>' +
+                deleteBtnHtml +
+              '</div>' +
+            '</td>' +
+          '</tr>';
+        }
+
+        if (secContainer) {
+          const topicCols = [
+            { key: 'select', isSelectAll: true, width: '40px' },
+            { key: 'title', label: 'Post Idea', sortable: true },
+            { key: 'content_pillar', label: 'Pillar', sortable: true, width: '130px' },
+            { key: 'stage', label: 'Pipeline Stage', sortable: false, width: '140px' },
+            { key: 'status', label: 'Status', sortable: true, width: '110px' },
+            { key: 'actions', label: 'Actions', sortable: false, width: '170px' }
+          ];
+
+          if (!topicsActiveTable) {
+            topicsActiveTable = new UniversalSectionTable({
+              containerId: 'section-topics-active',
+              sectionKey: 'topics_active',
+              title: 'Active Work Queue',
+              subtitle: 'Candidate topics awaiting review, enhancement, or post generation',
+              badgeClass: 'badge-accent',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>',
+              columns: topicCols,
+              hasSelection: true,
+              defaultSortKey: 'title',
+              defaultSortDir: 'asc',
+              emptyMessage: 'No candidate topics in active queue.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Idea</button>',
+              renderRow: function(t, isChecked) { return renderTopicRow(t, isChecked, 'topics_active'); },
+              onSelectionChange: syncTopicSelectionsFromSections
+            });
+          }
+          if (!topicsConvertedTable) {
+            topicsConvertedTable = new UniversalSectionTable({
+              containerId: 'section-topics-converted',
+              sectionKey: 'topics_converted',
+              title: 'Converted Topics in Pipeline',
+              subtitle: 'Topics with generated drafts, scheduled posts, or live publications',
+              badgeClass: 'badge-success',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+              columns: topicCols,
+              hasSelection: true,
+              defaultSortKey: 'title',
+              defaultSortDir: 'asc',
+              emptyMessage: 'No converted topics in pipeline yet.',
+              renderRow: function(t, isChecked) { return renderTopicRow(t, isChecked, 'topics_converted'); },
+              onSelectionChange: syncTopicSelectionsFromSections
+            });
+          }
+          if (!topicsArchivedTable) {
+            topicsArchivedTable = new UniversalSectionTable({
+              containerId: 'section-topics-archived',
+              sectionKey: 'topics_archived',
+              title: 'Archived & Rejected Topics',
+              subtitle: 'Ideas marked as rejected or filtered without active content',
+              badgeClass: 'badge-muted',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
+              columns: topicCols,
+              hasSelection: true,
+              defaultCollapsed: true,
+              defaultSortKey: 'title',
+              defaultSortDir: 'asc',
+              emptyMessage: 'No archived topics.',
+              renderRow: function(t, isChecked) { return renderTopicRow(t, isChecked, 'topics_archived'); },
+              onSelectionChange: syncTopicSelectionsFromSections
+            });
+          }
+
+          const activeList = cachedTopics.filter(function(t) { return classifyTopicClient(t) === 'active'; });
+          const convertedList = cachedTopics.filter(function(t) { return classifyTopicClient(t) === 'converted'; });
+          const archivedList = cachedTopics.filter(function(t) { return classifyTopicClient(t) === 'archived'; });
+
+          topicsActiveTable.setItems(activeList);
+          topicsConvertedTable.setItems(convertedList);
+          topicsArchivedTable.setItems(archivedList);
+          syncTopicSelectionsFromSections();
+        } else if (topicsBody) {
           if (cachedTopics.length > 0) {
-            function isUsedStatus(t) {
-              if (!t) return false;
-              const hasPost = Number(t.post_count || 0) > 0;
-              if (!hasPost) return false;
-              const st = safeLower(t.status);
-              return ['published', 'used', 'rejected', 'post_generated', 'scheduled'].includes(st);
-            }
-            const activeTopics = cachedTopics.filter(function(t) { return t && !isUsedStatus(t); });
-            const usedTopics = cachedTopics.filter(function(t) { return t && isUsedStatus(t); });
-
-            function renderRow(t) {
-              const id = safeStr(t.id);
-              const title = safeStr(t.title, '');
-              const desc = safeStr(t.description, '');
-              const primaryText = escapeHtml(desc || title || 'Post idea');
-              const category = escapeHtml(safeStr(t.content_pillar || t.category, 'WEBSITE'));
-              const hasPost = Number(t.post_count || 0) > 0;
-              const rawStatus = safeStr(t.status || 'queued').toLowerCase();
-              const status = (!hasPost && ['post_generated', 'scheduled', 'published', 'used'].includes(rawStatus))
-                ? 'queued'
-                : rawStatus;
-              const statusUpper = status.toUpperCase();
-              const statusClass = (status === 'accepted' || status === 'queued' || status === 'new' || status === 'discovered' || status === 'ready') 
-                ? 'status-active' 
-                : (status === 'post_generated' || status === 'scheduled')
-                ? 'status-active'
-                : (status === 'used' || status === 'published')
-                ? 'status-healthy' 
-                : 'status-disabled';
-
-              const isChecked = selectedTopicIds.has(id) ? 'checked' : '';
-              const sourceTitle = safeStr(t.source_title);
-              const sourceUrl = safeStr(t.source_url);
-              const sourceLink = sourceUrl && (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://'))
-                ? '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">' + escapeHtml(sourceTitle || 'Source article') + '</a>'
-                : escapeHtml(sourceTitle);
-
-              const deleteBtnHtml = hasPost
-                ? '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem; opacity:0.4; cursor:not-allowed;" title="Cannot delete topic linked to an existing post" disabled>Delete</button>'
-                : '<button class="btn-logout" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="confirmDeleteTopic(&quot;' + id + '&quot;)">Delete</button>';
-
-              return '<tr data-id="' + id + '" id="topic-row-' + id + '" class="clickable-table-row" onclick="handleTopicRowClick(event, &quot;' + id + '&quot;)" title="Click row to edit idea">' +
-                '<td style="text-align:center;" onclick="event.stopPropagation()">' +
-                  '<input type="checkbox" class="topic-select-checkbox" data-id="' + id + '" ' + isChecked + ' onchange="updateTopicSelectionState()" />' +
-                '</td>' +
-                '<td>' +
-                  '<div style="font-size:0.875rem; color:var(--text-main); line-height:1.45;">' + primaryText + '</div>' +
-                  (sourceTitle ? '<div style="font-size:0.75rem; margin-top:0.35rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + sourceLink + '</div>' : '') +
-                '</td>' +
-                '<td><span class="code-tag">' + category + '</span></td>' +
-                '<td>' + renderWorkflowStages(t) + (hasPost && t.latest_post_id ? '<button class="btn-secondary" style="margin-top:0.35rem;padding:0.2rem 0.45rem;font-size:0.7rem;" onclick="event.stopPropagation(); openPostFromTopic(&quot;' + escapeHtml(safeStr(t.latest_post_id)) + '&quot;)">Open post</button>' : '') + '</td>' +
-                '<td><span class="status-badge ' + statusClass + '">' + statusUpper + '</span></td>' +
-                '<td onclick="event.stopPropagation()">' +
-                  '<div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">' +
-                    '<button class="btn-primary" title="' + (hasPost ? 'Generate a new version of the existing post' : 'Generate the first post for this topic') + '" style="padding:0.25rem 0.55rem; font-size:0.75rem;" onclick="generatePostFromTopic(&quot;' + id + '&quot;)">' + (hasPost ? 'Regenerate post' : 'Generate post') + '</button>' +
-                    deleteBtnHtml +
-                  '</div>' +
-                '</td>' +
-              '</tr>';
-            };
-
-            let bodyHtml = '';
-            if (activeTopics.length > 0) {
-              if (usedTopics.length > 0) {
-                bodyHtml += '<tr><td colspan="6" style="background:rgba(96,165,250,0.1); font-weight:600; color:var(--accent-blue); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Work Queue (Active Topics)</td></tr>';
-              }
-              bodyHtml += activeTopics.map(renderRow).join('');
-            }
-            if (usedTopics.length > 0) {
-              if (activeTopics.length > 0) {
-                bodyHtml += '<tr><td colspan="6" style="background:rgba(255,255,255,0.03); font-weight:600; color:var(--text-muted); padding:0.4rem 0.8rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Completed / Used Topics</td></tr>';
-              }
-              bodyHtml += usedTopics.map(renderRow).join('');
-            }
-
-            topicsBody.innerHTML = bodyHtml;
+            topicsBody.innerHTML = cachedTopics.map(function(t) { return renderTopicRow(t, selectedTopicIds.has(String(t.id)), 'topics_fallback'); }).join('');
           } else {
             topicsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No candidate topics discovered yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddTopicModal()">+ Add Idea</button></td></tr>';
           }
@@ -2254,184 +2709,208 @@ export function getAdminScripts(): string {
 
         const data = await res.json();
         cachedPosts = Array.isArray(data.posts) ? data.posts : [];
+        const postsSecContainer = document.getElementById('posts-sections-container');
         const postsBody = document.getElementById('posts-table-body');
 
-        if (postsBody) {
+        function renderPostRow(p, isChecked, sectionKey) {
+          if (!p) return '';
+          const isPub = isPublishedPost(p);
+          const isSched = isScheduledPost(p);
+          const statusStr = getEffectivePostStatus(p);
+          const syncStatus = safeUpper(p.sync_status, 'SYNCED');
+          let statusClass = isPub ? 'status-healthy' : isSched ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
+          if (syncStatus === 'CONFLICT') {
+            statusClass = 'status-alert';
+          } else if (syncStatus === 'LOCAL_AHEAD') {
+            statusClass = 'status-active';
+          }
+          
+          const pId = safeStr(p.id);
+          const pIdeaId = safeStr(p.idea_id);
+          const pBody = safeStr(p.latest_body || p.body);
+          const ideaPreview = safeStr(p.topic_description || p.topic_title || p.title, '');
+          const topicLabel = escapeHtml(ideaPreview ? (ideaPreview.length > 55 ? ideaPreview.slice(0, 52) + '...' : ideaPreview) : (pIdeaId ? 'Linked idea' : 'No linked idea'));
+          const sourceTitle = safeStr(p.source_title);
+          const sourceUrl = safeStr(p.article_source_url);
+          const topicCat = safeStr(p.topic_category || p.content_pillar);
+          const topicSourceType = safeStr(p.topic_source_type);
+
+          const snippetLength = 130;
+          const snippetBody = pBody.length > snippetLength ? pBody.slice(0, snippetLength).trimEnd() + '...' : pBody;
+
+          let inspirationHtml = '';
+          if (pIdeaId) {
+            if (sourceTitle && sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
+              inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);" onclick="event.stopPropagation()">' + escapeHtml(sourceTitle) + '</a></div>';
+            } else if (sourceTitle) {
+              inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(sourceTitle) + '</div>';
+            } else if (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
+              inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);" onclick="event.stopPropagation()">' + escapeHtml(sourceUrl) + '</a></div>';
+            } else if (topicSourceType === 'manual') {
+              inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual idea</span></div>';
+            } else if (topicCat) {
+              inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(topicCat) + ' research</div>';
+            }
+          }
+
+          const selSource = safeStr(p.selection_source, 'AUTO');
+          const imgBadge = selSource === 'MANUAL' 
+            ? '<span class="status-badge status-healthy" style="font-size:0.6rem; padding:0.05rem 0.3rem;" title="Manually selected illustration">MANUAL</span>' 
+            : '<span class="status-badge status-active" style="font-size:0.6rem; padding:0.05rem 0.3rem;" title="Automatically selected from approved library">AUTO</span>';
+
+          let thumbnailHtml = '';
+          if (p.image_url) {
+            thumbnailHtml = '<div style="display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem;">' +
+              '<button type="button" class="img-preview-btn" onclick="event.stopPropagation(); openImageLightboxModal(\\x27' + escapeHtml(p.image_url) + '\\x27, \\x27' + escapeHtml(safeStr(p.topic_title || 'Post image')) + '\\x27)" title="Preview full image" style="border:none; background:transparent; padding:0; cursor:pointer;">' +
+                '<img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:68px; height:46px; object-fit:cover; border-radius:6px; display:block; border:1px solid rgba(255,255,255,0.1);"/>' +
+              '</button>' +
+              '<div style="display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap;">' +
+                imgBadge +
+                '<button type="button" class="btn-secondary" style="padding:0.1rem 0.35rem; font-size:0.65rem;" onclick="event.stopPropagation(); openDraftImageSelectorModal(\\x27' + pId + '\\x27)" title="Change image">Change</button>' +
+              '</div>' +
+            '</div>';
+          } else {
+            thumbnailHtml = '<div style="display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem;">' +
+              '<div style="width:68px; height:46px; border-radius:6px; border:1px dashed rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); color:var(--text-muted); font-size:0.7rem;" title="No image assigned">' +
+                '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="1.5" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
+              '</div>' +
+              '<button type="button" class="btn-secondary" style="padding:0.1rem 0.35rem; font-size:0.65rem;" onclick="event.stopPropagation(); openDraftImageSelectorModal(\\x27' + pId + '\\x27)" title="Choose an image">Select</button>' +
+            '</div>';
+          }
+
+          let actionButtons = '';
+          if (pIdeaId) {
+            actionButtons += '<button type="button" class="action-btn-icon" title="Regenerate post from idea" aria-label="Regenerate post" onclick="generatePostFromTopic(\\x27' + pIdeaId + '\\x27)">' +
+              '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>' +
+            '</button>' +
+            '<button type="button" class="action-btn-icon" title="View linked research idea" aria-label="View idea" onclick="openTopicFromPost(\\x27' + pIdeaId + '\\x27)">' +
+              '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
+            '</button>';
+          }
+
+          if (!isPub) {
+            actionButtons += '<button type="button" class="action-btn-icon action-btn-primary" title="Publish now to Facebook" aria-label="Publish Now" onclick="openInstantPublishModal(\\x27' + pId + '\\x27)">' +
+              '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>' +
+            '</button>' +
+            '<button type="button" class="action-btn-icon" title="Schedule publication" aria-label="Schedule" onclick="openSchedulePostModal(\\x27' + pId + '\\x27)">' +
+              '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' +
+            '</button>';
+          } else if (syncStatus === 'CONFLICT') {
+            actionButtons += '<button type="button" class="action-btn-icon action-btn-danger" title="Resolve Facebook Sync Conflict" aria-label="Resolve Conflict" onclick="resolveConflict(\\x27' + pId + '\\x27)">' +
+              '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+            '</button>';
+          } else {
+            actionButtons += '<span style="color:var(--accent-emerald); font-weight:600; font-size:0.75rem; margin-right:0.25rem;" title="Published live on Facebook">Live</span>';
+          }
+
+          actionButtons += '<button type="button" class="action-btn-icon action-btn-danger" title="Delete draft" aria-label="Delete" onclick="confirmDeletePost(\\x27' + pId + '\\x27)">' +
+            '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>' +
+          '</button>';
+
+          return '<tr data-id="' + pId + '" id="post-row-' + pId + '" class="clickable-post-row" onclick="handlePostRowClick(event, \\x27' + pId + '\\x27)" title="Click row to edit draft">' +
+            '<td style="text-align:center;" onclick="event.stopPropagation()">' +
+              '<input type="checkbox" class="post-select-checkbox" data-id="' + pId + '" ' + (isChecked ? 'checked' : '') + ' onchange="window.__universalTables[\\x27' + sectionKey + '\\x27].toggleSelectRow(\\x27' + pId + '\\x27, this.checked)" />' +
+            '</td>' +
+            '<td style="width:110px;">' + thumbnailHtml + '</td>' +
+            '<td>' +
+              '<div class="post-snippet-text" title="' + escapeHtml(pBody) + '">' + escapeHtml(snippetBody) + '</div>' +
+              (pIdeaId ? '<div style="font-size:0.75rem; margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">' +
+                '<span style="color:var(--text-muted);">Idea:</span> ' +
+                '<button type="button" class="btn-secondary" style="padding:0; border:0; background:transparent; color:var(--accent-blue); font-size:0.75rem; text-align:left; text-decoration:underline;" onclick="event.stopPropagation(); openTopicFromPost(\\x27' + pIdeaId + '\\x27)">' + topicLabel + '</button>' +
+                (topicCat ? '<span style="font-size:0.65rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px;">' + escapeHtml(topicCat) + '</span>' : '') +
+              '</div>' : '') +
+              inspirationHtml +
+            '</td>' +
+            '<td style="width:180px;">' + renderWorkflowStages(p) + '</td>' +
+            '<td style="width:120px;">' +
+              '<span class="status-badge ' + statusClass + '">' + (syncStatus === 'CONFLICT' ? 'SYNC CONFLICT' : escapeHtml(statusStr)) + '</span>' +
+            '</td>' +
+            '<td style="width:150px; font-size:0.8rem; color:var(--text-muted);" data-sort-value="' + escapeHtml(safeStr(p.created_at)) + '">' +
+              formatDateSafe(p.created_at) +
+            '</td>' +
+            '<td style="width:160px; text-align:right;" onclick="event.stopPropagation()">' +
+              '<div style="display:flex; gap:0.35rem; justify-content:flex-end; align-items:center;">' +
+                actionButtons +
+              '</div>' +
+            '</td>' +
+          '</tr>';
+        }
+
+        if (postsSecContainer) {
+          const postCols = [
+            { key: 'select', isSelectAll: true, width: '40px' },
+            { key: 'image', label: 'Media', sortable: false, width: '110px' },
+            { key: 'body', label: 'Content & Research Idea', sortable: true },
+            { key: 'stage', label: 'Workflow Pipeline', sortable: false, width: '180px' },
+            { key: 'status', label: 'Status', sortable: true, width: '120px' },
+            { key: 'created_at', label: 'Created', sortable: true, width: '150px' },
+            { key: 'actions', label: 'Actions', sortable: false, width: '160px' }
+          ];
+
+          if (!postsDraftsTable) {
+            postsDraftsTable = new UniversalSectionTable({
+              containerId: 'section-posts-drafts',
+              sectionKey: 'posts_drafts',
+              title: 'Drafts & Review Queue',
+              subtitle: 'Drafts ready for review, image assignment, editing, or scheduling',
+              badgeClass: 'badge-accent',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
+              columns: postCols,
+              hasSelection: true,
+              defaultSortKey: 'created_at',
+              defaultSortDir: 'desc',
+              emptyMessage: 'No post drafts in review queue.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button>',
+              renderRow: function(p, isChecked) { return renderPostRow(p, isChecked, 'posts_drafts'); },
+              onSelectionChange: syncPostSelectionsFromSections
+            });
+          }
+          if (!postsScheduledTable) {
+            postsScheduledTable = new UniversalSectionTable({
+              containerId: 'section-posts-scheduled',
+              sectionKey: 'posts_scheduled',
+              title: 'Scheduled Queue',
+              subtitle: 'Posts committed to future automated Facebook publication',
+              badgeClass: 'badge-purple',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+              columns: postCols,
+              hasSelection: true,
+              defaultSortKey: 'created_at',
+              defaultSortDir: 'desc',
+              emptyMessage: 'No posts currently scheduled.',
+              renderRow: function(p, isChecked) { return renderPostRow(p, isChecked, 'posts_scheduled'); },
+              onSelectionChange: syncPostSelectionsFromSections
+            });
+          }
+          if (!postsPublishedTable) {
+            postsPublishedTable = new UniversalSectionTable({
+              containerId: 'section-posts-published',
+              sectionKey: 'posts_published',
+              title: 'Published Posts',
+              subtitle: 'Posts successfully published live on Facebook',
+              badgeClass: 'badge-success',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+              columns: postCols,
+              hasSelection: true,
+              defaultCollapsed: true,
+              defaultSortKey: 'created_at',
+              defaultSortDir: 'desc',
+              emptyMessage: 'No published posts recorded yet.',
+              renderRow: function(p, isChecked) { return renderPostRow(p, isChecked, 'posts_published'); },
+              onSelectionChange: syncPostSelectionsFromSections
+            });
+          }
+
+          const draftList = cachedPosts.filter(function(p) { return classifyPostClient(p) === 'draft'; });
+          const scheduledList = cachedPosts.filter(function(p) { return classifyPostClient(p) === 'scheduled'; });
+          const publishedList = cachedPosts.filter(function(p) { return classifyPostClient(p) === 'published'; });
+
+          postsDraftsTable.setItems(draftList);
+          postsScheduledTable.setItems(scheduledList);
+          postsPublishedTable.setItems(publishedList);
+          syncPostSelectionsFromSections();
+        } else if (postsBody) {
           if (cachedPosts.length > 0) {
-            function isPublishedPost(p) {
-              if (!p) return false;
-              const st = safeLower(p.status);
-              return st === 'published' || Boolean(p.published_at || p.publishedAt || p.facebook_post_id);
-            }
-
-            function isScheduledPost(p) {
-              if (!p || isPublishedPost(p)) return false;
-              const schedTime = p.scheduled_at || p.scheduledAt;
-              const hasValidFutureSched = Boolean(
-                (p.schedule_id || schedTime) &&
-                schedTime &&
-                !isNaN(new Date(schedTime).getTime()) &&
-                new Date(schedTime).getTime() > Date.now()
-              );
-              return hasValidFutureSched;
-            }
-
-            function getEffectivePostStatus(p) {
-              if (!p) return 'DRAFT';
-              if (isPublishedPost(p)) return 'PUBLISHED';
-              if (isScheduledPost(p)) return 'SCHEDULED';
-              const rawSt = safeUpper(p.status, 'DRAFT');
-              if (rawSt === 'REJECTED' || rawSt === 'BLOCKED') return rawSt;
-              return rawSt === 'SCHEDULED' || rawSt === 'PUBLISHED' ? 'DRAFT' : rawSt;
-            }
-
-            const readyPosts = cachedPosts.filter(function(p) { return p && !isScheduledPost(p) && !isPublishedPost(p); });
-            const scheduledPosts = cachedPosts.filter(function(p) { return p && isScheduledPost(p); });
-            const publishedPosts = cachedPosts.filter(function(p) { return p && isPublishedPost(p); });
-
-            function renderPostRow(p) {
-              if (!p) return '';
-              const isPub = isPublishedPost(p);
-              const isSched = isScheduledPost(p);
-              const statusStr = getEffectivePostStatus(p);
-              const syncStatus = safeUpper(p.sync_status, 'SYNCED');
-              let statusClass = isPub ? 'status-healthy' : isSched ? 'status-active' : (statusStr === 'REJECTED' || statusStr === 'BLOCKED') ? 'status-alert' : 'status-disabled';
-              if (syncStatus === 'CONFLICT') {
-                statusClass = 'status-alert';
-              } else if (syncStatus === 'LOCAL_AHEAD') {
-                statusClass = 'status-active';
-              }
-              
-              const pId = safeStr(p.id);
-              const pIdeaId = safeStr(p.idea_id);
-              const pBody = safeStr(p.latest_body || p.body);
-              const isChecked = selectedPostIds.has(pId) ? 'checked' : '';
-              const ideaPreview = safeStr(p.topic_description || p.topic_title || p.title, '');
-              const topicLabel = escapeHtml(ideaPreview ? (ideaPreview.length > 55 ? ideaPreview.slice(0, 52) + '...' : ideaPreview) : (pIdeaId ? 'Linked idea' : 'No linked idea'));
-              const sourceTitle = safeStr(p.source_title);
-              const sourceUrl = safeStr(p.article_source_url);
-              const topicCat = safeStr(p.topic_category || p.content_pillar);
-              const topicSourceType = safeStr(p.topic_source_type);
-
-              // Uniform snippet truncation (~130 chars)
-              const snippetLength = 130;
-              const snippetBody = pBody.length > snippetLength ? pBody.slice(0, snippetLength).trimEnd() + '...' : pBody;
-
-              let inspirationHtml = '';
-              if (pIdeaId) {
-                if (sourceTitle && sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);" onclick="event.stopPropagation()">' + escapeHtml(sourceTitle) + '</a></div>';
-                } else if (sourceTitle) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(sourceTitle) + '</div>';
-                } else if (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><a href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);" onclick="event.stopPropagation()">' + escapeHtml(sourceUrl) + '</a></div>';
-                } else if (topicSourceType === 'manual') {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span><span style="color:var(--accent-cyan); font-weight:500;">Manual idea</span></div>';
-                } else if (topicCat) {
-                  inspirationHtml = '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Inspired by: </span>' + escapeHtml(topicCat) + ' research</div>';
-                }
-              }
-
-              const selSource = safeStr(p.selection_source, 'AUTO');
-              const imgBadge = selSource === 'MANUAL' 
-                ? '<span class="status-badge status-healthy" style="font-size:0.6rem; padding:0.05rem 0.3rem;" title="Manually selected illustration">MANUAL</span>' 
-                : '<span class="status-badge status-active" style="font-size:0.6rem; padding:0.05rem 0.3rem;" title="Automatically selected from approved library">AUTO</span>';
-
-              // Image Thumbnail Column (Col 2)
-              let thumbnailHtml = '';
-              if (p.image_url) {
-                thumbnailHtml = '<div style="display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem;">' +
-                  '<button type="button" class="img-preview-btn" onclick="event.stopPropagation(); openImageLightboxModal(\\x27' + escapeHtml(p.image_url) + '\\x27, \\x27' + escapeHtml(safeStr(p.topic_title || 'Post image')) + '\\x27)" title="Preview full image" style="border:none; background:transparent; padding:0; cursor:pointer;">' +
-                    '<img src="' + escapeHtml(p.image_url) + '" alt="Post image" style="width:68px; height:46px; object-fit:cover; border-radius:6px; display:block; border:1px solid rgba(255,255,255,0.1);"/>' +
-                  '</button>' +
-                  '<div style="display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap;">' +
-                    imgBadge +
-                    '<button type="button" class="btn-secondary" style="padding:0.1rem 0.35rem; font-size:0.65rem;" onclick="event.stopPropagation(); openDraftImageSelectorModal(\\x27' + pId + '\\x27)" title="Change image">Change</button>' +
-                  '</div>' +
-                '</div>';
-              } else {
-                thumbnailHtml = '<div style="display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem;">' +
-                  '<div style="width:68px; height:46px; border-radius:6px; border:1px dashed rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); color:var(--text-muted); font-size:0.7rem;" title="No image assigned">' +
-                    '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="1.5" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
-                  '</div>' +
-                  '<button type="button" class="btn-secondary" style="padding:0.1rem 0.35rem; font-size:0.65rem;" onclick="event.stopPropagation(); openDraftImageSelectorModal(\\x27' + pId + '\\x27)" title="Choose an image">Select</button>' +
-                '</div>';
-              }
-
-              return \`
-              <tr data-id="\${pId}" id="post-row-\${pId}" class="clickable-post-row" onclick="handlePostRowClick(event, '\${pId}')" title="Click row to edit draft">
-                <td style="text-align:center;" onclick="event.stopPropagation()">
-                  <input type="checkbox" class="post-select-checkbox" data-id="\${pId}" \${isChecked} onchange="updatePostSelectionState()" />
-                </td>
-                <td style="width:110px;">
-                  \${thumbnailHtml}
-                </td>
-                <td>
-                  <div class="post-snippet-text" title="\${escapeHtml(pBody)}">\${escapeHtml(snippetBody)}</div>
-                  \${pIdeaId ? \`<div style="font-size:0.75rem; margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
-                    <span style="color:var(--text-muted);">Idea:</span>
-                    <button type="button" class="btn-secondary" style="padding:0; border:0; background:transparent; color:var(--accent-blue); font-size:0.75rem; text-align:left; text-decoration:underline;" onclick="event.stopPropagation(); openTopicFromPost('\${pIdeaId}')">\${topicLabel}</button>
-                    \${topicCat ? \`<span style="font-size:0.65rem; background:rgba(255,255,255,0.06); color:var(--accent-cyan); padding:0.1rem 0.35rem; border-radius:4px;">\${escapeHtml(topicCat)}</span>\` : ''}
-                  </div>\` : ''}
-                  \${inspirationHtml}
-                </td>
-                <td style="width:180px;">\${renderWorkflowStages(p)}</td>
-                <td style="width:120px;">
-                  <span class="status-badge \${statusClass}">\${syncStatus === 'CONFLICT' ? 'SYNC CONFLICT' : escapeHtml(statusStr)}</span>
-                </td>
-                <td style="width:150px; font-size:0.8rem; color:var(--text-muted);" data-sort-value="\${escapeHtml(safeStr(p.created_at))}">
-                  \${formatDateSafe(p.created_at)}
-                </td>
-                <td style="width:160px; text-align:right;" onclick="event.stopPropagation()">
-                  <div style="display:flex; gap:0.35rem; justify-content:flex-end; align-items:center;">
-                    \${pIdeaId ? \`
-                    <button type="button" class="action-btn-icon" title="Regenerate post from idea" aria-label="Regenerate post" onclick="generatePostFromTopic('\${pIdeaId}')">
-                      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    </button>
-                    <button type="button" class="action-btn-icon" title="View linked research idea" aria-label="View idea" onclick="openTopicFromPost('\${pIdeaId}')">
-                      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    </button>
-                    \` : ''}
-                    \${!isPub ? \`
-                      <button type="button" class="action-btn-icon action-btn-primary" title="Publish now to Facebook" aria-label="Publish Now" onclick="openInstantPublishModal('\${pId}')">
-                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                      </button>
-                      <button type="button" class="action-btn-icon" title="Schedule publication" aria-label="Schedule" onclick="openSchedulePostModal('\${pId}')">
-                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                      </button>
-                    \` : syncStatus === 'CONFLICT' ? \`
-                      <button type="button" class="action-btn-icon action-btn-danger" title="Resolve Facebook Sync Conflict" aria-label="Resolve Conflict" onclick="resolveConflict('\${pId}')">
-                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                      </button>
-                    \` : \`
-                      <span style="color:var(--accent-emerald); font-weight:600; font-size:0.75rem; margin-right:0.25rem;" title="Published live on Facebook">Live</span>
-                    \`}
-                    <button type="button" class="action-btn-icon action-btn-danger" title="Delete draft" aria-label="Delete" onclick="confirmDeletePost('\${pId}')">
-                      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            \`;
-            }
-
-            let bodyHtml = '';
-            if (readyPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(96,165,250,0.12); font-weight:600; color:var(--accent-blue); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(96,165,250,0.2);">Work Queue — Ready to Review & Schedule (' + readyPosts.length + ')</td></tr>';
-              bodyHtml += readyPosts.map(renderPostRow).join('');
-            }
-
-            if (scheduledPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(168,85,247,0.12); font-weight:600; color:#c084fc; padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(168,85,247,0.2);">Scheduled Queue — Awaiting Publication (' + scheduledPosts.length + ')</td></tr>';
-              bodyHtml += scheduledPosts.map(renderPostRow).join('');
-            }
-
-            if (publishedPosts.length > 0) {
-              bodyHtml += '<tr><td colspan="7" style="background:rgba(16,185,129,0.12); font-weight:600; color:var(--accent-emerald); padding:0.45rem 0.85rem; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(16,185,129,0.2);">Published Posts — Live on Facebook (' + publishedPosts.length + ')</td></tr>';
-              bodyHtml += publishedPosts.map(renderPostRow).join('');
-            }
-
-            postsBody.innerHTML = bodyHtml;
+            postsBody.innerHTML = cachedPosts.map(function(p) { return renderPostRow(p, selectedPostIds.has(String(p.id)), 'posts_fallback'); }).join('');
           } else {
             postsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No post drafts created yet.<br/><button class="btn-primary" style="margin-top:0.75rem;" onclick="openAddPostModal()">+ Add Post</button></td></tr>';
           }
@@ -2563,69 +3042,113 @@ export function getAdminScripts(): string {
 
         renderCalendarGrid(schedules);
 
-        if (schedBody) {
+        const schedSecContainer = document.getElementById('schedules-sections-container');
+
+        function renderScheduleRow(sched, isPast) {
+          const schedIdStr = safeStr(sched.id);
+          const postIdStr = safeStr(sched.post_id);
+          const fbPostId = safeStr(sched.facebook_post_id);
+          const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
+          const topicTitle = safeStr(sched.topic_title);
+          const topicId = safeStr(sched.idea_id);
+
+          if (isPast) {
+            const displayDate = sched.published_at ? 'Published · ' + formatDateUtcSafe(sched.published_at) : (sched.scheduled_at ? 'Published · ' + formatDateUtcSafe(sched.scheduled_at) : 'Published');
+            return '<tr class="schedule-published-dimmed clickable-table-row" style="opacity:0.85; background:rgba(255,255,255,0.015);" onclick="handleScheduleRowClick(event, &quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;, true, &quot;' + fbPostId + '&quot;)" title="Click row to view published Facebook post details">' +
+              '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
+                (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);font-size:0.75rem;text-align:left;" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
+              '</td>' +
+              '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: fbPostId, isPublished: true }) + '</td>' +
+              '<td data-sort-value="' + escapeHtml(safeStr(sched.published_at || sched.scheduled_at)) + '" style="color:var(--accent-emerald); font-weight:500;">' + escapeHtml(displayDate) + '</td>' +
+              '<td><span class="status-badge status-healthy" style="opacity:0.85;">PUBLISHED</span></td>' +
+              '<td onclick="event.stopPropagation()">' +
+                '<span style="color:var(--accent-emerald); font-size:0.75rem; font-weight:500;">Live</span>' +
+              '</td>' +
+            '</tr>';
+          }
+
+          const isFailed = sched.status === 'failed';
+          const statusClass = isFailed ? 'status-badge status-danger' : 'status-badge status-healthy';
+          const errorTooltip = isFailed && (sched.error_code || sched.error_message) ? ' title="' + escapeHtml((sched.error_code || '') + (sched.error_message ? ': ' + sched.error_message : '')) + '"' : '';
+          const statusHtml = '<span class="' + statusClass + '"' + errorTooltip + '>' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span>' +
+            (isFailed && sched.error_code ? '<div style="font-size:0.7rem; color:var(--accent-rose); margin-top:0.25rem; max-width:180px; word-break:break-word;"' + errorTooltip + '>' + escapeHtml(sched.error_code) + '</div>' : '');
+
+          return '<tr class="clickable-table-row" onclick="handleScheduleRowClick(event, &quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;, false)" title="Click row to edit scheduled post">' +
+            '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
+              (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
+            '</td>' +
+            '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
+            '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
+            '<td>' + statusHtml + '</td>' +
+            '<td onclick="event.stopPropagation()">' +
+              '<button class="btn-primary" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-right:0.25rem;" onclick="publishNow(&quot;' + postIdStr + '&quot;)">Publish Now</button>' +
+              '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
+            '</td>' +
+          '</tr>';
+        }
+
+        if (schedSecContainer) {
+          const scheduleCols = [
+            { key: 'post_body', label: 'Post & Linked Idea', sortable: true },
+            { key: 'stage', label: 'Workflow Pipeline', sortable: false, width: '170px' },
+            { key: 'scheduled_at', label: 'Scheduled Time (UTC)', sortable: true, width: '160px' },
+            { key: 'status', label: 'Status', sortable: true, width: '120px' },
+            { key: 'actions', label: 'Actions', sortable: false, width: '180px' }
+          ];
+
+          if (!schedulesUpcomingTable) {
+            schedulesUpcomingTable = new UniversalSectionTable({
+              containerId: 'section-schedules-upcoming',
+              sectionKey: 'schedules_upcoming',
+              title: 'Upcoming Scheduled Posts',
+              subtitle: 'Queued posts awaiting their scheduled publication time slot',
+              badgeClass: 'badge-accent',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+              columns: scheduleCols,
+              hasSelection: false,
+              defaultSortKey: 'scheduled_at',
+              defaultSortDir: 'asc',
+              emptyMessage: 'No upcoming scheduled posts.<br><button class="btn-primary" style="margin-top:0.75rem; font-size:0.8rem;" onclick="openSchedulePostModal()">+ Schedule Draft</button>',
+              renderRow: function(s) { return renderScheduleRow(s, false); }
+            });
+          }
+          if (!schedulesPastTable) {
+            schedulesPastTable = new UniversalSectionTable({
+              containerId: 'section-schedules-past',
+              sectionKey: 'schedules_past',
+              title: 'Past & Executed Schedules',
+              subtitle: 'Historical schedules completed and published to Facebook',
+              badgeClass: 'badge-success',
+              iconSvg: '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+              columns: scheduleCols,
+              hasSelection: false,
+              defaultCollapsed: true,
+              defaultSortKey: 'scheduled_at',
+              defaultSortDir: 'desc',
+              emptyMessage: 'No past published schedules recorded.',
+              renderRow: function(s) { return renderScheduleRow(s, true); }
+            });
+          }
+
+          const upcomingList = schedules.filter(function(s) { return classifyScheduleClient(s) === 'upcoming'; });
+          const pastList = schedules.filter(function(s) { return classifyScheduleClient(s) === 'past'; });
+
+          schedulesUpcomingTable.setItems(upcomingList);
+          schedulesPastTable.setItems(pastList);
+        } else if (schedBody) {
           if (schedules.length > 0) {
-            const upcoming = schedules.filter(s => s && s.status !== 'published' && s.post_status !== 'published');
-            const published = schedules.filter(s => s && (s.status === 'published' || s.post_status === 'published'));
-
-            let rows = '';
-
+            let fallbackHtml = '';
+            const upcoming = schedules.filter(function(s) { return classifyScheduleClient(s) === 'upcoming'; });
+            const published = schedules.filter(function(s) { return classifyScheduleClient(s) === 'past'; });
             if (upcoming.length > 0) {
-              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">UPCOMING SCHEDULED POSTS (' + upcoming.length + ')</th></tr>';
-              rows += upcoming.map(sched => {
-                const schedIdStr = safeStr(sched.id);
-                const postIdStr = safeStr(sched.post_id);
-                const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
-                const topicTitle = safeStr(sched.topic_title);
-                const topicId = safeStr(sched.idea_id);
-                const isFailed = sched.status === 'failed';
-                const statusClass = isFailed ? 'status-badge status-danger' : 'status-badge status-healthy';
-                const errorTooltip = isFailed && (sched.error_code || sched.error_message) ? ' title="' + escapeHtml((sched.error_code || '') + (sched.error_message ? ': ' + sched.error_message : '')) + '"' : '';
-                const statusHtml = '<span class="' + statusClass + '"' + errorTooltip + '>' + escapeHtml(safeUpper(sched.status, 'SCHEDULED')) + '</span>' +
-                  (isFailed && sched.error_code ? '<div style="font-size:0.7rem; color:var(--accent-rose); margin-top:0.25rem; max-width:180px; word-break:break-word;"' + errorTooltip + '>' + escapeHtml(sched.error_code) + '</div>' : '');
-                return '<tr class="clickable-table-row" onclick="handleScheduleRowClick(event, &quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;, false)" title="Click row to edit scheduled post">' +
-                  '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
-                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--accent-blue);font-size:0.75rem;text-align:left;" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
-                  '</td>' +
-                  '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: sched.facebook_post_id }) + '</td>' +
-                  '<td data-sort-value="' + escapeHtml(safeStr(sched.scheduled_at)) + '">' + formatDateUtcSafe(sched.scheduled_at) + '</td>' +
-                  '<td>' + statusHtml + '</td>' +
-                  '<td onclick="event.stopPropagation()">' +
-                    '<button class="btn-primary" style="font-size:0.75rem; padding:0.25rem 0.5rem; margin-right:0.25rem;" onclick="publishNow(&quot;' + postIdStr + '&quot;)">Publish Now</button>' +
-                    '<button class="btn-logout" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="unschedulePost(&quot;' + schedIdStr + '&quot;)">Unschedule</button>' +
-                  '</td>' +
-                '</tr>';
-              }).join('');
-            } else {
-              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(59,130,246,0.1); color:var(--accent-blue); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">UPCOMING SCHEDULED POSTS (0)</th></tr>';
-              rows += '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:1.5rem;">No upcoming scheduled posts.<br><button class="btn-primary" style="margin-top:0.5rem; font-size:0.8rem;" onclick="openSchedulePostModal()">+ Schedule Draft</button></td></tr>';
+              fallbackHtml += '<tr class="schedule-section-header"><th colspan="5">UPCOMING SCHEDULED POSTS (' + upcoming.length + ')</th></tr>';
+              fallbackHtml += upcoming.map(function(s) { return renderScheduleRow(s, false); }).join('');
             }
-
             if (published.length > 0) {
-              rows += '<tr class="schedule-section-header"><th colspan="5" style="background:rgba(16,185,129,0.1); color:var(--accent-emerald); padding:0.6rem 0.8rem; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">PUBLISHED POSTS (' + published.length + ')</th></tr>';
-              rows += published.map(sched => {
-                const schedIdStr = safeStr(sched.id);
-                const postIdStr = safeStr(sched.post_id);
-                const fbPostId = safeStr(sched.facebook_post_id);
-                const postPreview = safeStr(sched.post_body || sched.postBody || 'Post').replaceAll(String.fromCharCode(10), ' ').replaceAll(String.fromCharCode(13), ' ').replaceAll(String.fromCharCode(9), ' ').slice(0, 72);
-                const topicTitle = safeStr(sched.topic_title);
-                const topicId = safeStr(sched.idea_id);
-                const displayDate = sched.published_at ? 'Published · ' + formatDateUtcSafe(sched.published_at) : (sched.scheduled_at ? 'Published · ' + formatDateUtcSafe(sched.scheduled_at) : 'Published');
-                return '<tr class="schedule-published-dimmed clickable-table-row" style="opacity:0.85; background:rgba(255,255,255,0.015);" onclick="handleScheduleRowClick(event, &quot;' + schedIdStr + '&quot;, &quot;' + postIdStr + '&quot;, true, &quot;' + fbPostId + '&quot;)" title="Click row to view published Facebook post details">' +
-                  '<td><div style="font-size:0.875rem; color:var(--text-main); line-height:1.4; max-width:340px; word-break:break-word;">' + escapeHtml(postPreview) + '</div>' +
-                    (topicId ? '<div style="font-size:0.75rem; margin-top:0.25rem;"><span style="color:var(--text-muted);">Idea: </span><button class="btn-secondary" style="padding:0;border:0;background:transparent;color:var(--text-muted);font-size:0.75rem;text-align:left;" onclick="event.stopPropagation(); openTopicFromPost(&quot;' + escapeHtml(topicId) + '&quot;)">' + escapeHtml(topicTitle || 'View idea') + '</button></div>' : '') +
-                  '</td>' +
-                  '<td>' + renderWorkflowStages({ idea_id: topicId, id: postIdStr || schedIdStr, image_url: sched.image_url, scheduled_at: sched.scheduled_at, facebook_post_id: fbPostId, isPublished: true }) + '</td>' +
-                  '<td data-sort-value="' + escapeHtml(safeStr(sched.published_at || sched.scheduled_at)) + '" style="color:var(--accent-emerald); font-weight:500;">' + escapeHtml(displayDate) + '</td>' +
-                  '<td><span class="status-badge status-healthy" style="opacity:0.85;">PUBLISHED</span></td>' +
-                  '<td onclick="event.stopPropagation()">' +
-                    '<span style="color:var(--accent-emerald); font-size:0.75rem; font-weight:500;">Live</span>' +
-                  '</td>' +
-                '</tr>';
-              }).join('');
+              fallbackHtml += '<tr class="schedule-section-header"><th colspan="5">PUBLISHED POSTS (' + published.length + ')</th></tr>';
+              fallbackHtml += published.map(function(s) { return renderScheduleRow(s, true); }).join('');
             }
-
-            schedBody.innerHTML = rows;
+            schedBody.innerHTML = fallbackHtml;
           } else {
             schedBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Nothing scheduled.<br><button class="btn-primary" style="margin-top:0.75rem;" onclick="openSchedulePostModal()">+ Schedule Post</button></td></tr>';
           }

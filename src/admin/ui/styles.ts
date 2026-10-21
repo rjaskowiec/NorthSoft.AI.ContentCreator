@@ -615,6 +615,247 @@ export function getAdminCss(): string {
       letter-spacing: 0;
     }
 
+    /* UNIVERSAL GROUPED TABLES & SECTIONS */
+    .table-section-group {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      width: 100%;
+      margin-bottom: 1.75rem;
+    }
+
+    .table-section-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .table-section-panel:hover {
+      border-color: var(--border-color-hover);
+    }
+
+    .table-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.25rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-color);
+      user-select: none;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .table-section-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .table-section-toggle-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease, color 0.15s ease;
+    }
+
+    .table-section-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+    }
+
+    .table-section-toggle-btn svg {
+      width: 15px;
+      height: 15px;
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .table-section-panel.is-collapsed .table-section-toggle-btn svg {
+      transform: rotate(-90deg);
+    }
+
+    .table-section-panel.is-collapsed .table-section-header {
+      border-bottom: none;
+    }
+
+    .table-section-panel.is-collapsed .table-section-body {
+      display: none;
+    }
+
+    .table-section-title-wrap {
+      display: flex;
+      align-items: baseline;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+    }
+
+    .table-section-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .table-section-subtitle {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+    }
+
+    .table-section-count-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.725rem;
+      font-weight: 600;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      line-height: 1.25;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .table-section-count-badge.badge-accent {
+      background: rgba(24, 119, 242, 0.12);
+      color: #60a5fa;
+      border-color: rgba(96, 165, 250, 0.25);
+    }
+
+    .table-section-count-badge.badge-success {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border-color: rgba(52, 211, 153, 0.25);
+    }
+
+    .table-section-count-badge.badge-warning {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.25);
+    }
+
+    .table-section-count-badge.badge-purple {
+      background: rgba(168, 85, 247, 0.12);
+      color: #c084fc;
+      border-color: rgba(192, 132, 252, 0.25);
+    }
+
+    .table-section-count-badge.badge-muted {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    .table-section-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .table-section-body {
+      width: 100%;
+    }
+
+    .table-section-select-banner {
+      background: rgba(24, 119, 242, 0.08);
+      border-bottom: 1px solid rgba(24, 119, 242, 0.2);
+      padding: 0.4rem 1rem;
+      font-size: 0.8rem;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .table-section-select-banner button {
+      background: transparent;
+      border: none;
+      color: var(--accent-cyan);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+
+    .table-section-select-banner button:hover {
+      color: var(--accent-blue);
+    }
+
+    .table-section-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.65rem 1.25rem;
+      background: rgba(255, 255, 255, 0.015);
+      border-top: 1px solid var(--border-color);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .table-section-pagination {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .table-section-pagination-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.25rem 0.55rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .table-section-pagination-btn:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: var(--border-color-hover);
+    }
+
+    .table-section-pagination-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .table-section-page-size-select {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      font-size: 0.75rem;
+      padding: 0.25rem 0.45rem;
+      cursor: pointer;
+    }
+
+    .table-section-page-size-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
     .workflow-stage-track {
       display: flex;
       flex-wrap: wrap;

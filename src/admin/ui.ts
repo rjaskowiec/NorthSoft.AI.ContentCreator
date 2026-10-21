@@ -623,30 +623,12 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Topics Table / Cards -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Topic Proposals Backlog</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style="width:36px; text-align:center;">
-                        <input type="checkbox" id="topic-select-all" onclick="toggleSelectAllTopics(this)" title="Select all topics" />
-                      </th>
-                      <th>Idea / source</th>
-                      <th>Category</th>
-                      <th>Progress</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="topics-table-body">
-                    <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading topic proposals...</td></tr>
-                  </tbody>
-                </table>
-              </div>
+            <!-- Grouped Topic Proposals Backlog -->
+            <div id="topics-sections-container" class="table-section-group">
+              <div id="section-topics-active" class="table-section-panel"></div>
+              <div id="section-topics-converted" class="table-section-panel"></div>
+              <div id="section-topics-archived" class="table-section-panel"></div>
+              <table style="display:none;" aria-hidden="true"><tbody id="topics-table-body"></tbody></table>
             </div>
           </div>
 
@@ -698,31 +680,12 @@ export function renderAdminHtml(): string {
               </div>
             </div>
 
-            <!-- Post Drafts Table -->
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title">Post Drafts Backlog</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style="width:36px; text-align:center;">
-                        <input type="checkbox" id="post-select-all" onclick="toggleSelectAllPosts(this)" title="Select all drafts" />
-                      </th>
-                      <th style="width:110px;">Thumbnail</th>
-                      <th>Snippet</th>
-                      <th style="width:180px;">Progress</th>
-                      <th style="width:120px;">Status</th>
-                      <th style="width:150px;">Creation Date</th>
-                      <th style="width:160px; text-align:right;">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="posts-table-body">
-                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading post drafts...</td></tr>
-                  </tbody>
-                </table>
-              </div>
+            <!-- Grouped Post Drafts Backlog -->
+            <div id="posts-sections-container" class="table-section-group">
+              <div id="section-posts-drafts" class="table-section-panel"></div>
+              <div id="section-posts-scheduled" class="table-section-panel"></div>
+              <div id="section-posts-published" class="table-section-panel"></div>
+              <table style="display:none;" aria-hidden="true"><tbody id="posts-table-body"></tbody></table>
             </div>
           </div>
 
@@ -836,25 +799,11 @@ export function renderAdminHtml(): string {
             </div>
 
             <!-- List View Container -->
-            <div id="schedules-list-view" class="panel" style="display:none;">
-              <div class="panel-header">
-                <div class="panel-title">Scheduled Publications List</div>
-              </div>
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Post</th>
-                      <th>Progress</th>
-                      <th>Scheduled Time (UTC)</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="schedules-table-body">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">Loading scheduled posts...</td></tr>
-                  </tbody>
-                </table>
+            <div id="schedules-list-view" style="display:none;">
+              <div id="schedules-sections-container" class="table-section-group">
+                <div id="section-schedules-upcoming" class="table-section-panel"></div>
+                <div id="section-schedules-past" class="table-section-panel"></div>
+                <table style="display:none;" aria-hidden="true"><tbody id="schedules-table-body"></tbody></table>
               </div>
             </div>
           </div>
