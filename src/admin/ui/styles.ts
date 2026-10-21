@@ -2617,5 +2617,45 @@ export function getAdminCss(): string {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
+
+    /* SIGN-IN ACTIVITY STYLES */
+    .sign-in-entry {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      transition: background-color 0.15s ease;
+    }
+    .sign-in-entry:last-child {
+      border-bottom: none;
+    }
+    .sign-in-entry:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .sign-in-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      font-size: 0.875rem;
+    }
+    .sign-in-sub-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+    .sign-in-ip-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.78rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      color: var(--text-main);
+    }
   `;
 }

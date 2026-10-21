@@ -1016,6 +1016,36 @@ export function renderAdminHtml(): string {
                 <button type="submit" id="change-password-btn" class="btn-primary" style="margin-top:0.5rem;">Update Password</button>
               </form>
             </div>
+
+            <!-- Recent Sign-in Activity Panel -->
+            <div class="panel" style="max-width: 600px; margin-top: 2rem;">
+              <div class="panel-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div>
+                  <div class="panel-title">Recent Sign-in Activity</div>
+                  <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">Recent successful and failed sign-in attempts.</div>
+                </div>
+                <button class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.6rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="loadSignInActivity(true)" title="Refresh sign-in activity">
+                  <svg viewBox="0 0 24 24" style="width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Refresh
+                </button>
+              </div>
+
+              <div id="sign-in-activity-container">
+                <div id="sign-in-activity-loading" style="padding:1.5rem 1rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
+                  <span class="inline-spinner" style="margin-right:0.4rem;"></span> Loading recent activity...
+                </div>
+                <div id="sign-in-activity-empty" style="display:none; padding:1.5rem 1rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
+                  No recent sign-in activity available.
+                </div>
+                <div id="sign-in-activity-error" style="display:none; padding:0.85rem 1rem; margin:0.75rem; text-align:center; color:var(--accent-rose); font-size:0.85rem; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.2); border-radius:6px;">
+                  Failed to load sign-in activity.
+                </div>
+                <div id="sign-in-activity-list" style="display:none;"></div>
+                <div id="sign-in-activity-footer" style="display:none; padding:0.75rem 1rem; text-align:center; border-top:1px solid var(--border-color);">
+                  <button id="sign-in-activity-more-btn" class="btn-secondary" style="font-size:0.78rem; padding:0.25rem 0.65rem;" onclick="toggleMoreSignInActivity()">Show more</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- TAB 8: AUDIT LOG -->

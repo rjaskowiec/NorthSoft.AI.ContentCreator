@@ -1378,6 +1378,7 @@ export function getAdminScripts(): string {
     });
 
     async function loadSecurityData() {
+      loadSignInActivity(true).catch(() => {});
       try {
         const res = await guardedFetch('/api/auth/recovery-email');
         if (!res.ok) {
@@ -1400,6 +1401,115 @@ export function getAdminScripts(): string {
         }
       } catch (err) {
         console.error('Failed to load security data:', err);
+      }
+    }
+
+    let cachedSignInActivities = [];
+    let isShowingAllSignInActivities = false;
+
+    function renderSignInActivityList() {
+      const listEl = document.getElementById('sign-in-activity-list');
+      const footerEl = document.getElementById('sign-in-activity-footer');
+      const moreBtn = document.getElementById('sign-in-activity-more-btn');
+      if (!listEl) return;
+
+      const itemsToShow = isShowingAllSignInActivities
+        ? cachedSignInActivities
+        : cachedSignInActivities.slice(0, 5);
+
+      let html = '';
+      for (const item of itemsToShow) {
+        const isSuccess = item.status === 'success';
+        const dateObj = new Date(item.timestamp);
+        let dateStr = '—';
+        if (!isNaN(dateObj.getTime())) {
+          dateStr = dateObj.toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }) + ', ' + String(dateObj.getHours()).padStart(2, '0') + ':' + String(dateObj.getMinutes()).padStart(2, '0');
+        }
+
+        const indicatorColor = isSuccess ? 'var(--accent-emerald)' : 'var(--accent-rose)';
+        const titleText = isSuccess ? 'Successful sign-in' : 'Failed sign-in';
+        const titleColor = isSuccess ? 'var(--text-main)' : 'var(--accent-rose)';
+        const reasonTag = item.failureReason === 'rate_limited'
+          ? ' <span style="font-size:0.75rem; color:var(--text-muted);">(Rate limited)</span>'
+          : '';
+
+        html += '<div class="sign-in-entry">' +
+          '<div class="sign-in-meta-row">' +
+            '<span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:' + indicatorColor + '; flex-shrink:0;"></span>' +
+            '<strong style="color:' + titleColor + '; font-weight:600;">' + titleText + '</strong>' +
+            reasonTag +
+            '<span style="color:var(--text-subtle); font-size:0.8rem;">·</span>' +
+            '<span style="color:var(--text-muted); font-size:0.8rem;">' + escapeHtml(dateStr) + '</span>' +
+          '</div>' +
+          '<div class="sign-in-sub-row">' +
+            '<span>' + escapeHtml(item.location || 'Unknown location') + '</span>' +
+            '<span style="color:var(--text-subtle);">·</span>' +
+            '<code class="sign-in-ip-badge">' + escapeHtml(item.ipAddress || 'Unknown IP') + '</code>' +
+          '</div>' +
+        '</div>';
+      }
+
+      listEl.innerHTML = html;
+      listEl.style.display = 'block';
+
+      if (footerEl && moreBtn) {
+        if (cachedSignInActivities.length > 5) {
+          footerEl.style.display = 'block';
+          moreBtn.textContent = isShowingAllSignInActivities
+            ? 'Show less'
+            : 'Show more (' + (cachedSignInActivities.length - 5) + ')';
+        } else {
+          footerEl.style.display = 'none';
+        }
+      }
+    }
+
+    function toggleMoreSignInActivity() {
+      isShowingAllSignInActivities = !isShowingAllSignInActivities;
+      renderSignInActivityList();
+    }
+
+    async function loadSignInActivity(force) {
+      const loadingEl = document.getElementById('sign-in-activity-loading');
+      const emptyEl = document.getElementById('sign-in-activity-empty');
+      const errorEl = document.getElementById('sign-in-activity-error');
+      const listEl = document.getElementById('sign-in-activity-list');
+      const footerEl = document.getElementById('sign-in-activity-footer');
+
+      if (!force && cachedSignInActivities.length > 0) {
+        renderSignInActivityList();
+        return;
+      }
+
+      if (loadingEl) loadingEl.style.display = 'block';
+      if (emptyEl) emptyEl.style.display = 'none';
+      if (errorEl) errorEl.style.display = 'none';
+      if (listEl) listEl.style.display = 'none';
+      if (footerEl) footerEl.style.display = 'none';
+
+      try {
+        const res = await guardedFetch('/api/auth/sign-in-activity?limit=50');
+        if (!res.ok) {
+          throw new Error('Server returned status ' + res.status);
+        }
+        const data = await res.json();
+        cachedSignInActivities = Array.isArray(data.activities) ? data.activities : [];
+
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (cachedSignInActivities.length === 0) {
+          if (emptyEl) emptyEl.style.display = 'block';
+        } else {
+          renderSignInActivityList();
+        }
+      } catch (err) {
+        console.warn('Failed to load sign-in activity:', err);
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (errorEl) errorEl.style.display = 'block';
       }
     }
 
@@ -8191,6 +8301,8 @@ export function getAdminScripts(): string {
     window.deleteFacebookPost = deleteFacebookPost;
     window.loadAuditData = loadAuditData;
     window.loadSecurityData = loadSecurityData;
+    window.loadSignInActivity = loadSignInActivity;
+    window.toggleMoreSignInActivity = toggleMoreSignInActivity;
     window.runDiscoveryNow = runDiscoveryNow;
     window.runPostGenerationNow = runPostGenerationNow;
     window.runPublishNow = runPublishNow;

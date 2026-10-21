@@ -23,6 +23,13 @@ import {
   validateSession,
 } from '../core/auth/session';
 import { requireAdmin } from '../core/middleware/auth';
+import {
+  cleanupSignInActivity,
+  extractEdgeLocation,
+  extractTrustedClientIp,
+  getRecentSignInActivity,
+  recordSignInActivity,
+} from '../core/auth/sign-in-activity';
 import { PasswordRecoveryService } from '../services/auth/password-recovery-service';
 import { NorthSoftMailGatewayClient } from '../services/mail/mail-service';
 
@@ -47,14 +54,25 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: 'Bad Request', message: 'Username and password are required' }, 400);
   }
 
-  const clientIp =
-    c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '127.0.0.1';
+  const clientIp = extractTrustedClientIp(c.req.raw.headers);
+  const edgeLoc = extractEdgeLocation(c.req.raw, c.req.raw.headers);
   const userAgent = c.req.header('user-agent') || '';
   const auditLogger = new D1AuditLogger(c.env.DB);
 
   // 1. Check Rate Limit
   const rateLimit = await checkRateLimit(c.env.DB, clientIp, username);
   if (!rateLimit.allowed) {
+    await recordSignInActivity(c.env.DB, {
+      username,
+      status: 'failed',
+      ipAddress: clientIp,
+      city: edgeLoc.city,
+      region: edgeLoc.region,
+      country: edgeLoc.country,
+      userAgent,
+      failureReason: 'rate_limited',
+    });
+
     await auditLogger.log({
       eventType: 'AUTH_LOGIN_FAILURE',
       entityType: 'admin_user',
@@ -98,6 +116,18 @@ authRoutes.post('/login', async (c) => {
   if (!userRow || userRow.status !== 'active' || !isValidPassword) {
     // Record failed attempt and log audit
     await recordLoginAttempt(c.env.DB, clientIp, username, false);
+    await recordSignInActivity(c.env.DB, {
+      userId: userRow?.id || null,
+      username,
+      status: 'failed',
+      ipAddress: clientIp,
+      city: edgeLoc.city,
+      region: edgeLoc.region,
+      country: edgeLoc.country,
+      userAgent,
+      failureReason: 'invalid_credentials',
+    });
+
     await auditLogger.log({
       eventType: 'AUTH_LOGIN_FAILURE',
       entityType: 'admin_user',
@@ -121,6 +151,16 @@ authRoutes.post('/login', async (c) => {
 
   // 4. Record successful attempt
   await recordLoginAttempt(c.env.DB, clientIp, username, true);
+  await recordSignInActivity(c.env.DB, {
+    userId: userRow.id,
+    username: userRow.username,
+    status: 'success',
+    ipAddress: clientIp,
+    city: edgeLoc.city,
+    region: edgeLoc.region,
+    country: edgeLoc.country,
+    userAgent,
+  });
 
   // 5. Update user last_login_at
   const nowIso = new Date().toISOString();
@@ -157,8 +197,9 @@ authRoutes.post('/login', async (c) => {
     },
   });
 
-  // Background cleanup of old attempts
+  // Background cleanup of old attempts and activity
   cleanupLoginAttempts(c.env.DB).catch(() => {});
+  cleanupSignInActivity(c.env.DB, 90).catch(() => {});
 
   return c.json({
     success: true,
@@ -314,6 +355,27 @@ authRoutes.put('/recovery-email', requireAdmin, csrfProtection, async (c) => {
   }
 
   return c.json(result);
+});
+
+/**
+ * GET /api/auth/sign-in-activity
+ * Returns recent successful and failed sign-in attempts for the authenticated administrator.
+ * Strictly isolated to the current user's account.
+ */
+authRoutes.get('/sign-in-activity', requireAdmin, async (c) => {
+  const user = c.get('adminUser');
+  if (!user) {
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401);
+  }
+
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? parseInt(limitParam, 10) : 20;
+
+  const activities = await getRecentSignInActivity(c.env.DB, user.id, user.username, limit);
+  return c.json({
+    success: true,
+    activities,
+  });
 });
 
 /**

@@ -187,4 +187,14 @@ describe('Auth API Integration', () => {
 
     expect(res.status).toBe(401);
   });
+
+  it('rejects unauthenticated GET /api/auth/sign-in-activity with 401', async () => {
+    const res = await app.request('/api/auth/sign-in-activity', {
+      method: 'GET',
+    });
+
+    expect(res.status).toBe(401);
+    const data = (await res.json()) as ApiErrorResponse;
+    expect(data.error).toBe('Unauthorized');
+  });
 });
