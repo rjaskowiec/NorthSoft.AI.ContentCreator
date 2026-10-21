@@ -226,7 +226,14 @@ export function formatStructuredEvent(rawEvent: Record<string, unknown> | null |
     }
 
     if (rejectionReason && rejectionReason.trim()) {
-      fields.push({ label: 'Reason', value: rejectionReason.trim(), isHighlight: true });
+      const parsedFailure = parseQualityGateFailure(rejectionReason);
+      fields.push({ label: 'Reason', value: parsedFailure.summary, isHighlight: true });
+      for (const issue of parsedFailure.issues) {
+        fields.push({
+          label: issue.label,
+          value: issue.description,
+        });
+      }
     }
 
     if (qualityScore !== null && !isNaN(qualityScore)) {
@@ -246,7 +253,8 @@ export function formatStructuredEvent(rawEvent: Record<string, unknown> | null |
       summary = `${eventTitle}: "${postTitle}"`;
     }
     if (rejectionReason) {
-      summary += ` — ${rejectionReason}`;
+      const parsedFailure = parseQualityGateFailure(rejectionReason);
+      summary += ` — ${parsedFailure.summary}`;
     }
 
     return {
@@ -657,3 +665,144 @@ export function formatApiToast(
     failed: 'Operation could not be completed.',
   };
 }
+
+export interface QualityGateIssue {
+  tag: string;
+  label: string;
+  description: string;
+}
+
+export interface ParsedQualityGateFailure {
+  summary: string;
+  issues: QualityGateIssue[];
+  fullReason: string;
+}
+
+/**
+ * Maps known Polish phrases from historical runs and backend messages into clean, natural English.
+ */
+export function humanizePolishPipelineSummary(text: string | null | undefined): string {
+  if (!text) return '';
+  let str = String(text).trim();
+
+  // Strip technical prefix wrappers like "Post odrzucony (REJECTED): "
+  str = str.replace(/^Post odrzucony(?:\s*\((?:REJECTED|BLOCKED|FAILED)\))?:\s*/i, 'Post rejected: ');
+  str = str.replace(/\bPost odrzucony\b/gi, 'Post rejected');
+  str = str.replace(/^Wygenerowano post:\s*/i, 'Generated post: ');
+  str = str.replace(/\bWygenerowano post\b/gi, 'Generated post');
+  str = str.replace(/^Planowanie publikacji:\s*/i, 'Publication scheduling: ');
+  str = str.replace(/\bPlanowanie publikacji\b/gi, 'Publication Scheduling');
+  str = str.replace(/\bGenerowanie postów\b/gi, 'Post Generation');
+  str = str.replace(/\bWyszukiwanie tematów\b/gi, 'Topic Discovery');
+  str = str.replace(/\bZaplanowano\s+(\d+)\s+post(?:\(ów\)|ów)?/gi, (_m, count) => {
+    return Number(count) === 1 ? 'Scheduled 1 post' : `Scheduled ${count} posts`;
+  });
+  str = str.replace(/\bZnaleziono\s+(\d+)\s+tematów/gi, 'Found $1 topics');
+  str = str.replace(/\bZnaleziono:\s*/gi, 'Found: ');
+  str = str.replace(/\bZaakceptowano:\s*/gi, 'Accepted: ');
+  str = str.replace(/\bOdrzucono:\s*/gi, 'Rejected: ');
+  str = str.replace(/Brak tematów do przetworzenia/gi, 'No topics available to process');
+  str = str.replace(/\bPrzywrócono z odroczonych:\s*(\d+)/gi, 'Promoted from deferred: $1');
+  str = str.replace(/\bZakończono etap/gi, 'Stage completed');
+  str = str.replace(/\bWeryfikacja zakończona/gi, 'Verification completed');
+  str = str.replace(/\bNiepowodzenie/gi, 'Failed');
+
+  return str;
+}
+
+/**
+ * Standardizes dimension names to human-readable labels.
+ */
+export function getQualityGateDimensionLabel(dimension: string): string {
+  const norm = dimension.replace(/^SMQG-/, '').trim();
+  const labelMap: Record<string, string> = {
+    Genericness: 'Generic phrasing',
+    AudienceRelevance: 'Audience relevance',
+    Readability: 'Readability',
+    CTAQuality: 'Call-to-action quality',
+    Clickbait: 'Headline tone',
+    CorporateLingo: 'Corporate buzzwords',
+    ContentSubstance: 'Content substance',
+    StaticValidation: 'Format validation',
+    BrandVoice: 'Brand voice',
+    Length: 'Post length',
+    FactualAccuracy: 'Factual accuracy',
+  };
+  return labelMap[norm] || norm.replace(/([A-Z])/g, ' $1').trim();
+}
+
+/**
+ * Parses failure messages containing quality-gate or policy issues into structured, human-readable entries.
+ */
+export function parseQualityGateFailure(rawReason: string | null | undefined): ParsedQualityGateFailure {
+  const fullReason = String(rawReason || '').trim();
+  if (!fullReason) {
+    return { summary: 'Operation failed.', issues: [], fullReason: '' };
+  }
+
+  // Check if this contains quality gate evaluation text with issues
+  const lastIssuesIdx = fullReason.indexOf('Last issues:');
+  let summaryPart = fullReason;
+  let issuesPart = '';
+
+  if (lastIssuesIdx !== -1) {
+    summaryPart = fullReason.substring(0, lastIssuesIdx).trim();
+    issuesPart = fullReason.substring(lastIssuesIdx + 'Last issues:'.length).trim();
+  } else if (fullReason.includes('[SMQG-') || fullReason.includes('[ContentSubstance]')) {
+    const firstBracket = fullReason.indexOf('[');
+    if (firstBracket > 0) {
+      summaryPart = fullReason.substring(0, firstBracket).trim();
+      issuesPart = fullReason.substring(firstBracket).trim();
+    }
+  }
+
+  summaryPart = humanizePolishPipelineSummary(summaryPart);
+  summaryPart = summaryPart.replace(/:\s*$/, '').trim();
+
+  // Natural language for evaluation attempts
+  summaryPart = summaryPart.replace(
+    /Failed quality gate evaluation after (\d+) attempts\. Post blocked from publishing\./i,
+    'The post failed quality checks after $1 attempts and was blocked from publishing.',
+  );
+
+  const issues: QualityGateIssue[] = [];
+
+  if (issuesPart) {
+    const rawItems = issuesPart.split(/\s*\|\s*(?=\[[A-Za-z0-9_-]+\])|\n+/).filter(Boolean);
+    for (const item of rawItems) {
+      const match = item.match(/\[([A-Za-z0-9_-]+)\]\s*(.*)/);
+      if (match && match[1]) {
+        const tag = match[1];
+        let desc = (match[2] || '').trim();
+
+        // Clean regex pattern code noise for clean presentation
+        desc = desc.replace(/\s*\("[^"]+"\)/g, '');
+        if (desc.includes('AI template pattern detected') && !desc.includes('Avoid predictable')) {
+          desc += '. Avoid predictable formulations.';
+        }
+        if (desc.includes('Post relies on predictable AI template syntax') && !desc.includes('The content matched')) {
+          desc = 'The content matched a predictable AI writing pattern. ' + desc.replace(/^Post relies on predictable AI template syntax\.?\s*/i, '');
+        }
+
+        issues.push({
+          tag,
+          label: getQualityGateDimensionLabel(tag),
+          description: desc.trim(),
+        });
+      } else if (item.trim()) {
+        issues.push({
+          tag: 'QualityIssue',
+          label: 'Quality check',
+          description: item.trim(),
+        });
+      }
+    }
+  }
+
+  return {
+    summary: summaryPart || 'Quality evaluation failed.',
+    issues,
+    fullReason,
+  };
+}
+

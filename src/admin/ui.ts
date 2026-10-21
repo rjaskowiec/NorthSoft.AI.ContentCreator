@@ -319,10 +319,9 @@ export function renderAdminHtml(): string {
 
           <!-- TAB 2: PIPELINE CONTROL -->
           <div id="tab-pipeline" class="tab-section">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
               <div>
                 <h1 class="page-title">Pipeline Control</h1>
-                <p class="page-subtitle" style="margin-bottom:0;">Automated nightly pipeline (20:00–23:45 UTC) &amp; manual stage triggers.</p>
               </div>
               <button id="run-full-pipeline-btn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size:0.95rem; padding:0.75rem 1.4rem;" onclick="runAllPipelineStagesNow()">
                 Run all stages now
@@ -369,7 +368,7 @@ export function renderAdminHtml(): string {
                     <span class="status-badge status-neutral" style="font-size:0.65rem;">AI</span>
                   </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Runs research scout when free topics fall below threshold.
+                    Discovers candidate topics from configured research sources.
                   </p>
                   <button id="stage-discovery-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('topics')">
                     Find topics
@@ -383,7 +382,7 @@ export function renderAdminHtml(): string {
                     <span class="status-badge status-neutral" style="font-size:0.65rem;">AI</span>
                   </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Generates 1 draft with QA and factual evaluation.
+                    Generates draft with quality and policy evaluation.
                   </p>
                   <button id="stage-generation-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('posts')">
                     Generate post
@@ -397,7 +396,7 @@ export function renderAdminHtml(): string {
                     <span class="status-badge status-neutral" style="font-size:0.65rem;">Semi-AI</span>
                   </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Assigns approved images or fetches Openverse candidates as PENDING.
+                    Matches approved library photos or fetches candidates.
                   </p>
                   <button id="stage-images-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('images')">
                     Process images
@@ -411,7 +410,7 @@ export function renderAdminHtml(): string {
                     <span class="status-badge status-healthy" style="font-size:0.65rem;">No AI</span>
                   </div>
                   <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;">
-                    Assigns optimal publication slots for posts with approved images.
+                    Calculates optimal publication slots for ready drafts.
                   </p>
                   <button id="stage-scheduling-btn" class="btn-secondary" style="width:100%; justify-content:center;" onclick="runStageNow('scheduling')">
                     Schedule ready posts
@@ -510,7 +509,6 @@ export function renderAdminHtml(): string {
                     <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:var(--accent-emerald); stroke-width:2;"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Automation Activity
                   </div>
-                  <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">Detailed operational log with results, topics, posts, and resource telemetry.</div>
                 </div>
                 <div style="display:flex; align-items:center; gap:0.5rem;">
                   <button type="button" class="btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="loadAutomationActivity(true)">
@@ -544,10 +542,10 @@ export function renderAdminHtml(): string {
                   <span style="font-size:0.8rem; color:var(--text-muted);">Stage:</span>
                   <select id="activity-stage-filter" class="form-input" style="font-size:0.8rem; padding:0.3rem 0.6rem; width:auto;" onchange="loadAutomationActivity()">
                     <option value="all">All stages</option>
-                    <option value="topics">Topics (Wyszukiwanie tematów)</option>
-                    <option value="posts">Posts (Generowanie postów)</option>
-                    <option value="images">Images (Ilustracje)</option>
-                    <option value="scheduling">Scheduling (Planowanie publikacji)</option>
+                    <option value="topics">Topic Discovery</option>
+                    <option value="posts">Post Generation</option>
+                    <option value="images">Image Curation &amp; Synthesis</option>
+                    <option value="scheduling">Publication Scheduling</option>
                     <option value="errors">Errors &amp; Blocked</option>
                   </select>
                 </div>

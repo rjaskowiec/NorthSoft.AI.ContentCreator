@@ -36,6 +36,7 @@ import { TopicRegistry } from '../research/topic-registry';
 import { ContentPlannerService } from './content-planner-service';
 import { ImageLibraryService } from './image-library-service';
 import { OpenverseImageService } from './image-service';
+import { humanizePolishPipelineSummary } from '../../admin/ui/event-formatter';
 
 export type PipelineStage = 'topics' | 'posts' | 'images' | 'scheduling';
 export type PipelineActor = 'admin' | 'system';
@@ -1518,6 +1519,8 @@ export class PipelineOrchestratorService {
             break;
         }
       }
+
+      summary = humanizePolishPipelineSummary(summary);
 
       return {
         id,

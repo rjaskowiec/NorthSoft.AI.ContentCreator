@@ -712,6 +712,120 @@ export function getAdminScripts(): string {
       return fallback;
     }
 
+    function humanizePolishPipelineSummary(text) {
+      if (!text) return '';
+      let str = String(text).trim();
+      str = str.replace(/^Post odrzucony(?:\\s*\\((?:REJECTED|BLOCKED|FAILED)\\))?:\\s*/i, 'Post rejected: ');
+      str = str.replace(/\\bPost odrzucony\\b/gi, 'Post rejected');
+      str = str.replace(/^Wygenerowano post:\\s*/i, 'Generated post: ');
+      str = str.replace(/\\bWygenerowano post\\b/gi, 'Generated post');
+      str = str.replace(/^Planowanie publikacji:\\s*/i, 'Publication scheduling: ');
+      str = str.replace(/\\bPlanowanie publikacji\\b/gi, 'Publication Scheduling');
+      str = str.replace(/\\bGenerowanie postów\\b/gi, 'Post Generation');
+      str = str.replace(/\\bWyszukiwanie tematów\\b/gi, 'Topic Discovery');
+      str = str.replace(/\\bZaplanowano\\s+(\\d+)\\s+post(?:\\(ów\\)|ów)?/gi, function(_m, count) {
+        return Number(count) === 1 ? 'Scheduled 1 post' : 'Scheduled ' + count + ' posts';
+      });
+      str = str.replace(/\\bZnaleziono\\s+(\\d+)\\s+tematów/gi, 'Found $1 topics');
+      str = str.replace(/\\bZnaleziono:\\s*/gi, 'Found: ');
+      str = str.replace(/\\bZaakceptowano:\\s*/gi, 'Accepted: ');
+      str = str.replace(/\\bOdrzucono:\\s*/gi, 'Rejected: ');
+      str = str.replace(/Brak tematów do przetworzenia/gi, 'No topics available to process');
+      str = str.replace(/\\bPrzywrócono z odroczonych:\\s*(\\d+)/gi, 'Promoted from deferred: $1');
+      str = str.replace(/\\bZakończono etap/gi, 'Stage completed');
+      str = str.replace(/\\bWeryfikacja zakończona/gi, 'Verification completed');
+      str = str.replace(/\\bNiepowodzenie/gi, 'Failed');
+      return str;
+    }
+
+    function getQualityGateDimensionLabel(dim) {
+      const norm = safeStr(dim).replace(/^SMQG-/, '').trim();
+      const map = {
+        Genericness: 'Generic phrasing',
+        AudienceRelevance: 'Audience relevance',
+        Readability: 'Readability',
+        CTAQuality: 'Call-to-action quality',
+        Clickbait: 'Headline tone',
+        CorporateLingo: 'Corporate buzzwords',
+        ContentSubstance: 'Content substance',
+        StaticValidation: 'Format validation',
+        BrandVoice: 'Brand voice',
+        Length: 'Post length',
+        FactualAccuracy: 'Factual accuracy'
+      };
+      return map[norm] || norm.replace(/([A-Z])/g, ' $1').trim();
+    }
+
+    function parseQualityGateFailure(rawReason) {
+      const fullReason = safeStr(rawReason).trim();
+      if (!fullReason) return { summary: 'Operation failed.', issues: [], fullReason: '' };
+
+      let summaryPart = fullReason;
+      let issuesPart = '';
+      const lastIssuesIdx = fullReason.indexOf('Last issues:');
+      if (lastIssuesIdx !== -1) {
+        summaryPart = fullReason.substring(0, lastIssuesIdx).trim();
+        issuesPart = fullReason.substring(lastIssuesIdx + 'Last issues:'.length).trim();
+      } else if (fullReason.includes('[SMQG-') || fullReason.includes('[ContentSubstance]')) {
+        const firstBracket = fullReason.indexOf('[');
+        if (firstBracket > 0) {
+          summaryPart = fullReason.substring(0, firstBracket).trim();
+          issuesPart = fullReason.substring(firstBracket).trim();
+        }
+      }
+
+      summaryPart = humanizePolishPipelineSummary(summaryPart);
+      summaryPart = summaryPart.replace(/:\\s*$/, '').trim();
+      summaryPart = summaryPart.replace(
+        /Failed quality gate evaluation after (\\d+) attempts\\. Post blocked from publishing\\./i,
+        'The post failed quality checks after $1 attempts and was blocked from publishing.'
+      );
+
+      const issues = [];
+      if (issuesPart) {
+        const rawItems = issuesPart.split(/\\s*\\|\\s*(?=\\[[A-Za-z0-9_-]+\\])|\\n+/).filter(Boolean);
+        for (let i = 0; i < rawItems.length; i++) {
+          const item = rawItems[i].trim();
+          const match = item.match(/^\\[([A-Za-z0-9_-]+)\\]\\s*(.*)/);
+          if (match) {
+            const tag = match[1];
+            let desc = match[2].trim();
+            desc = desc.replace(/\\s*\\(\\"[^\\"]+\\"\\)/g, '');
+            if (desc.includes('AI template pattern detected') && !desc.includes('Avoid predictable')) {
+              desc += '. Avoid predictable formulations.';
+            }
+            if (desc.includes('Post relies on predictable AI template syntax') && !desc.includes('The content matched')) {
+              desc = 'The content matched a predictable AI writing pattern. ' + desc.replace(/^Post relies on predictable AI template syntax\\.?\\s*/i, '');
+            }
+            issues.push({ tag: tag, label: getQualityGateDimensionLabel(tag), description: desc.trim() });
+          } else if (item) {
+            issues.push({ tag: 'QualityIssue', label: 'Quality check', description: item });
+          }
+        }
+      }
+
+      return { summary: summaryPart || 'Quality evaluation failed.', issues: issues, fullReason: fullReason };
+    }
+
+    function formatActivityTimestamp(rawStartedAt, duration, isRunning) {
+      if (!rawStartedAt) return isRunning ? 'In progress' : '—';
+      try {
+        const d = new Date(rawStartedAt);
+        if (isNaN(d.getTime())) return String(rawStartedAt);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const day = d.getUTCDate();
+        const month = months[d.getUTCMonth()];
+        const hours = String(d.getUTCHours()).padStart(2, '0');
+        const mins = String(d.getUTCMinutes()).padStart(2, '0');
+        const timePart = day + ' ' + month + ', ' + hours + ':' + mins + ' UTC';
+        if (isRunning) return timePart + ' &bull; In progress';
+        if (duration && duration !== '—') return timePart + ' (' + duration + ')';
+        return timePart;
+      } catch (_e) {
+        return String(rawStartedAt);
+      }
+    }
+
     function formatApiToast(method, url, opts) {
       if (opts && opts.skipTask) {
         return { skipToast: true, title: '', inProgress: '', completed: '', failed: '' };
@@ -4812,15 +4926,10 @@ export function getAdminScripts(): string {
           const runId = escapeHtml(String(run.id));
           const stageKey = run.stage || 'full_pipeline';
           const stageLabel = stageEnglishLabels[stageKey] || safeUpper(stageKey, 'AUTOMATION');
-          const status = safeUpper(run.status, 'UNKNOWN');
-          const isSuccess = status === 'COMPLETED' || status === 'SUCCESS';
-          const isRunning = status === 'RUNNING';
-          const badgeClass = isSuccess ? 'status-healthy' : isRunning ? 'status-active' : 'status-alert';
           
           const rawStartedAt = run.startedAt || run.started_at;
           const rawFinishedAt = run.finishedAt || run.finished_at;
-          const startedAt = rawStartedAt ? formatDateSafe(rawStartedAt) + ' ' + formatTimeSafe(rawStartedAt) : '—';
-          const finishedAt = rawFinishedAt ? formatTimeSafe(rawFinishedAt) : (isRunning ? 'In progress' : '—');
+          const isRunning = safeUpper(run.status, 'UNKNOWN') === 'RUNNING';
 
           // Duration calculation: respect durationSeconds / duration_seconds first, fallback to parsed dates if valid
           let duration = isRunning ? 'Running' : '—';
@@ -4835,47 +4944,77 @@ export function getAdminScripts(): string {
             }
           }
 
-          // Telemetry metrics: distinguish absence (null / undefined) from real measured 0
-          const rawNeurons = run.neuronsUsed !== undefined && run.neuronsUsed !== null ? run.neuronsUsed : run.neurons_used;
-          const rawWrites = run.d1RowsWritten !== undefined && run.d1RowsWritten !== null ? run.d1RowsWritten : run.d1_rows_written;
-          const rawReads = run.d1RowsRead !== undefined && run.d1RowsRead !== null ? run.d1RowsRead : run.d1_rows_read;
+          const timeFormatted = formatActivityTimestamp(rawStartedAt, duration, isRunning);
 
+          // AI Neurons telemetry (only displayed when accurately measured and > 0)
+          const rawNeurons = run.neuronsUsed !== undefined && run.neuronsUsed !== null ? run.neuronsUsed : run.neurons_used;
           const neurons = (typeof rawNeurons === 'number' && !isNaN(rawNeurons) && rawNeurons > 0)
             ? Number(rawNeurons).toLocaleString() + ' AI neurons'
-            : null;
-          const d1Writes = (typeof rawWrites === 'number' && !isNaN(rawWrites) && rawWrites >= 0)
-            ? Number(rawWrites).toLocaleString() + ' D1 writes'
-            : null;
-          const d1Reads = (typeof rawReads === 'number' && !isNaN(rawReads) && rawReads >= 0)
-            ? Number(rawReads).toLocaleString() + ' D1 reads'
             : null;
 
           const details = run.details || {};
           let summary = '';
-          if (details.finalDecision || details.qualityScore !== undefined || details.rejectionReason) {
+          let qgFailure = null;
+
+          // Parse quality gate evaluation / failure diagnostics
+          const rawReason = details.rejectionReason || details.reason || run.errorMessage || run.error_message || '';
+          if (details.finalDecision || details.qualityScore !== undefined || rawReason) {
             const dec = humanizeAiDecision(details.finalDecision);
-            const isRej = dec.label === 'Rejected' || dec.label === 'Blocked';
+            const isRej = dec.label === 'Rejected' || dec.label === 'Blocked' || /reject|odrzucon|failed quality gate/i.test(rawReason);
             const postTitle = safeStr(details.title || run.title || '');
-            const reason = safeStr(details.rejectionReason || details.reason || run.errorMessage || run.error_message || '');
-            if (isRej) {
-              summary = 'Post draft rejected by AI review' + (postTitle ? ': "' + postTitle + '"' : '') + (reason ? ' — ' + reason : '');
+            if (isRej && rawReason) {
+              qgFailure = parseQualityGateFailure(rawReason);
+              summary = (postTitle ? '"' + postTitle + '": ' : '') + qgFailure.summary;
+            } else if (isRej) {
+              summary = 'Post draft rejected by AI review' + (postTitle ? ': "' + postTitle + '"' : '');
             } else if (dec.label === 'Approved') {
               summary = 'Generated post draft' + (postTitle ? ': "' + postTitle + '"' : '');
             }
-          } else if (details.itemsAccepted !== undefined || details.topicsDiscovered !== undefined) {
-            const f = Number(details.itemsFound ?? details.topicsDiscovered ?? 0);
-            const a = Number(details.itemsAccepted ?? 0);
-            summary = 'Topic discovery: found ' + f + ', accepted ' + a + ' new proposals';
-          } else if (details.attachedFromLibrary !== undefined) {
-            summary = 'Image curation: attached ' + Number(details.attachedFromLibrary || 0) + ' from library, candidates ' + Number(details.candidatesAwaitingApproval || 0);
-          } else if (details.scheduledCount !== undefined) {
-            summary = 'Publication scheduling: ' + Number(details.scheduledCount || 0) + ' post(s) scheduled';
+          }
+
+          if (!summary) {
+            if (details.itemsAccepted !== undefined || details.topicsDiscovered !== undefined) {
+              const f = Number(details.itemsFound ?? details.topicsDiscovered ?? 0);
+              const a = Number(details.itemsAccepted ?? 0);
+              summary = 'Topic discovery: found ' + f + ', accepted ' + a + ' new proposals';
+            } else if (details.attachedFromLibrary !== undefined) {
+              summary = 'Image curation: attached ' + Number(details.attachedFromLibrary || 0) + ' from library, candidates ' + Number(details.candidatesAwaitingApproval || 0);
+            } else if (details.scheduledCount !== undefined) {
+              summary = 'Publication scheduling: ' + Number(details.scheduledCount || 0) + ' post(s) scheduled';
+            }
           }
 
           if (!summary) {
             summary = safeStr(run.summary || run.result_status || run.errorMessage || run.error_message || 'Completed');
+            summary = humanizePolishPipelineSummary(summary);
+            if (summary.includes('Last issues:') || summary.includes('[SMQG-')) {
+              qgFailure = parseQualityGateFailure(summary);
+              summary = qgFailure.summary;
+            }
           }
-          summary = escapeHtml(summary);
+
+          // Accurate status determination: Never label an operation Completed if its final outcome was rejection or failure
+          const rawStatus = safeUpper(run.status, 'UNKNOWN');
+          const isRejectionOutcome = Boolean(qgFailure) || /reject|odrzucon|failed quality gate/i.test(safeStr(run.summary || rawReason || ''));
+          let status = rawStatus;
+          if (isRejectionOutcome && (status === 'COMPLETED' || status === 'SUCCESS')) {
+            status = 'REJECTED';
+          }
+          const isSuccess = status === 'COMPLETED' || status === 'SUCCESS';
+          const badgeClass = isSuccess ? 'status-healthy' : isRunning ? 'status-active' : 'status-alert';
+
+          // Issues card for quality check rejections
+          let qgIssuesHtml = '';
+          if (qgFailure && qgFailure.issues && qgFailure.issues.length > 0) {
+            qgIssuesHtml = '<div style="margin-top:0.45rem; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:0.5rem 0.75rem;">' +
+              '<div style="font-weight:600; font-size:0.75rem; color:#fca5a5; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:0.3rem;">Issues</div>' +
+              '<ul style="margin:0; padding-left:1.1rem; font-size:0.78rem; color:var(--text-main); display:flex; flex-direction:column; gap:0.25rem;">' +
+                qgFailure.issues.map(function(iss) {
+                  return '<li><strong style="color:#fca5a5;">' + escapeHtml(iss.label) + ':</strong> ' + escapeHtml(iss.description) + '</li>';
+                }).join('') +
+              '</ul>' +
+            '</div>';
+          }
 
           // Counts badge pills
           let countsHtml = '';
@@ -4896,7 +5035,7 @@ export function getAdminScripts(): string {
             countsHtml += '</div>';
           }
 
-          // Entity chips (Topics / Posts / Images)
+          // Entity chips (Topics / Posts / Images / Schedules)
           let entitiesHtml = '';
           const topics = Array.isArray(details.topics) ? details.topics : [];
           const posts = Array.isArray(details.posts) ? details.posts : [];
@@ -4949,13 +5088,13 @@ export function getAdminScripts(): string {
             '</div>';
           }
 
-          // Structured Details Block
+          // Structured Diagnostics Block for expanded view
           let structuredRunHtml = '';
           if (details.finalDecision || details.qualityScore !== undefined || details.rejectionReason) {
             const dec = humanizeAiDecision(details.finalDecision);
             const isRej = dec.label === 'Rejected' || dec.label === 'Blocked';
             const postTitle = safeStr(details.title || run.title || '');
-            const reason = safeStr(details.rejectionReason || details.reason || run.errorMessage || run.error_message || '');
+            const reason = safeStr(qgFailure ? qgFailure.fullReason : (details.rejectionReason || details.reason || run.errorMessage || run.error_message || ''));
 
             structuredRunHtml = '<div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.75rem; margin-bottom:0.6rem;">' +
               '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">' +
@@ -4965,44 +5104,46 @@ export function getAdminScripts(): string {
               '<div style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem;">' +
                 (postTitle ? '<div><strong style="color:var(--text-muted);">Post:</strong> <span style="color:var(--text-main); font-weight:500;">' + escapeHtml(postTitle) + '</span></div>' : '') +
                 (details.qualityScore !== undefined && details.qualityScore !== null ? '<div><strong style="color:var(--text-muted);">Quality score:</strong> <span style="color:var(--accent-cyan); font-weight:600;">' + details.qualityScore + ' / 10</span></div>' : '') +
-                (reason ? '<div style="background:rgba(239,68,68,0.08); border-left:3px solid #f87171; padding:0.4rem 0.6rem; border-radius:4px; margin-top:0.2rem;"><strong style="color:#fca5a5;">Reason:</strong> <span style="color:var(--text-main);">' + escapeHtml(reason) + '</span></div>' : '') +
+                (reason ? '<div style="background:rgba(239,68,68,0.08); border-left:3px solid #f87171; padding:0.4rem 0.6rem; border-radius:4px; margin-top:0.2rem;"><strong style="color:#fca5a5;">Diagnostic details:</strong> <span style="color:var(--text-main);">' + escapeHtml(reason) + '</span></div>' : '') +
               '</div>' +
             '</div>';
           }
 
-          // Technical raw details inside collapsible accordion
+          // Collapsible Details Section: only rendered if meaningful additional details exist
+          const hasNonEmptyRawJson = details && typeof details === 'object' && Object.keys(details).length > 0;
+          const hasErrorDetails = Boolean(run.error_message || (details.error && details.error !== summary));
+          const hasDetails = Boolean(structuredRunHtml) || hasNonEmptyRawJson || hasErrorDetails;
           const rawJson = escapeHtml(JSON.stringify(details, null, 2));
 
           return '<div class="card" style="padding:1rem; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.015);">' +
             '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">' +
-              '<div>' +
+              '<div style="flex:1; min-width:240px;">' +
                 '<div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
                   '<span class="status-badge ' + badgeClass + '">' + status + '</span>' +
                   '<strong style="font-size:0.9rem; color:var(--text-main);">' + stageLabel + '</strong>' +
-                  '<span style="font-size:0.75rem; color:var(--text-muted);">' + startedAt + ' &rarr; ' + finishedAt + ' (' + duration + ')</span>' +
+                  '<span style="font-size:0.75rem; color:var(--text-muted);">' + timeFormatted + '</span>' +
                 '</div>' +
-                '<div style="font-size:0.85rem; color:var(--text-main); margin-top:0.35rem; line-height:1.4;">' + summary + '</div>' +
+                '<div style="font-size:0.85rem; color:var(--text-main); margin-top:0.35rem; line-height:1.4;">' + escapeHtml(summary) + '</div>' +
                 countsHtml +
+                qgIssuesHtml +
                 entitiesHtml +
                 errorAlertHtml +
               '</div>' +
               '<div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem; text-align:right;">' +
                 (neurons ? '<span style="font-size:0.75rem; color:var(--accent-cyan); font-weight:600;">' + neurons + '</span>' : '') +
-                (d1Writes ? '<span style="font-size:0.75rem; color:var(--text-muted);">' + d1Writes + '</span>' : '') +
-                (d1Reads ? '<span style="font-size:0.7rem; color:var(--text-muted);">' + d1Reads + '</span>' : '') +
-                '<button type="button" class="btn-secondary" style="font-size:0.72rem; padding:0.2rem 0.5rem; margin-top:0.25rem;" onclick="toggleActivityDetails(' + "'" + runId + "'" + ')">' +
-                  'Details' +
-                '</button>' +
+                (hasDetails ? '<button type="button" class="btn-secondary" style="font-size:0.72rem; padding:0.2rem 0.5rem; margin-top:0.25rem;" onclick="toggleActivityDetails(' + "'" + runId + "'" + ')">Details</button>' : '') +
               '</div>' +
             '</div>' +
-            '<div id="activity-details-' + runId + '" style="display:none; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border-color);">' +
-              '<div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.5rem; letter-spacing:0.04em;">Workflow Details & Metrics</div>' +
-              structuredRunHtml +
-              '<details style="margin-top:0.6rem;">' +
-                '<summary style="font-size:0.75rem; color:var(--accent-blue); cursor:pointer; font-weight:600;">Raw details</summary>' +
-                '<pre style="background:#090d16; color:#94a3b8; padding:0.6rem; border-radius:6px; font-size:0.72rem; font-family:monospace; max-height:180px; overflow-y:auto; margin:0.35rem 0 0 0; white-space:pre-wrap; word-break:break-word;">' + rawJson + '</pre>' +
-              '</details>' +
-            '</div>' +
+            (hasDetails ? (
+              '<div id="activity-details-' + runId + '" style="display:none; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border-color);">' +
+                '<div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.5rem; letter-spacing:0.04em;">Diagnostics & Telemetry</div>' +
+                structuredRunHtml +
+                '<details style="margin-top:0.6rem;">' +
+                  '<summary style="font-size:0.75rem; color:var(--accent-blue); cursor:pointer; font-weight:600;">Raw details</summary>' +
+                  '<pre style="background:#090d16; color:#94a3b8; padding:0.6rem; border-radius:6px; font-size:0.72rem; font-family:monospace; max-height:180px; overflow-y:auto; margin:0.35rem 0 0 0; white-space:pre-wrap; word-break:break-word;">' + rawJson + '</pre>' +
+                '</details>' +
+              '</div>'
+            ) : '') +
           '</div>';
         }).join('');
 
@@ -7304,9 +7445,9 @@ export function getAdminScripts(): string {
         const quotaData = await quotaRes.json().catch(() => ({}));
         if (quotaData && quotaData.countToday >= quotaData.limit) {
           const proceed = confirm(
-            'Dzisiaj wygenerowano już obraz AI (' + quotaData.countToday + '/' + quotaData.limit + ').\\n\\n' +
-            'Generowanie kolejnego zużyje dodatkowe neurony Cloudflare Workers AI.\\n\\n' +
-            'Czy na pewno chcesz kontynuować i wygenerować kolejne zdjęcie?'
+            'An AI image has already been generated today (' + quotaData.countToday + '/' + quotaData.limit + ').\\n\\n' +
+            'Generating another will consume additional Cloudflare Workers AI neurons.\\n\\n' +
+            'Are you sure you want to proceed and generate another image?'
           );
           if (!proceed) {
             return;
@@ -8174,5 +8315,8 @@ export function getAdminScripts(): string {
     window.loadMoreAutomationActivity = loadMoreAutomationActivity;
     window.handleActivityPeriodChange = handleActivityPeriodChange;
     window.toggleActivityDetails = toggleActivityDetails;
+    window.formatActivityTimestamp = formatActivityTimestamp;
+    window.humanizePolishPipelineSummary = humanizePolishPipelineSummary;
+    window.parseQualityGateFailure = parseQualityGateFailure;
   `;
 }
