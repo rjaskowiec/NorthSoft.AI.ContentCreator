@@ -698,9 +698,15 @@ export function humanizePolishPipelineSummary(text: string | null | undefined): 
     return Number(count) === 1 ? 'Scheduled 1 post' : `Scheduled ${count} posts`;
   });
   str = str.replace(/\bZnaleziono\s+(\d+)\s+tematów/gi, 'Found $1 topics');
+  str = str.replace(/\bZnaleziono\s*(\d+)\b/gi, 'Found $1');
   str = str.replace(/\bZnaleziono:\s*/gi, 'Found: ');
+  str = str.replace(/\belementów\s+źródłowych\b/gi, 'source items');
+  str = str.replace(/\boceniono\s+AI\s*(\d+)\b/gi, 'evaluated $1 with AI');
+  str = str.replace(/\boceniono\s+AI\b/gi, 'evaluated with AI');
   str = str.replace(/\bZaakceptowano:\s*/gi, 'Accepted: ');
+  str = str.replace(/\bzaakceptowano\s*(\d+)\b/gi, 'accepted $1');
   str = str.replace(/\bOdrzucono:\s*/gi, 'Rejected: ');
+  str = str.replace(/\bodrzucono\s*(\d+)\b/gi, 'rejected $1');
   str = str.replace(/Brak tematów do przetworzenia/gi, 'No topics available to process');
   str = str.replace(/\bPrzywrócono z odroczonych:\s*(\d+)/gi, 'Promoted from deferred: $1');
   str = str.replace(/\bZakończono etap/gi, 'Stage completed');

@@ -88,6 +88,8 @@ describe('Pipeline UI Simplification & English-Only Audit', () => {
         .toBe('Found: 4, Accepted: 2, Rejected: 2');
       expect(humanizePolishPipelineSummary('Przywrócono z odroczonych: 2'))
         .toBe('Promoted from deferred: 2');
+      expect(humanizePolishPipelineSummary('Znaleziono 210 elementów źródłowych, oceniono AI 11, odrzucono 3, zaakceptowano 0'))
+        .toBe('Found 210 source items, evaluated 11 with AI, rejected 3, accepted 0');
     });
 
     it('parses quality gate failure and provides structured issue breakdown', () => {
