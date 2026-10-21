@@ -18,6 +18,9 @@ describe('Facebook Preview Rail Layout & Unified Scrolling Suite', () => {
     expect(css).toMatch(/\.facebook-rail\s*\{[^}]*overflow-y:\s*auto/);
     expect(css).toMatch(/\.facebook-rail\s*\{[^}]*flex-shrink:\s*0/);
 
+    // Verify html, body uses overflow-x: clip so position: sticky is preserved on window scroll
+    expect(css).toMatch(/html,\s*body\s*\{[^}]*overflow-x:\s*clip/);
+
     // Verify mobile media query resets rail to static with auto height
     const media960 = css.slice(css.indexOf('@media (max-width: 960px)'));
     expect(media960).toMatch(/\.facebook-rail\s*\{[^}]*position:\s*static/);
