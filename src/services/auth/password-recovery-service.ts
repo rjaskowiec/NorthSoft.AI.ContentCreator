@@ -16,6 +16,7 @@ import {
 } from '../../core/auth/crypto.js';
 import { createSession, CreatedSession, revokeAllUserSessions } from '../../core/auth/session.js';
 import { IMailGatewayClient } from '../mail/mail-service.js';
+import { renderEmailShell, escapeHtml } from '../mail/email-template.js';
 
 export const MIN_PASSWORD_LENGTH = 12;
 export const RESET_TOKEN_EXPIRATION_MINUTES = 30;
@@ -340,23 +341,38 @@ If you did not request a password reset, you can safely ignore this message.
 Best regards,
 NorthSoft AI Security Team`;
 
-    const htmlBody = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f8fafc; padding: 20px;">
-  <div style="max-width: 560px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #e2e8f0;">
-    <h2 style="color: #0f172a; margin-top: 0;">NorthSoft AI Content Creator</h2>
-    <p>Hello,</p>
-    <p>A request was made to reset your administrator password.</p>
-    <p style="margin: 25px 0;">
-      <a href="${resetUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Administrator Password</a>
-    </p>
-    <p style="font-size: 0.9rem; color: #64748b;">Or copy and paste this link into your browser:<br><a href="${resetUrl}" style="color: #2563eb;">${resetUrl}</a></p>
-    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 25px 0;">
-    <p style="font-size: 0.85rem; color: #64748b;">This link is valid for <strong>${RESET_TOKEN_EXPIRATION_MINUTES} minutes</strong> and can only be used once.<br>If you did not request a password reset, you can safely ignore this email.</p>
-  </div>
-</body>
-</html>`;
+    const contentHtml = `
+      <h2 style="color: #ffffff; font-size: 18px; font-weight: 700; margin: 0 0 12px 0; line-height: 24px;">Administrator Password Recovery</h2>
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
+        Hello, a request was made to reset your administrator password for <strong>NorthSoft AI Content Creator</strong>.
+      </p>
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+        To choose a new password, click the secure button below:
+      </p>
+
+      <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 14px; margin-top: 24px; font-size: 12px; line-height: 1.5; color: #94a3b8; word-break: break-all;">
+        <div style="font-weight: 600; color: #cbd5e1; margin-bottom: 4px;">Direct link fallback:</div>
+        <a href="${escapeHtml(resetUrl)}" style="color: #60a5fa; text-decoration: underline;">${escapeHtml(resetUrl)}</a>
+      </div>
+
+      <p style="font-size: 12px; color: #64748b; line-height: 1.5; margin: 24px 0 0 0;">
+        This reset link is valid for <strong>${RESET_TOKEN_EXPIRATION_MINUTES} minutes</strong> and can only be used once.<br />
+        If you did not request a password reset, you can safely ignore this email.
+      </p>
+    `;
+
+    const htmlBody = renderEmailShell({
+      brandTitle: 'NorthSoft AI Content Creator',
+      preheaderText: 'Reset your administrator password',
+      badge: { text: 'SECURITY', variant: 'security' },
+      contentHtml,
+      button: {
+        text: 'Reset Administrator Password →',
+        url: resetUrl,
+        variant: 'primary',
+      },
+      footerNote: 'Security Notification · Single-use authentication link',
+    });
 
     // Recipient address MUST come strictly from user.email (D1 database record)
     const mailResult = await this.mailGateway.sendEmail({

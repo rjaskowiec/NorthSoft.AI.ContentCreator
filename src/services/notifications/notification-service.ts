@@ -7,6 +7,7 @@
 
 import { IMailGatewayClient } from '../mail/mail-service';
 import { PerformanceEngineService } from '../analytics/performance-engine';
+import { renderEmailShell, escapeHtml } from '../mail/email-template';
 
 export interface PublicationNotifyParams {
   postId: string;
@@ -41,7 +42,9 @@ export class NotificationService {
   public static async getAdminRecipientEmail(db: D1Database): Promise<string | null> {
     try {
       const row = await db
-        .prepare("SELECT email FROM admin_users WHERE email IS NOT NULL AND email != '' AND status = 'active' ORDER BY created_at ASC LIMIT 1")
+        .prepare(
+          "SELECT email FROM admin_users WHERE email IS NOT NULL AND email != '' AND status = 'active' ORDER BY created_at ASC LIMIT 1",
+        )
         .first<{ email: string }>();
 
       const email = row?.email?.trim();
@@ -82,7 +85,7 @@ export class NotificationService {
       // Table fallback if schema pending
     }
 
-    const fbUrl = params.facebookPostId ? `https://facebook.com/${params.facebookPostId}` : '#';
+    const fbUrl = params.facebookPostId ? `https://facebook.com/${params.facebookPostId}` : '';
     const dateFormatted = new Date(params.publishedAt).toUTCString();
 
     const subject = `NorthSoft AI Content Creator — Post published: ${params.title}`;
@@ -95,37 +98,36 @@ Published: ${dateFormatted}
 Content:
 ${params.body}
 
-Facebook Post: ${fbUrl}
+${fbUrl ? `Facebook Post: ${fbUrl}` : ''}
 ${params.imageUrl ? `Image: ${params.imageUrl}` : ''}
 ${params.license ? `License: ${params.license}` : ''}`;
 
-    const htmlBody = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Inter, Arial, sans-serif; line-height: 1.6; color: #f3f4f6; background-color: #0b0f19; padding: 20px;">
-  <div style="max-width: 600px; margin: 0 auto; background: #111827; padding: 28px; border-radius: 12px; border: 1px solid #1f2937;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #1f2937; padding-bottom: 15px;">
-      <h2 style="color: #60a5fa; margin: 0; font-size: 1.2rem;">NorthSoft AI Content Creator</h2>
-      <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">PUBLISHED</span>
-    </div>
+    const contentHtml = `
+      <h2 style="color: #ffffff; font-size: 18px; font-weight: 700; margin: 0 0 8px 0; line-height: 24px;">${escapeHtml(params.title)}</h2>
+      <p style="color: #9ca3af; font-size: 13px; margin: 0 0 20px 0; line-height: 18px;">Published UTC: <strong style="color: #cbd5e1;">${dateFormatted}</strong></p>
 
-    <h3 style="color: #ffffff; margin-top: 0; font-size: 1.1rem;">${escapeHtml(params.title)}</h3>
-    <p style="color: #9ca3af; font-size: 0.85rem; margin-bottom: 20px;">Published UTC: <strong>${dateFormatted}</strong></p>
+      <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 18px; font-size: 14px; line-height: 1.6; color: #e5e7eb; white-space: pre-wrap; word-break: break-word; margin-bottom: 20px;">${escapeHtml(params.body)}</div>
 
-    <div style="background: #1f2937; padding: 16px; border-radius: 8px; font-size: 0.9rem; color: #e5e7eb; white-space: pre-wrap; word-break: break-word; margin-bottom: 20px;">${escapeHtml(params.body)}</div>
+      ${
+        params.imageUrl
+          ? `
+      <div style="margin-bottom: 20px;">
+        <img src="${escapeHtml(params.imageUrl)}" alt="Post illustration" style="max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #374151; display: block;" />
+        ${params.license ? `<p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">Source / License: ${escapeHtml(params.license)}</p>` : ''}
+      </div>`
+          : ''
+      }
+    `;
 
-    ${params.imageUrl ? `
-    <div style="margin-bottom: 20px;">
-      <img src="${escapeHtml(params.imageUrl)}" alt="Post illustration" style="max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #374151;" />
-      ${params.license ? `<p style="color: #9ca3af; font-size: 0.75rem; margin-top: 6px;">Source/License: ${escapeHtml(params.license)}</p>` : ''}
-    </div>` : ''}
-
-    <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center;">
-      <a href="${fbUrl}" target="_blank" rel="noopener noreferrer" style="background-color: #1877f2; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 0.875rem; display: inline-block;">View Live Post on Facebook &rarr;</a>
-    </div>
-  </div>
-</body>
-</html>`;
+    const htmlBody = renderEmailShell({
+      brandTitle: 'NorthSoft AI Content Creator',
+      preheaderText: `Published: ${params.title}`,
+      badge: { text: 'PUBLISHED', variant: 'success' },
+      contentHtml,
+      button: fbUrl
+        ? { text: 'View Live Post on Facebook →', url: fbUrl, variant: 'primary' }
+        : undefined,
+    });
 
     try {
       const mailRes = await mailClient.sendEmail({
@@ -174,35 +176,34 @@ Action: ${params.action}
 Topic: ${params.title || 'N/A'}
 Error: ${params.errorMessage}
 
-Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for details.'}`;
+Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for details.'}
+Admin Console: https://ai.northsoft.is/admin`;
 
-    const htmlBody = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Inter, Arial, sans-serif; line-height: 1.6; color: #f3f4f6; background-color: #0b0f19; padding: 20px;">
-  <div style="max-width: 600px; margin: 0 auto; background: #111827; padding: 28px; border-radius: 12px; border: 1px solid #1f2937;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #1f2937; padding-bottom: 15px;">
-      <h2 style="color: #60a5fa; margin: 0; font-size: 1.2rem;">NorthSoft AI Content Creator</h2>
-      <span style="background: rgba(244, 63, 94, 0.15); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">ALERT</span>
-    </div>
+    const contentHtml = `
+      <h2 style="color: #ffffff; font-size: 18px; font-weight: 700; margin: 0 0 8px 0; line-height: 24px;">Publication Alert: ${escapeHtml(params.action)}</h2>
+      ${params.title ? `<p style="color: #e5e7eb; font-size: 14px; margin: 0 0 16px 0;">Topic: <strong style="color: #ffffff;">${escapeHtml(params.title)}</strong></p>` : ''}
 
-    <h3 style="color: #ffffff; margin-top: 0; font-size: 1.1rem;">Publication Alert: ${escapeHtml(params.action)}</h3>
-    ${params.title ? `<p style="color: #e5e7eb; font-size: 0.9rem;">Topic: <strong>${escapeHtml(params.title)}</strong></p>` : ''}
+      <div style="background-color: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 8px; padding: 16px; color: #fda4af; font-size: 14px; line-height: 1.5; margin-bottom: 16px;">
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;">Error Detail</div>
+        <div style="word-break: break-word;">${escapeHtml(params.errorMessage)}</div>
+      </div>
 
-    <div style="background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.25); color: #fda4af; padding: 14px; border-radius: 8px; font-size: 0.875rem; margin-bottom: 20px;">
-      <strong>Error Detail:</strong> ${escapeHtml(params.errorMessage)}
-    </div>
+      <p style="color: #9ca3af; font-size: 13px; line-height: 1.5; margin: 0 0 4px 0;">
+        <strong style="color: #cbd5e1;">Suggested Action:</strong> ${escapeHtml(params.suggestedAction || 'Log into the Admin Console to review publication queue status.')}
+      </p>
+    `;
 
-    <p style="color: #9ca3af; font-size: 0.85rem;">
-      <strong>Suggested Action:</strong> ${escapeHtml(params.suggestedAction || 'Log into the Admin Console to review publication queue status.')}
-    </p>
-
-    <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #1f2937;">
-      <a href="https://ai.northsoft.is/admin" target="_blank" rel="noopener noreferrer" style="background-color: #374151; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 0.875rem; display: inline-block;">Open Admin Console &rarr;</a>
-    </div>
-  </div>
-</body>
-</html>`;
+    const htmlBody = renderEmailShell({
+      brandTitle: 'NorthSoft AI Content Creator',
+      preheaderText: `Alert: ${params.action} publication failed`,
+      badge: { text: 'ALERT', variant: 'alert' },
+      contentHtml,
+      button: {
+        text: 'Open Admin Console →',
+        url: 'https://ai.northsoft.is/admin',
+        variant: 'secondary',
+      },
+    });
 
     try {
       const mailRes = await mailClient.sendEmail({
@@ -240,7 +241,10 @@ Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for deta
     // 0. Time Window Check: Weekly digest should only run on Monday morning (08:00–10:00 UTC) unless explicitly forced or targeting a specific week
     const now = new Date();
     const isExplicitRun = options?.force || Boolean(options?.targetWeekKey);
-    if (!isExplicitRun && (now.getUTCDay() !== 1 || now.getUTCHours() < 8 || now.getUTCHours() > 10)) {
+    if (
+      !isExplicitRun &&
+      (now.getUTCDay() !== 1 || now.getUTCHours() < 8 || now.getUTCHours() > 10)
+    ) {
       return { success: true, skipped: true, reportKey: 'outside_weekly_window' };
     }
 
@@ -275,7 +279,8 @@ Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for deta
     // Week Key formatting (ISO Week format)
     const weekYear = prevWeekMonday.getUTCFullYear();
     const weekNumber = getIsoWeekNumber(prevWeekMonday);
-    const weekKey = options?.targetWeekKey || `weekly_digest:${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
+    const weekKey =
+      options?.targetWeekKey || `weekly_digest:${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
     const reportKey = weekKey;
 
     // 2. Idempotency Check
@@ -297,9 +302,17 @@ Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for deta
     const dateRangeLabel = `${formatShortDate(prevWeekMonday)} – ${formatShortDate(prevWeekSunday)} ${weekYear}`;
 
     // 3. Query Previous Week Metrics (W-1)
-    const w1Stats = await this.queryPeriodMetrics(db, prevWeekMonday.toISOString(), prevWeekSunday.toISOString());
+    const w1Stats = await this.queryPeriodMetrics(
+      db,
+      prevWeekMonday.toISOString(),
+      prevWeekSunday.toISOString(),
+    );
     // 4. Query Prior Week Metrics (W-2)
-    const w2Stats = await this.queryPeriodMetrics(db, priorWeekMonday.toISOString(), priorWeekSunday.toISOString());
+    const w2Stats = await this.queryPeriodMetrics(
+      db,
+      priorWeekMonday.toISOString(),
+      priorWeekSunday.toISOString(),
+    );
 
     // 5. Query Content Intelligence Profile
     const perfEngine = new PerformanceEngineService();
@@ -311,107 +324,156 @@ Suggested Action: ${params.suggestedAction || 'Check Admin Console logs for deta
     const reactionsChange = computeTrend(w1Stats.totalReactions, w2Stats.totalReactions);
     const commentsChange = computeTrend(w1Stats.totalComments, w2Stats.totalComments);
     const sharesChange = computeTrend(w1Stats.totalShares, w2Stats.totalShares);
-    const engPpChange = Number(((w1Stats.medianEngagementRate - w2Stats.medianEngagementRate) * 100).toFixed(2));
+    const engPpChange = Number(
+      ((w1Stats.medianEngagementRate - w2Stats.medianEngagementRate) * 100).toFixed(2),
+    );
     const engPpLabel = engPpChange >= 0 ? `+${engPpChange} pp` : `${engPpChange} pp`;
 
     const subject = `NorthSoft AI Content Creator — Weekly Digest (${dateRangeLabel})`;
 
     // HTML Email Generation
-    const htmlBody = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Inter, Arial, sans-serif; line-height: 1.6; color: #f3f4f6; background-color: #0b0f19; padding: 20px;">
-  <div style="max-width: 640px; margin: 0 auto; background: #111827; padding: 28px; border-radius: 12px; border: 1px solid #1f2937;">
-    
-    <!-- Header -->
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #1f2937; padding-bottom: 15px;">
-      <div>
-        <h2 style="color: #60a5fa; margin: 0; font-size: 1.2rem;">NorthSoft AI Content Creator</h2>
-        <p style="color: #9ca3af; margin: 4px 0 0 0; font-size: 0.85rem;">Weekly Content Performance Digest</p>
-      </div>
-      <span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); font-weight: bold; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">${escapeHtml(dateRangeLabel)}</span>
-    </div>
+    const contentHtml = `
+      <h2 style="color: #ffffff; font-size: 18px; font-weight: 700; margin: 0 0 4px 0; line-height: 24px;">Weekly Content Performance Digest</h2>
+      <p style="color: #9ca3af; font-size: 13px; margin: 0 0 20px 0;">Summary of Facebook publishing activity and audience engagement.</p>
 
-    <!-- Overview KPI Grid -->
-    <h3 style="color: #ffffff; font-size: 1rem; margin-top: 0;">Weekly Overview</h3>
-    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 24px;">
-      <div style="background: #1f2937; padding: 12px; border-radius: 8px; border: 1px solid #374151;">
-        <div style="font-size: 0.725rem; color: #9ca3af; text-transform: uppercase;">Published Posts</div>
-        <div style="font-size: 1.35rem; font-weight: bold; color: #ffffff;">${w1Stats.publishedCount}</div>
-        <div style="font-size: 0.75rem; color: ${pubChange.color};">${pubChange.label} vs prior</div>
-      </div>
-      <div style="background: #1f2937; padding: 12px; border-radius: 8px; border: 1px solid #374151;">
-        <div style="font-size: 0.725rem; color: #9ca3af; text-transform: uppercase;">Total Reach</div>
-        <div style="font-size: 1.35rem; font-weight: bold; color: #ffffff;">${w1Stats.totalReach.toLocaleString()}</div>
-        <div style="font-size: 0.75rem; color: ${reachChange.color};">${reachChange.label} vs prior</div>
-      </div>
-      <div style="background: #1f2937; padding: 12px; border-radius: 8px; border: 1px solid #374151;">
-        <div style="font-size: 0.725rem; color: #9ca3af; text-transform: uppercase;">Engagement Rate</div>
-        <div style="font-size: 1.35rem; font-weight: bold; color: #ffffff;">${(w1Stats.medianEngagementRate * 100).toFixed(2)}%</div>
-        <div style="font-size: 0.75rem; color: ${engPpChange >= 0 ? '#34d399' : '#fda4af'};">${engPpLabel} vs prior</div>
-      </div>
-    </div>
+      <!-- Overview KPI Table -->
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px; border-collapse: separate;">
+        <tr>
+          <td class="metric-stack-col" width="32%" valign="top" style="padding-right: 2%;">
+            <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">Published Posts</div>
+              <div style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 4px 0 2px 0;">${w1Stats.publishedCount}</div>
+              <div style="font-size: 12px; color: ${pubChange.color}; font-weight: 500;">${pubChange.label} vs prior</div>
+            </div>
+          </td>
+          <td class="metric-stack-col" width="32%" valign="top" style="padding-right: 2%;">
+            <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">Total Reach</div>
+              <div style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 4px 0 2px 0;">${w1Stats.totalReach.toLocaleString()}</div>
+              <div style="font-size: 12px; color: ${reachChange.color}; font-weight: 500;">${reachChange.label} vs prior</div>
+            </div>
+          </td>
+          <td class="metric-stack-col" width="32%" valign="top">
+            <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 14px;">
+              <div style="font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">Engagement Rate</div>
+              <div style="font-size: 22px; font-weight: 700; color: #ffffff; margin: 4px 0 2px 0;">${(w1Stats.medianEngagementRate * 100).toFixed(2)}%</div>
+              <div style="font-size: 12px; color: ${engPpChange >= 0 ? '#34d399' : '#fda4af'}; font-weight: 500;">${engPpLabel} vs prior</div>
+            </div>
+          </td>
+        </tr>
+      </table>
 
-    <!-- Engagement Breakdown -->
-    <div style="background: #1f2937; padding: 16px; border-radius: 8px; border: 1px solid #374151; margin-bottom: 24px;">
-      <div style="font-size: 0.85rem; font-weight: bold; color: #ffffff; margin-bottom: 8px;">Interaction Details</div>
-      <div style="font-size: 0.85rem; color: #d1d5db;">
-        • <strong>Reactions:</strong> ${w1Stats.totalReactions} (${reactionsChange.label})<br>
-        • <strong>Comments:</strong> ${w1Stats.totalComments} (${commentsChange.label})<br>
-        • <strong>Shares:</strong> ${w1Stats.totalShares} (${sharesChange.label})<br>
-        • <strong>Follower / Non-Follower Breakdown:</strong> <span style="color: #9ca3af;">Not currently available for Meta Page feed scope.</span>
+      <!-- Interaction Details -->
+      <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+        <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Interaction Details</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="font-size: 13px; color: #d1d5db; padding: 3px 0;">
+              • <strong>Reactions:</strong> ${w1Stats.totalReactions} <span style="color: ${reactionsChange.color};">(${reactionsChange.label})</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-size: 13px; color: #d1d5db; padding: 3px 0;">
+              • <strong>Comments:</strong> ${w1Stats.totalComments} <span style="color: ${commentsChange.color};">(${commentsChange.label})</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-size: 13px; color: #d1d5db; padding: 3px 0;">
+              • <strong>Shares:</strong> ${w1Stats.totalShares} <span style="color: ${sharesChange.color};">(${sharesChange.label})</span>
+            </td>
+          </tr>
+        </table>
       </div>
-    </div>
 
-    <!-- Top Performing Posts -->
-    <h3 style="color: #ffffff; font-size: 1rem; margin-top: 24px;">Top Performing Posts</h3>
-    ${w1Stats.topPosts.length > 0 ? w1Stats.topPosts.map((p, idx) => `
-      <div style="background: #1f2937; padding: 14px; border-radius: 8px; border: 1px solid #374151; margin-bottom: 10px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <strong style="color: #60a5fa; font-size: 0.9rem;">${idx + 1}. ${escapeHtml(p.title)}</strong>
-          <span style="color: #34d399; font-weight: bold; font-size: 0.8rem;">Score: ${p.score}x</span>
+      <!-- Top Performing Posts -->
+      <h3 style="color: #ffffff; font-size: 15px; font-weight: 700; margin: 24px 0 12px 0;">Top Performing Posts</h3>
+      ${
+        w1Stats.topPosts.length > 0
+          ? w1Stats.topPosts
+              .map(
+                (p, idx) => `
+        <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 14px; margin-bottom: 10px;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td align="left" valign="middle">
+                <strong style="color: #60a5fa; font-size: 14px;">${idx + 1}. ${escapeHtml(p.title)}</strong>
+              </td>
+              <td align="right" valign="middle" style="padding-left: 10px; white-space: nowrap;">
+                <span style="color: #34d399; font-weight: 700; font-size: 12px;">Score: ${p.score}x</span>
+              </td>
+            </tr>
+          </table>
+          <div style="font-size: 12px; color: #9ca3af; margin-top: 6px;">
+            Reach: ${p.reach} | Engagement Rate: ${(p.engagementRate * 100).toFixed(2)}% | Reactions: ${p.reactions} | Comments: ${p.comments}
+          </div>
+          ${
+            p.facebookPostId
+              ? `<div style="margin-top: 8px;"><a href="https://facebook.com/${p.facebookPostId}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; font-size: 12px; text-decoration: underline;">View on Facebook &rarr;</a></div>`
+              : ''
+          }
         </div>
-        <div style="font-size: 0.8rem; color: #9ca3af; margin-top: 4px;">
-          Reach: ${p.reach} | Engagement Rate: ${(p.engagementRate * 100).toFixed(2)}% | Reactions: ${p.reactions} | Comments: ${p.comments}
+      `,
+              )
+              .join('')
+          : '<p style="color: #9ca3af; font-size: 13px;">No publications recorded in this period.</p>'
+      }
+
+      <!-- Underperforming Posts -->
+      ${
+        w1Stats.weakPosts.length > 0
+          ? `
+      <h3 style="color: #ffffff; font-size: 15px; font-weight: 700; margin: 24px 0 12px 0;">Posts Below Benchmark</h3>
+      ${w1Stats.weakPosts
+        .map(
+          (p) => `
+        <div style="background-color: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+          <strong style="color: #fda4af; font-size: 13px;">• ${escapeHtml(p.title)}</strong>
+          <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
+            Reach: ${p.reach} | Engagement Rate: ${(p.engagementRate * 100).toFixed(2)}% (${p.score}x benchmark)
+          </div>
         </div>
-        ${p.facebookPostId ? `<div style="margin-top: 6px;"><a href="https://facebook.com/${p.facebookPostId}" target="_blank" style="color: #60a5fa; font-size: 0.775rem; text-decoration: underline;">View on Facebook &rarr;</a></div>` : ''}
+      `,
+        )
+        .join('')}`
+          : ''
+      }
+
+      <!-- Content Intelligence Summary -->
+      <h3 style="color: #ffffff; font-size: 15px; font-weight: 700; margin: 24px 0 12px 0;">Content Intelligence Feedback Loop</h3>
+      <div style="background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 16px; font-size: 13px; color: #d1d5db;">
+        <div>• <strong>Learning Mode:</strong> <span style="color: #60a5fa; font-weight: 600;">${intelligence?.learningMode || 'MATURE'}</span></div>
+        <div style="margin-top: 4px;">• <strong>Active Strong Examples:</strong> ${intelligence?.activeStrongExamples.length || 0} active</div>
+        <div style="margin-top: 4px;">• <strong>Active Weak Examples:</strong> ${intelligence?.activeWeakExamples.length || 0} active</div>
+        ${
+          intelligence?.learnedGuidelines && intelligence.learnedGuidelines.length > 0
+            ? `
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151;">
+          <strong style="color: #ffffff;">Active Learned Insights:</strong>
+          <ul style="margin: 6px 0 0 0; padding-left: 20px; color: #9ca3af;">
+            ${intelligence.learnedGuidelines
+              .slice(0, 3)
+              .map((g) => `<li style="margin-bottom: 4px;">${escapeHtml(g.guidelineText)}</li>`)
+              .join('')}
+          </ul>
+        </div>`
+            : ''
+        }
       </div>
-    `).join('') : '<p style="color: #9ca3af; font-size: 0.85rem;">No publications recorded in this period.</p>'}
+    `;
 
-    <!-- Underperforming Posts -->
-    ${w1Stats.weakPosts.length > 0 ? `
-    <h3 style="color: #ffffff; font-size: 1rem; margin-top: 24px;">Posts Below Benchmark</h3>
-    ${w1Stats.weakPosts.map((p) => `
-      <div style="background: rgba(244, 63, 94, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(244, 63, 94, 0.2); margin-bottom: 10px;">
-        <strong style="color: #fda4af; font-size: 0.875rem;">• ${escapeHtml(p.title)}</strong>
-        <div style="font-size: 0.775rem; color: #9ca3af; margin-top: 4px;">
-          Reach: ${p.reach} | Engagement Rate: ${(p.engagementRate * 100).toFixed(2)}% (${p.score}x benchmark)
-        </div>
-      </div>
-    `).join('')}` : ''}
-
-    <!-- Content Intelligence Summary -->
-    <h3 style="color: #ffffff; font-size: 1rem; margin-top: 24px;">Content Intelligence Feedback Loop</h3>
-    <div style="background: #1f2937; padding: 16px; border-radius: 8px; border: 1px solid #374151; font-size: 0.85rem; color: #d1d5db;">
-      <div>• <strong>Learning Mode:</strong> <span style="color: #60a5fa; font-weight: bold;">${intelligence?.learningMode || 'MATURE'}</span></div>
-      <div>• <strong>Active Strong Examples:</strong> ${intelligence?.activeStrongExamples.length || 0} active</div>
-      <div>• <strong>Active Weak Examples:</strong> ${intelligence?.activeWeakExamples.length || 0} active</div>
-      ${intelligence?.learnedGuidelines && intelligence.learnedGuidelines.length > 0 ? `
-      <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #374151;">
-        <strong>Active Learned Insights:</strong>
-        <ul style="margin: 4px 0 0 0; padding-left: 20px; color: #9ca3af;">
-          ${intelligence.learnedGuidelines.slice(0, 3).map((g) => `<li>${escapeHtml(g.guidelineText)}</li>`).join('')}
-        </ul>
-      </div>` : ''}
-    </div>
-
-    <!-- Footer -->
-    <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #1f2937; text-align: center;">
-      <a href="https://ai.northsoft.is/admin?#intelligence" target="_blank" rel="noopener noreferrer" style="background-color: #2563eb; color: #ffffff; padding: 10px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 0.875rem; display: inline-block;">Open Content Intelligence Panel &rarr;</a>
-    </div>
-  </div>
-</body>
-</html>`;
+    const htmlBody = renderEmailShell({
+      brandTitle: 'NorthSoft AI Content Creator',
+      brandSubtitle: 'Weekly Content Performance Digest',
+      preheaderText: `Weekly Digest: ${w1Stats.publishedCount} posts, ${(w1Stats.medianEngagementRate * 100).toFixed(2)}% engagement`,
+      badge: { text: dateRangeLabel, variant: 'info' },
+      contentHtml,
+      button: {
+        text: 'Open Content Intelligence Panel →',
+        url: 'https://ai.northsoft.is/admin?#intelligence',
+        variant: 'primary',
+      },
+      maxWidth: 640,
+    });
 
     const textBody = `NorthSoft AI Content Creator — Weekly Digest (${dateRangeLabel})
 
@@ -419,9 +481,12 @@ Weekly Overview:
 - Published Posts: ${w1Stats.publishedCount} (${pubChange.label})
 - Total Reach: ${w1Stats.totalReach} (${reachChange.label})
 - Engagement Rate: ${(w1Stats.medianEngagementRate * 100).toFixed(2)}% (${engPpLabel})
-- Reactions: ${w1Stats.totalReactions}
-- Comments: ${w1Stats.totalComments}
-- Shares: ${w1Stats.totalShares}
+- Reactions: ${w1Stats.totalReactions} (${reactionsChange.label})
+- Comments: ${w1Stats.totalComments} (${commentsChange.label})
+- Shares: ${w1Stats.totalShares} (${sharesChange.label})
+
+Top Performing Posts:
+${w1Stats.topPosts.length > 0 ? w1Stats.topPosts.map((p, idx) => `${idx + 1}. ${p.title} (Score: ${p.score}x, Reach: ${p.reach}, Eng: ${(p.engagementRate * 100).toFixed(2)}%)`).join('\n') : 'No publications recorded in this period.'}
 
 Content Intelligence Status:
 - Learning Mode: ${intelligence?.learningMode || 'MATURE'}
@@ -445,7 +510,11 @@ Open Admin Console: https://ai.northsoft.is/admin`;
         subject,
         status: mailRes.success ? 'SENT' : 'FAILED',
         errorMessage: mailRes.error,
-        metadata: JSON.stringify({ weekKey, dateRangeLabel, publishedCount: w1Stats.publishedCount }),
+        metadata: JSON.stringify({
+          weekKey,
+          dateRangeLabel,
+          publishedCount: w1Stats.publishedCount,
+        }),
       });
 
       return { success: mailRes.success, reportKey, error: mailRes.error };
@@ -500,7 +569,16 @@ Open Admin Console: https://ai.northsoft.is/admin`;
       let totalShares = 0;
       const engRates: number[] = [];
 
-      const postList: Array<{ title: string; reach: number; reactions: number; comments: number; shares: number; engagementRate: number; score: number; facebookPostId?: string }> = [];
+      const postList: Array<{
+        title: string;
+        reach: number;
+        reactions: number;
+        comments: number;
+        shares: number;
+        engagementRate: number;
+        score: number;
+        facebookPostId?: string;
+      }> = [];
 
       for (const item of items) {
         const reach = Math.max(item.unique_views || item.views || 0, 0);
@@ -509,7 +587,12 @@ Open Admin Console: https://ai.northsoft.is/admin`;
         const shares = Math.max(item.shares || 0, 0);
         const engRate = item.engagement_rate || 0;
         const rawPerf = item.relative_performance;
-        const score = typeof rawPerf === 'number' ? rawPerf : typeof rawPerf === 'string' ? parseFloat(rawPerf) || 1.0 : 1.0;
+        const score =
+          typeof rawPerf === 'number'
+            ? rawPerf
+            : typeof rawPerf === 'string'
+              ? parseFloat(rawPerf) || 1.0
+              : 1.0;
 
         totalReach += reach;
         totalReactions += reactions;
@@ -617,15 +700,19 @@ function getIsoWeekNumber(d: Date): number {
 }
 
 function formatShortDate(d: Date): string {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
   return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
-}
-
-function escapeHtml(str: string): string {
-  return (str || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
 }

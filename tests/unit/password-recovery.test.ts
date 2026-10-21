@@ -384,7 +384,16 @@ describe('PasswordRecoveryService Unit Tests', () => {
     expect(res.success).toBe(true);
     expect(tokens.length).toBe(1);
     expect(mockMail.sentEmails.length).toBe(1);
-    expect(mockMail.sentEmails[0]!.to).toBe('configured-admin@northsoft.is');
+    const sentMail = mockMail.sentEmails[0]!;
+    expect(sentMail.to).toBe('configured-admin@northsoft.is');
+    expect(sentMail.subject).toBe('Reset your NorthSoft.AI.ContentCreator password');
+    expect(sentMail.html).toContain('src="https://northsoft.is/brand/logos/northsoft-symbol.svg"');
+    expect(sentMail.html).toContain('SECURITY');
+    expect(sentMail.html).toContain('Administrator Password Recovery');
+    expect(sentMail.html).toContain('Reset Administrator Password →');
+    expect(sentMail.html).toContain('https://ai.northsoft.is/admin?resetToken=');
+    expect(sentMail.text).toContain('A request was made to reset your administrator password');
+    expect(sentMail.text).toContain('https://ai.northsoft.is/admin?resetToken=');
   });
 
   it('should send reset email to new email after administrator changes recovery email', async () => {

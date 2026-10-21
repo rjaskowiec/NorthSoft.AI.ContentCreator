@@ -4,7 +4,12 @@ import { MockMailGatewayClient } from '../../src/services/mail/mail-service';
 
 class MockD1Database {
   public adminUsers: Array<{ id: string; email: string; status: string; created_at: string }> = [
-    { id: 'admin-1', email: 'admin@northsoft.is', status: 'active', created_at: '2026-01-01T00:00:00Z' },
+    {
+      id: 'admin-1',
+      email: 'admin@northsoft.is',
+      status: 'active',
+      created_at: '2026-01-01T00:00:00Z',
+    },
   ];
   public sentEmailReports: Array<any> = [];
   public publications: Array<any> = [];
@@ -25,7 +30,9 @@ class MockD1Database {
         }
         if (sql.includes('FROM sent_email_reports WHERE report_key')) {
           const key = boundArgs[0];
-          const match = this.sentEmailReports.find((r) => r.report_key === key && r.status === 'SENT');
+          const match = this.sentEmailReports.find(
+            (r) => r.report_key === key && r.status === 'SENT',
+          );
           return match ? (match as any) : null;
         }
         return null;
@@ -105,6 +112,26 @@ describe('NotificationService Unit Tests', () => {
       expect(mail.html).toContain('https://facebook.com/fb-post-999');
       expect(mail.html).toContain('https://ai.northsoft.is/media/img1.jpg');
 
+      // NorthSoft Brand & Logo Assertions
+      expect(mail.html).toContain('src="https://northsoft.is/brand/logos/northsoft-symbol.svg"');
+      expect(mail.html).toContain('alt="NorthSoft"');
+
+      // Status Badge Layout & Spacing Assertions (Solves clipping on mobile and lack of spacing on laptops)
+      expect(mail.html).toContain('PUBLISHED');
+      expect(mail.html).toContain('white-space: nowrap');
+      expect(mail.html).toContain(
+        'class="header-stack-col badge-cell" style="padding-left: 16px;"',
+      );
+      expect(mail.html).not.toContain(
+        'display: flex; align-items: center; justify-content: space-between;',
+      );
+
+      // Plain Text Parity Assertions
+      expect(mail.text).toContain('Post Published Successfully');
+      expect(mail.text).toContain('Topic: 5 Ways to Improve Website Speed');
+      expect(mail.text).toContain('Full post text goes here without truncation.');
+      expect(mail.text).toContain('Facebook Post: https://facebook.com/fb-post-999');
+
       // Idempotency log written
       expect(mockDb.sentEmailReports).toHaveLength(1);
       expect(mockDb.sentEmailReports[0].report_key).toBe('pub_notify:post-101');
@@ -156,6 +183,16 @@ describe('NotificationService Unit Tests', () => {
       expect(mail.subject).toContain('Publication alert: Automated SEO Best Practices');
       expect(mail.html).toContain('Meta Graph API token expired');
       expect(mail.html).toContain('Re-authenticate Facebook Page Access Token');
+      expect(mail.html).toContain('src="https://northsoft.is/brand/logos/northsoft-symbol.svg"');
+      expect(mail.html).toContain('ALERT');
+      expect(mail.html).toContain('white-space: nowrap');
+
+      // Plain Text Parity Assertions
+      expect(mail.text).toContain('Publication Alert');
+      expect(mail.text).toContain('Action: Facebook Publication');
+      expect(mail.text).toContain('Error: Meta Graph API token expired');
+      expect(mail.text).toContain('Suggested Action: Re-authenticate Facebook Page Access Token');
+      expect(mail.text).toContain('Admin Console: https://ai.northsoft.is/admin');
     });
   });
 
@@ -192,6 +229,15 @@ describe('NotificationService Unit Tests', () => {
       expect(mail.html).toContain('Top Performing Posts');
       expect(mail.html).toContain('Top Performing Post Title');
       expect(mail.html).toContain('Content Intelligence Feedback Loop');
+      expect(mail.html).toContain('src="https://northsoft.is/brand/logos/northsoft-symbol.svg"');
+      expect(mail.html).toContain('metric-stack-col');
+
+      // Plain Text Parity Assertions
+      expect(mail.text).toContain('Weekly Overview:');
+      expect(mail.text).toContain('Published Posts: 1');
+      expect(mail.text).toContain('Top Performing Posts:');
+      expect(mail.text).toContain('Top Performing Post Title');
+      expect(mail.text).toContain('Open Admin Console: https://ai.northsoft.is/admin');
 
       // Verify idempotency on second call
       const repeatResult = await NotificationService.sendWeeklyDigest(

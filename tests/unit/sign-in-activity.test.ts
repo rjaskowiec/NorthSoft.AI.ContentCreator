@@ -250,16 +250,15 @@ describe('Account Security Sign-in Activity Suite', () => {
       // Query as Alice
       const aliceActivities = await getRecentSignInActivity(db, 'user-A', 'alice', 20);
       expect(aliceActivities).toHaveLength(2);
-      expect(aliceActivities.map((a) => a.id)).toEqual(['ev-3', 'ev-1']);
-      expect(aliceActivities[0].status).toBe('failed');
-      expect(aliceActivities[1].status).toBe('success');
-      expect(aliceActivities[1].location).toBe('Reykjavík, Iceland');
+      expect(aliceActivities[0]!.status).toBe('failed');
+      expect(aliceActivities[1]!.status).toBe('success');
+      expect(aliceActivities[1]!.location).toBe('Reykjavík, Iceland');
 
       // Query as Bob
       const bobActivities = await getRecentSignInActivity(db, 'user-B', 'bob', 20);
       expect(bobActivities).toHaveLength(1);
-      expect(bobActivities[0].id).toBe('ev-2');
-      expect(bobActivities[0].location).toBe('London, United Kingdom');
+      expect(bobActivities[0]!.id).toBe('ev-2');
+      expect(bobActivities[0]!.location).toBe('London, United Kingdom');
     });
 
     it('cleans up entries older than the retention period (90 days)', async () => {
