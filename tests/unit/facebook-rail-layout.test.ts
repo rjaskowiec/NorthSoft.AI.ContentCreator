@@ -3,24 +3,26 @@ import { renderAdminHtml } from '../../src/admin/ui.js';
 import { getAdminCss } from '../../src/admin/ui/styles.js';
 
 describe('Facebook Preview Rail Layout & Unified Scrolling Suite', () => {
-  it('renders facebook-rail matching 100% page height without inflating parent page height', () => {
+  it('renders facebook-rail as stationary sticky sidebar extending to viewport height', () => {
     const css = getAdminCss();
 
-    // Verify app-layout is relative and main-content has reserved right margin
-    expect(css).toMatch(/\.app-layout\s*\{[^}]*position:\s*relative/);
-    expect(css).toMatch(/\.main-content\s*\{[^}]*margin-right:\s*400px/);
+    // Verify app-layout is flex container
+    expect(css).toMatch(/\.app-layout\s*\{[^}]*display:\s*flex/);
     expect(css).toMatch(/\.main-content\.rail-collapsed\s*\{[^}]*margin-right:\s*0/);
 
-    // Verify .facebook-rail is positioned absolute with 100% height and internal scrollbar when overflowing
-    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*position:\s*absolute/);
+    // Verify .facebook-rail is positioned sticky with 100vh height and internal scrollbar when overflowing
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*position:\s*sticky/);
     expect(css).toMatch(/\.facebook-rail\s*\{[^}]*top:\s*0/);
-    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*bottom:\s*0/);
-    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*height:\s*100%/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*height:\s*100vh/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*max-height:\s*100vh/);
     expect(css).toMatch(/\.facebook-rail\s*\{[^}]*overflow-y:\s*auto/);
+    expect(css).toMatch(/\.facebook-rail\s*\{[^}]*flex-shrink:\s*0/);
 
-    // Verify it does NOT use sticky 100vh on desktop
-    expect(css).not.toMatch(/\.facebook-rail\s*\{[^}]*position:\s*sticky/);
-    expect(css).not.toMatch(/\.facebook-rail\s*\{[^}]*height:\s*100vh/);
+    // Verify mobile media query resets rail to static with auto height
+    const media960 = css.slice(css.indexOf('@media (max-width: 960px)'));
+    expect(media960).toMatch(/\.facebook-rail\s*\{[^}]*position:\s*static/);
+    expect(media960).toMatch(/\.facebook-rail\s*\{[^}]*height:\s*auto/);
+    expect(media960).toMatch(/\.facebook-rail\s*\{[^}]*overflow-y:\s*visible/);
   });
 
   it('provides rail-collapsed class and toggle buttons for full-width workspace mode', () => {

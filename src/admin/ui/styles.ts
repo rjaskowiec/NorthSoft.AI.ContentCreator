@@ -335,8 +335,6 @@ export function getAdminCss(): string {
       width: 100%;
       max-width: 100vw;
       overflow-x: hidden;
-      margin-right: 400px;
-      transition: margin-right 0.2s ease;
     }
 
     .main-content.rail-collapsed {
@@ -1055,17 +1053,17 @@ export function getAdminCss(): string {
       border-left: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      position: absolute;
+      position: sticky;
       top: 0;
-      right: 0;
-      bottom: 0;
-      height: 100%;
+      height: 100vh;
+      max-height: 100vh;
       overflow-y: auto;
       padding: 1.25rem 1rem;
       z-index: 10;
       box-sizing: border-box;
       scrollbar-width: thin;
       scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+      flex-shrink: 0;
     }
 
     .facebook-rail::-webkit-scrollbar {
@@ -1341,10 +1339,6 @@ export function getAdminCss(): string {
       .facebook-rail {
         width: 340px;
       }
-
-      .main-content {
-        margin-right: 340px;
-      }
     }
 
     @media (max-width: 960px) {
@@ -1432,6 +1426,7 @@ export function getAdminCss(): string {
         width: 100%;
         max-width: 100vw;
         height: auto;
+        max-height: none;
         position: static;
         border-left: none;
         border-top: 1px solid var(--border-color);
