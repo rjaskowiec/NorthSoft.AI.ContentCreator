@@ -679,6 +679,130 @@ export function getAdminScripts(): string {
     let initialSessionLoaded = false;
     const activeInFlightRequests = new Map();
 
+    function extractHumanErrorMessage(err, fallback = 'Operation could not be completed.') {
+      if (!err) return fallback;
+      if (typeof err === 'string') {
+        const trimmed = err.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            return extractHumanErrorMessage(parsed, fallback);
+          } catch(e) {}
+        }
+        const cleaned = trimmed
+          .replace(/^Error:\\s*/i, '')
+          .replace(/^HTTP\\s+\\d+:\\s*/i, '')
+          .replace(/^Failed to fetch\\s+.*$/i, 'Network connection failure. Please check your connection.');
+        return cleaned || fallback;
+      }
+      if (err instanceof Error) {
+        return extractHumanErrorMessage(err.message, fallback);
+      }
+      if (typeof err === 'object') {
+        if (typeof err.message === 'string' && err.message.trim()) {
+          return extractHumanErrorMessage(err.message, fallback);
+        }
+        if (typeof err.error === 'string' && err.error.trim()) {
+          return extractHumanErrorMessage(err.error, fallback);
+        }
+        if (err.error && typeof err.error === 'object') {
+          return extractHumanErrorMessage(err.error, fallback);
+        }
+      }
+      return fallback;
+    }
+
+    function formatApiToast(method, url, opts) {
+      if (opts && opts.skipTask) {
+        return { skipToast: true, title: '', inProgress: '', completed: '', failed: '' };
+      }
+      const normUrl = safeLower(url, '');
+      const m = safeUpper(method, 'GET');
+
+      if (normUrl.includes('/images/upload') || (normUrl.endsWith('/images') && m === 'POST')) {
+        return { title: 'Image Upload', inProgress: 'Uploading image…', completed: 'Image uploaded successfully.', failed: 'Failed to upload image.' };
+      }
+      if (normUrl.includes('/images/candidate-discovery')) {
+        return { title: 'Image Discovery', inProgress: 'Searching for suitable images…', completed: 'Image discovery completed.', failed: 'Image discovery failed.' };
+      }
+      if (normUrl.includes('/images/generate')) {
+        return { title: 'AI Image Synthesis', inProgress: 'Generating realistic image…', completed: 'AI image generated and saved.', failed: 'Failed to generate AI image.' };
+      }
+      if (normUrl.includes('/images/auto-extract-metadata')) {
+        return { title: 'Metadata Analysis', inProgress: 'Analyzing image metadata…', completed: 'Metadata extracted successfully.', failed: 'Failed to extract image metadata.' };
+      }
+      if (normUrl.includes('/images/bulk-action')) {
+        return { title: 'Bulk Image Action', inProgress: 'Applying bulk image updates…', completed: 'Bulk image action completed.', failed: 'Failed to update images.' };
+      }
+      if (normUrl.includes('/images/') && m === 'DELETE') {
+        return { title: 'Delete Image', inProgress: 'Deleting image…', completed: 'Image deleted.', failed: 'Failed to delete image.' };
+      }
+      if (normUrl.includes('/images/') && (m === 'POST' || m === 'PUT')) {
+        return { title: 'Update Image', inProgress: 'Updating image metadata…', completed: 'Image metadata saved.', failed: 'Failed to update image metadata.' };
+      }
+      if (normUrl.includes('/content/posts/') && normUrl.includes('/assign-image')) {
+        return { title: 'Assign Image', inProgress: 'Assigning image to post…', completed: 'Image assigned to post.', failed: 'Failed to assign image.' };
+      }
+      if (normUrl.includes('/content/posts/') && normUrl.includes('/schedule')) {
+        return { title: 'Schedule Publication', inProgress: 'Scheduling post publication…', completed: 'Post scheduled successfully.', failed: 'Failed to schedule post.' };
+      }
+      if (normUrl.includes('/content/generate') || (normUrl.includes('/ideas/') && normUrl.includes('/generate'))) {
+        return { title: 'Generate Post Draft', inProgress: 'Generating post draft…', completed: 'Post draft generated successfully.', failed: 'Failed to generate post draft.' };
+      }
+      if (normUrl.includes('/content/posts/bulk-action')) {
+        return { title: 'Bulk Post Action', inProgress: 'Updating selected post drafts…', completed: 'Post drafts updated successfully.', failed: 'Failed to update post drafts.' };
+      }
+      if (normUrl.includes('/content/posts/') && (m === 'POST' || m === 'PUT')) {
+        return { title: 'Save Post Draft', inProgress: 'Saving changes…', completed: 'Post draft saved.', failed: 'Failed to save post draft.' };
+      }
+      if (normUrl.includes('/content/posts/') && m === 'DELETE') {
+        return { title: 'Delete Post Draft', inProgress: 'Deleting post draft…', completed: 'Post draft deleted.', failed: 'Failed to delete post draft.' };
+      }
+      if (normUrl.includes('/research/ideas/bulk-action')) {
+        return { title: 'Bulk Topic Action', inProgress: 'Updating research topics…', completed: 'Topics updated successfully.', failed: 'Failed to update topics.' };
+      }
+      if (normUrl.includes('/research/ideas') && m === 'POST') {
+        return { title: 'Create Topic', inProgress: 'Creating topic proposal…', completed: 'Topic proposal created.', failed: 'Failed to create topic proposal.' };
+      }
+      if (normUrl.includes('/research/ideas/') && m === 'DELETE') {
+        return { title: 'Delete Topic', inProgress: 'Deleting topic…', completed: 'Topic deleted.', failed: 'Failed to delete topic.' };
+      }
+      if (normUrl.includes('/facebook/page-posts/') && normUrl.includes('/visibility')) {
+        return { title: 'Post Visibility', inProgress: 'Updating visibility on Facebook…', completed: 'Visibility updated.', failed: 'Failed to update visibility.' };
+      }
+      if (normUrl.includes('/facebook/page-posts/') && normUrl.includes('/update')) {
+        return { title: 'Update Facebook Post', inProgress: 'Updating post on Facebook…', completed: 'Facebook post updated.', failed: 'Failed to update Facebook post.' };
+      }
+      if (normUrl.includes('/facebook/page-posts/') && m === 'DELETE') {
+        return { title: 'Delete from Facebook', inProgress: 'Deleting post from Facebook…', completed: 'Post deleted from Facebook.', failed: 'Failed to delete post from Facebook.' };
+      }
+      if (normUrl.includes('/facebook/sync')) {
+        return { title: 'Facebook Page Sync', inProgress: 'Syncing latest posts with Facebook Page…', completed: 'Facebook Page sync complete.', failed: 'Failed to sync with Facebook Page.' };
+      }
+      if (normUrl.includes('/facebook/publish')) {
+        return { title: 'Publish to Facebook', inProgress: 'Publishing post to Facebook…', completed: 'Post published successfully.', failed: 'Publication to Facebook failed.' };
+      }
+      if (normUrl.includes('/schedules/calculate')) {
+        return { title: 'Calculate Schedule', inProgress: 'Calculating optimal publication slots…', completed: 'Schedule slots calculated.', failed: 'Failed to calculate schedule slots.' };
+      }
+      if (normUrl.includes('/schedules/commit')) {
+        return { title: 'Commit Schedule', inProgress: 'Committing publication schedule…', completed: 'Publication schedule committed.', failed: 'Failed to commit publication schedule.' };
+      }
+      if (normUrl.includes('/pipeline/run') || normUrl.includes('/pipeline/trigger')) {
+        return { title: 'Automated Pipeline', inProgress: 'Executing automated content pipeline…', completed: 'Pipeline execution finished.', failed: 'Pipeline execution failed.' };
+      }
+      if (normUrl.includes('/guidelines')) {
+        return { title: 'Editorial Guideline', inProgress: 'Saving editorial guideline…', completed: 'Guideline saved.', failed: 'Failed to save guideline.' };
+      }
+
+      return {
+        title: 'Saving Changes',
+        inProgress: 'Saving changes…',
+        completed: 'Changes saved successfully.',
+        failed: 'Operation could not be completed.'
+      };
+    }
+
     async function guardedFetch(url, options = {}) {
       const method = safeUpper(options ? options.method : 'GET', 'GET');
       const key = method + ':' + url;
@@ -701,11 +825,12 @@ export function getAdminScripts(): string {
       // Activity Center integration -- only surface mutating requests, not background data loads or callers managing their own tasks
       const isAuthCall = url.includes('/api/auth/');
       const isMutation = method !== 'GET';
-      const skipTask = Boolean(opts.skipTask);
+      const toastConfig = formatApiToast(method, url, opts);
+      const skipTask = Boolean(opts.skipTask || toastConfig.skipToast);
       let taskId = null;
       if (!isAuthCall && isMutation && !skipTask) {
-        taskId = window.TaskQueue.add('Fetching ' + method + ' ' + url, { type: 'network' });
-        window.TaskQueue.start(taskId);
+        taskId = window.TaskQueue.add(toastConfig.title, { type: 'network', detail: toastConfig.inProgress });
+        window.TaskQueue.start(taskId, toastConfig.inProgress);
       }
 
       const fetchPromise = (async () => {
@@ -718,10 +843,16 @@ export function getAdminScripts(): string {
           // Update task status based on response
           if (taskId) {
             if (res.ok) {
-              window.TaskQueue.complete(taskId, 'Fetched ' + method + ' ' + url);
+              window.TaskQueue.complete(taskId, toastConfig.completed);
             } else {
-              var errMsg = 'Error ' + res.status;
-              window.TaskQueue.fail(taskId, errMsg, 'Failed to fetch ' + url);
+              let errDetail = 'Server error (' + res.status + ')';
+              try {
+                const errJson = await res.clone().json();
+                if (errJson && (errJson.error || errJson.message)) {
+                  errDetail = extractHumanErrorMessage(errJson.error || errJson.message, errDetail);
+                }
+              } catch(e) {}
+              window.TaskQueue.fail(taskId, toastConfig.failed, errDetail);
             }
           }
 
@@ -2007,8 +2138,8 @@ export function getAdminScripts(): string {
 
         // FAILED tasks NEVER auto-dismiss; stay until explicitly closed via 'X' by user
         task.status = 'FAILED';
-        task.currentStage = errorMessage || 'Operation could not be completed.';
-        task.errorMessage = userAdvice || errorMessage || 'An unexpected issue occurred. Please try again.';
+        task.currentStage = extractHumanErrorMessage(errorMessage, 'Operation could not be completed.');
+        task.errorMessage = extractHumanErrorMessage(userAdvice || errorMessage, 'An unexpected issue occurred. Please try again.');
         task.completedAt = Date.now();
         this._save();
         this.render();
@@ -2118,20 +2249,22 @@ export function getAdminScripts(): string {
       window.TaskQueue.start(taskId, 'Saving guideline to D1...');
 
       try {
-        const res = await fetch('/api/admin/performance/guidelines', {
+        const res = await guardedFetch('/api/admin/performance/guidelines', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ category, guidelineText })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, guidelineText }),
+          skipTask: true
         });
         if (res.ok) {
           closeModal('add-guideline-modal');
           window.TaskQueue.complete(taskId, 'Manual guideline saved.');
           await loadIntelligenceData();
         } else {
-          window.TaskQueue.fail(taskId, 'Could not save guideline', 'Server returned error status.');
+          const errData = await res.json().catch(() => null);
+          window.TaskQueue.fail(taskId, 'Could not save guideline', extractHumanErrorMessage(errData, 'Server returned error status.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network error saving guideline.');
+        window.TaskQueue.fail(taskId, 'Connection Error', extractHumanErrorMessage(err, 'Network error saving guideline.'));
       }
     }
 
@@ -2154,20 +2287,22 @@ export function getAdminScripts(): string {
       window.TaskQueue.start(taskId, 'Updating guideline...');
 
       try {
-        const res = await fetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
+        const res = await guardedFetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify({ guidelineText: text, isActive: true })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guidelineText: text, isActive: true }),
+          skipTask: true
         });
         if (res.ok) {
           closeModal('edit-guideline-modal');
           window.TaskQueue.complete(taskId, 'Guideline updated.');
           await loadIntelligenceData();
         } else {
-          window.TaskQueue.fail(taskId, 'Could not update guideline', 'Server returned error status.');
+          const errData = await res.json().catch(() => null);
+          window.TaskQueue.fail(taskId, 'Could not update guideline', extractHumanErrorMessage(errData, 'Server returned error status.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Failed to update guideline.');
+        window.TaskQueue.fail(taskId, 'Connection Error', extractHumanErrorMessage(err, 'Failed to update guideline.'));
       }
     }
 
@@ -2177,18 +2312,19 @@ export function getAdminScripts(): string {
       window.TaskQueue.start(taskId, 'Removing guideline...');
 
       try {
-        const res = await fetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
+        const res = await guardedFetch('/api/admin/performance/guidelines/' + encodeURIComponent(id), {
           method: 'DELETE',
-          headers: { 'x-csrf-token': csrfToken }
+          skipTask: true
         });
         if (res.ok) {
           window.TaskQueue.complete(taskId, 'Guideline deleted.');
           await loadIntelligenceData();
         } else {
-          window.TaskQueue.fail(taskId, 'Could not delete guideline', 'Server error deleting guideline.');
+          const errData = await res.json().catch(() => null);
+          window.TaskQueue.fail(taskId, 'Could not delete guideline', extractHumanErrorMessage(errData, 'Server error deleting guideline.'));
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Network failure deleting guideline.');
+        window.TaskQueue.fail(taskId, 'Connection Error', extractHumanErrorMessage(err, 'Network failure deleting guideline.'));
       }
     }
 
@@ -2282,12 +2418,13 @@ export function getAdminScripts(): string {
       openModal('intelligent-schedule-modal');
 
       try {
-        const res = await fetch('/api/admin/content/schedules/intelligent-preview', {
+        const res = await guardedFetch('/api/admin/content/schedules/intelligent-preview', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ postIds }),
+          skipTask: true
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => null) || {};
         if (res.ok && data.success && Array.isArray(data.proposedSlots)) {
           activeProposedSlots = data.proposedSlots;
           window.TaskQueue.complete(taskId, 'Calculated ' + activeProposedSlots.length + ' proposed schedule slots.');
@@ -2315,15 +2452,17 @@ export function getAdminScripts(): string {
             }
           }
         } else {
-          window.TaskQueue.fail(taskId, 'Schedule Calculation Failed', 'Unable to find available slots.');
+          const errorMsg = extractHumanErrorMessage(data, 'Unable to find available slots.');
+          window.TaskQueue.fail(taskId, 'Schedule Calculation Failed', errorMsg);
           if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Failed to calculate schedule proposals.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">' + escapeHtml(errorMsg) + '</td></tr>';
           }
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Failure', 'Error calculating schedule proposals.');
+        const errorMsg = extractHumanErrorMessage(err, 'Error calculating schedule proposals.');
+        window.TaskQueue.fail(taskId, 'Connection Failure', errorMsg);
         if (tbody) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">Error calculating schedule proposals.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--accent-rose); padding:1.5rem;">' + escapeHtml(errorMsg) + '</td></tr>';
         }
       }
     }
@@ -2347,12 +2486,13 @@ export function getAdminScripts(): string {
           throw new Error('One or more proposed publication times are invalid. Please calculate the schedule again.');
         }
 
-        const res = await fetch('/api/admin/content/schedules/intelligent-commit', {
+        const res = await guardedFetch('/api/admin/content/schedules/intelligent-commit', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ slots: slotsToCommit }),
+          skipTask: true
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => null) || {};
         const committedSlots = Array.isArray(data.committedSlots) ? data.committedSlots : [];
         const commitMatchesProposal = committedSlots.length === slotsToCommit.length && committedSlots.every((slot, index) =>
           slot.postId === slotsToCommit[index].postId && slot.scheduledAtIso === slotsToCommit[index].scheduledAtIso,
@@ -2360,14 +2500,15 @@ export function getAdminScripts(): string {
         if (res.ok && data.success && commitMatchesProposal) {
           closeModal('intelligent-schedule-modal');
           selectedPostIds.clear();
-          window.TaskQueue.complete(taskId, 'Successfully scheduled ' + data.committedCount + ' posts.');
+          window.TaskQueue.complete(taskId, 'Successfully scheduled ' + (data.committedCount || committedSlots.length) + ' posts.');
           await loadContentData();
           await loadSchedulesData();
         } else {
-          window.TaskQueue.fail(taskId, 'Commit Schedule Failed', safeStr(data.error, 'The saved schedule did not match the approved proposal.'));
+          const errorMsg = extractHumanErrorMessage(data, 'The saved schedule did not match the approved proposal.');
+          window.TaskQueue.fail(taskId, 'Commit Schedule Failed', errorMsg);
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Commit Schedule Failed', err instanceof Error ? err.message : 'Network error committing schedule.');
+        window.TaskQueue.fail(taskId, 'Commit Schedule Failed', extractHumanErrorMessage(err, 'Network error committing schedule.'));
       } finally {
         if (commitBtn) commitBtn.textContent = 'Accept & Commit Schedule';
       }
@@ -2647,12 +2788,13 @@ export function getAdminScripts(): string {
       }
 
       try {
-        const res = await fetch('/api/admin/research/run', {
+        const res = await guardedFetch('/api/admin/research/run', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-csrf-token': csrfToken
-          }
+          },
+          skipTask: true
         });
 
         const data = await res.json();
@@ -2666,11 +2808,12 @@ export function getAdminScripts(): string {
           }
           await loadResearchData();
         } else {
-          const errMsg = safeStr(data.summary?.errorMessage || data.error, 'Topic research failed.');
+          const errMsg = extractHumanErrorMessage(data.summary?.errorMessage || data.error, 'Topic research failed.');
           window.TaskQueue.fail(taskId, 'Topic Discovery Failed', errMsg);
         }
       } catch (err) {
-        window.TaskQueue.fail(taskId, 'Connection Error', 'Could not reach topic discovery service.');
+        const errMsg = extractHumanErrorMessage(err, 'Could not reach topic discovery service.');
+        window.TaskQueue.fail(taskId, 'Connection Error', errMsg);
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -2932,15 +3075,15 @@ export function getAdminScripts(): string {
 
     async function findImageForPost(postId) {
       const taskId = window.TaskQueue.add('Finding Post Image', { type: 'manual' });
-      window.TaskQueue.start(taskId, 'Searching Unsplash / R2 image library for matching post image...');
+      window.TaskQueue.start(taskId, 'Searching curated image library for matching photo...');
 
       try {
-        const response = await fetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image/search', {
-          method: 'POST', headers: { 'x-csrf-token': csrfToken }
+        const response = await guardedFetch('/api/admin/content/posts/' + encodeURIComponent(postId) + '/image/search', {
+          method: 'POST', headers: { 'x-csrf-token': csrfToken }, skipTask: true
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.success) {
-          const errMsg = safeStr(result.error, 'No matching image was found.');
+          const errMsg = extractHumanErrorMessage(result.error, 'No matching image was found.');
           window.TaskQueue.fail(taskId, 'Image Search Failed', errMsg);
           alert(errMsg);
           return;
@@ -2949,13 +3092,14 @@ export function getAdminScripts(): string {
         const post = cachedPosts.find(item => item && item.id === postId);
         if (post && isPublishedPost(post)) {
           window.TaskQueue.stage(taskId, 'Syncing new image with Facebook Page...');
-          const sync = await fetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update-image', {
-            method: 'POST', headers: { 'x-csrf-token': csrfToken }
+          const sync = await guardedFetch('/api/admin/facebook/posts/' + encodeURIComponent(postId) + '/update-image', {
+            method: 'POST', headers: { 'x-csrf-token': csrfToken }, skipTask: true
           });
           if (!sync.ok) {
             const syncResult = await sync.json().catch(() => ({}));
-            window.TaskQueue.fail(taskId, 'Facebook Image Sync Warning', safeStr(syncResult.error));
-            alert('Image found and saved, but Facebook did not confirm it: ' + safeStr(syncResult.error, 'Unknown Meta API error.'));
+            const syncErrMsg = extractHumanErrorMessage(syncResult.error, 'Unknown Meta API error.');
+            window.TaskQueue.fail(taskId, 'Facebook Image Sync Warning', syncErrMsg);
+            alert('Image found and saved, but Facebook did not confirm it: ' + syncErrMsg);
           } else {
             window.TaskQueue.complete(taskId, 'Image updated and synced to Facebook Page.');
           }
@@ -2965,7 +3109,7 @@ export function getAdminScripts(): string {
         await loadContentData();
       } catch (err) {
         console.error('Failed to find an image for post:', err);
-        const errMsg = err instanceof Error ? err.message : 'Image search failed.';
+        const errMsg = extractHumanErrorMessage(err, 'Image search failed.');
         window.TaskQueue.fail(taskId, 'Image Search Error', errMsg);
         alert(errMsg);
       }
@@ -2995,12 +3139,13 @@ export function getAdminScripts(): string {
       }
 
       try {
-        const res = await fetch('/api/admin/pipeline/run', {
+        const res = await guardedFetch('/api/admin/pipeline/run', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-csrf-token': csrfToken
-          }
+          },
+          skipTask: true
         });
 
         const data = await res.json();
@@ -3008,11 +3153,11 @@ export function getAdminScripts(): string {
           window.TaskQueue.complete(taskId, 'Pipeline execution completed successfully.');
           await loadDashboardData();
         } else {
-          const errMsg = safeStr(data.result?.errorMessage || data.error, 'Pipeline run encountered an issue.');
+          const errMsg = extractHumanErrorMessage(data.result?.errorMessage || data.error, 'Pipeline run encountered an issue.');
           window.TaskQueue.fail(taskId, 'Pipeline Issue', errMsg);
         }
       } catch (err) {
-        const errMsg = safeStr(err?.message, 'Network or connection error');
+        const errMsg = extractHumanErrorMessage(err, 'Network error running automated pipeline.');
         window.TaskQueue.fail(taskId, 'Connection Error', errMsg);
       } finally {
         if (btn) {
@@ -3903,6 +4048,25 @@ export function getAdminScripts(): string {
       return monthNames[d.getMonth()] + ' ' + d.getDate() + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     }
 
+    function humanizeAiDecision(decision) {
+      const norm = safeUpper(decision, '').trim();
+      switch (norm) {
+        case 'PASS': case 'PASSED': case 'APPROVED':
+          return { label: 'Approved', badgeClass: 'status-healthy' };
+        case 'REJECT': case 'REJECTED': case 'FAIL': case 'FAILED':
+          return { label: 'Rejected', badgeClass: 'status-alert' };
+        case 'BLOCKED':
+          return { label: 'Blocked', badgeClass: 'status-alert' };
+        case 'DEFERRED':
+          return { label: 'Deferred', badgeClass: 'status-disabled' };
+        default:
+          return {
+            label: norm ? norm.charAt(0) + norm.slice(1).toLowerCase() : 'Not evaluated',
+            badgeClass: 'status-disabled'
+          };
+      }
+    }
+
     function renderAuditRows(events) {
       if (!Array.isArray(events) || events.length === 0) {
         return '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;"><div style="font-weight:600; margin-bottom:0.25rem;">No audit events found</div><div style="font-size:0.8rem; color:var(--text-subtle);">Try adjusting category filters or search queries</div></td></tr>';
@@ -3935,21 +4099,60 @@ export function getAdminScripts(): string {
 
         const operationTitle = safeStr(act.operation || (act.details && (act.details.title || act.details.sourceName)) || (act.entityType ? safeStr(act.entityType) + ':' + safeStr(act.entityId).substring(0, 8) : 'Event'));
 
-        let summaryText = '—';
-        if (act.error && act.error.message) {
-          summaryText = (act.error.stage ? safeStr(act.error.stage) + ': ' : '') + safeStr(act.error.message);
-        } else if (act.details && act.details.error) {
-          summaryText = safeStr(act.details.error);
-        } else if (act.durationMs) {
-          summaryText = evt.title + ' · ' + (Number(act.durationMs) / 1000).toFixed(2) + 's';
-        } else if (act.details && act.details.reason) {
-          summaryText = safeStr(act.details.reason);
-        } else {
-          summaryText = evt.title;
+        const det = act.details || {};
+        let structuredSummary = '';
+        let structuredHtml = '';
+
+        if (det.finalDecision || det.qualityScore !== undefined || det.rejectionReason || String(act.eventType).includes('POST_GENERATED') || String(act.eventType).includes('QUALITY_GATE')) {
+          const dec = humanizeAiDecision(det.finalDecision);
+          const isRej = dec.label === 'Rejected' || dec.label === 'Blocked';
+          const postTitle = safeStr(det.title || act.operation || '');
+          const reason = safeStr(det.rejectionReason || det.reason || (act.error && act.error.message) || '');
+
+          if (isRej) {
+            structuredSummary = 'Post rejected by AI review' + (postTitle ? ': "' + postTitle + '"' : '');
+          } else if (dec.label === 'Approved') {
+            structuredSummary = 'Post draft generated' + (postTitle ? ': "' + postTitle + '"' : '');
+          }
+
+          structuredHtml = '<div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:8px; padding:0.85rem 1rem; margin-bottom:1rem;">' +
+            '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem; flex-wrap:wrap; gap:0.5rem;">' +
+              '<div style="font-weight:600; font-size:0.95rem; color:var(--text-main);">' + (isRej ? 'Post draft rejected by AI review' : 'Post draft evaluation') + '</div>' +
+              (det.finalDecision ? '<span class="status-badge ' + dec.badgeClass + '">AI Decision: ' + dec.label + '</span>' : '') +
+            '</div>' +
+            '<div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.825rem;">' +
+              (postTitle ? '<div><strong style="color:var(--text-muted);">Post:</strong> <span style="color:var(--text-main); font-weight:500;">' + escapeHtml(postTitle) + '</span></div>' : '') +
+              (det.qualityScore !== undefined && det.qualityScore !== null ? '<div><strong style="color:var(--text-muted);">Quality score:</strong> <span style="color:var(--accent-cyan); font-weight:600;">' + det.qualityScore + ' / 10</span></div>' : '') +
+              (reason ? '<div style="background:rgba(239,68,68,0.08); border-left:3px solid #f87171; padding:0.45rem 0.65rem; border-radius:4px; margin-top:0.25rem;"><strong style="color:#fca5a5;">Reason:</strong> <span style="color:var(--text-main);">' + escapeHtml(reason) + '</span></div>' : '') +
+            '</div>' +
+          '</div>';
+        } else if (det.itemsFound !== undefined || det.itemsAccepted !== undefined) {
+          const found = Number(det.itemsFound || det.topicsDiscovered || 0);
+          const accepted = Number(det.itemsAccepted || 0);
+          structuredSummary = 'Topic discovery: found ' + found + ', accepted ' + accepted;
+        } else if (det.attachedFromLibrary !== undefined) {
+          structuredSummary = 'Image curation: attached ' + Number(det.attachedFromLibrary || 0) + ' from library';
+        } else if (det.scheduledCount !== undefined) {
+          structuredSummary = 'Publication scheduling: ' + Number(det.scheduledCount || 0) + ' post(s) scheduled';
         }
 
-        if (summaryText.length > 55) {
-          summaryText = summaryText.substring(0, 52) + '…';
+        let summaryText = structuredSummary || '—';
+        if (!structuredSummary) {
+          if (act.error && act.error.message) {
+            summaryText = (act.error.stage ? safeStr(act.error.stage) + ': ' : '') + safeStr(act.error.message);
+          } else if (act.details && act.details.error) {
+            summaryText = safeStr(act.details.error);
+          } else if (act.durationMs) {
+            summaryText = evt.title + ' · ' + (Number(act.durationMs) / 1000).toFixed(2) + 's';
+          } else if (act.details && act.details.reason) {
+            summaryText = safeStr(act.details.reason);
+          } else {
+            summaryText = evt.title;
+          }
+        }
+
+        if (summaryText.length > 60) {
+          summaryText = summaryText.substring(0, 57) + '…';
         }
 
         const rowKey = safeStr(act.id) || ('idx-' + idx + '-' + Math.random().toString(36).substring(2, 7));
@@ -3997,6 +4200,8 @@ export function getAdminScripts(): string {
                   </div>
                 </div>
 
+                \${structuredHtml}
+
                 <div class="audit-detail-grid">
                   <div class="audit-detail-field">
                     <span class="audit-detail-label">Stage / Component</span>
@@ -4032,7 +4237,7 @@ export function getAdminScripts(): string {
                 \` : ''}
 
                 <details style="margin-top:1rem;">
-                  <summary style="font-size:0.8rem; color:var(--accent-blue); cursor:pointer; font-weight:600;">View Raw Event Payload JSON</summary>
+                  <summary style="font-size:0.8rem; color:var(--accent-blue); cursor:pointer; font-weight:600;">Raw details</summary>
                   <pre style="background:#05070c; padding:0.75rem; border-radius:6px; border:1px solid var(--border-color); font-size:0.775rem; color:var(--text-muted); margin-top:0.5rem; max-height:200px; overflow:auto;">\${safeDetailsJson}</pre>
                 </details>
               </div>
@@ -4594,19 +4799,19 @@ export function getAdminScripts(): string {
           return;
         }
 
-        const stagePolishLabels = {
-          topics: 'Wyszukiwanie tematów',
-          posts: 'Generowanie postów',
-          images: 'Ilustracje',
-          scheduling: 'Planowanie publikacji',
-          full_pipeline: 'Pełny cykl automatu',
-          maintenance: 'Konserwacja'
+        const stageEnglishLabels = {
+          topics: 'Topic Discovery',
+          posts: 'Post Generation',
+          images: 'Image Curation & Synthesis',
+          scheduling: 'Publication Scheduling',
+          full_pipeline: 'Full Pipeline Cycle',
+          maintenance: 'System Maintenance'
         };
 
         const cardsHtml = runs.map(run => {
           const runId = escapeHtml(String(run.id));
           const stageKey = run.stage || 'full_pipeline';
-          const stageLabel = stagePolishLabels[stageKey] || safeUpper(stageKey, 'AUTOMATION');
+          const stageLabel = stageEnglishLabels[stageKey] || safeUpper(stageKey, 'AUTOMATION');
           const status = safeUpper(run.status, 'UNKNOWN');
           const isSuccess = status === 'COMPLETED' || status === 'SUCCESS';
           const isRunning = status === 'RUNNING';
@@ -4645,8 +4850,32 @@ export function getAdminScripts(): string {
             ? Number(rawReads).toLocaleString() + ' D1 reads'
             : null;
 
-          const summary = escapeHtml(safeStr(run.summary || run.result_status || run.errorMessage || run.error_message || 'Zakończono'));
           const details = run.details || {};
+          let summary = '';
+          if (details.finalDecision || details.qualityScore !== undefined || details.rejectionReason) {
+            const dec = humanizeAiDecision(details.finalDecision);
+            const isRej = dec.label === 'Rejected' || dec.label === 'Blocked';
+            const postTitle = safeStr(details.title || run.title || '');
+            const reason = safeStr(details.rejectionReason || details.reason || run.errorMessage || run.error_message || '');
+            if (isRej) {
+              summary = 'Post draft rejected by AI review' + (postTitle ? ': "' + postTitle + '"' : '') + (reason ? ' — ' + reason : '');
+            } else if (dec.label === 'Approved') {
+              summary = 'Generated post draft' + (postTitle ? ': "' + postTitle + '"' : '');
+            }
+          } else if (details.itemsAccepted !== undefined || details.topicsDiscovered !== undefined) {
+            const f = Number(details.itemsFound ?? details.topicsDiscovered ?? 0);
+            const a = Number(details.itemsAccepted ?? 0);
+            summary = 'Topic discovery: found ' + f + ', accepted ' + a + ' new proposals';
+          } else if (details.attachedFromLibrary !== undefined) {
+            summary = 'Image curation: attached ' + Number(details.attachedFromLibrary || 0) + ' from library, candidates ' + Number(details.candidatesAwaitingApproval || 0);
+          } else if (details.scheduledCount !== undefined) {
+            summary = 'Publication scheduling: ' + Number(details.scheduledCount || 0) + ' post(s) scheduled';
+          }
+
+          if (!summary) {
+            summary = safeStr(run.summary || run.result_status || run.errorMessage || run.error_message || 'Completed');
+          }
+          summary = escapeHtml(summary);
 
           // Counts badge pills
           let countsHtml = '';
@@ -4654,15 +4883,15 @@ export function getAdminScripts(): string {
             countsHtml = '<div style="display:flex; gap:0.4rem; font-size:0.75rem; flex-wrap:wrap; margin-top:0.35rem;">';
             if (details.found !== undefined) {
               countsHtml += '<span style="background:rgba(255,255,255,0.06); padding:0.15rem 0.45rem; border-radius:4px; color:var(--text-muted);">' +
-                'Znaleziono: <strong style="color:var(--text-main);">' + Number(details.found) + '</strong></span>';
+                'Found: <strong style="color:var(--text-main);">' + Number(details.found) + '</strong></span>';
             }
             if (details.accepted !== undefined) {
               countsHtml += '<span style="background:rgba(16,185,129,0.12); padding:0.15rem 0.45rem; border-radius:4px; color:#6ee7b7;">' +
-                'Zaakceptowano: <strong>' + Number(details.accepted) + '</strong></span>';
+                'Accepted: <strong>' + Number(details.accepted) + '</strong></span>';
             }
             if (details.rejected !== undefined) {
               countsHtml += '<span style="background:rgba(239,68,68,0.12); padding:0.15rem 0.45rem; border-radius:4px; color:#fca5a5;">' +
-                'Odrzucono: <strong>' + Number(details.rejected) + '</strong></span>';
+                'Rejected: <strong>' + Number(details.rejected) + '</strong></span>';
             }
             countsHtml += '</div>';
           }
@@ -4678,7 +4907,7 @@ export function getAdminScripts(): string {
             entitiesHtml += '<div style="display:flex; flex-direction:column; gap:0.3rem; margin-top:0.5rem;">';
             
             topics.slice(0, 4).forEach(t => {
-              const tTitle = escapeHtml(safeStr(t.title || t.topic_id || 'Temat'));
+              const tTitle = escapeHtml(safeStr(t.title || t.topic_id || 'Topic'));
               const tStatus = escapeHtml(safeStr(t.status || 'NEW'));
               entitiesHtml += '<div style="font-size:0.78rem; display:flex; align-items:center; gap:0.4rem; color:var(--text-muted);">' +
                 '<span style="font-family:monospace; font-size:0.7rem; color:var(--accent-cyan);">' + (t.id ? '#' + escapeHtml(String(t.id).substring(0, 6)) : 'TOPIC') + '</span> ' +
@@ -4698,7 +4927,7 @@ export function getAdminScripts(): string {
             });
 
             schedules.slice(0, 4).forEach(s => {
-              const sDate = s.publish_at ? formatDateSafe(s.publish_at) + ' ' + formatTimeSafe(s.publish_at) : 'Planowana publikacja';
+              const sDate = s.publish_at ? formatDateSafe(s.publish_at) + ' ' + formatTimeSafe(s.publish_at) : 'Scheduled publication';
               const sStatus = escapeHtml(safeStr(s.status || 'SCHEDULED'));
               entitiesHtml += '<div style="font-size:0.78rem; display:flex; align-items:center; gap:0.4rem; color:var(--text-muted);">' +
                 '<span style="font-family:monospace; font-size:0.7rem; color:var(--accent-blue);">' + (s.post_id ? '#' + escapeHtml(String(s.post_id).substring(0, 6)) : 'SCHED') + '</span> ' +
@@ -4713,10 +4942,31 @@ export function getAdminScripts(): string {
           // Error / retry alert box
           let errorAlertHtml = '';
           if (run.error_message || status === 'FAILED' || details.error) {
-            const errText = escapeHtml(safeStr(run.error_message || details.error || 'Wystąpił błąd podczas przetwarzania etapu.'));
-            const retryInfo = details.retry ? ' | Ponowienie: ' + escapeHtml(String(details.retry)) : '';
+            const errText = escapeHtml(safeStr(run.error_message || details.error || 'A processing error occurred in this pipeline stage.'));
+            const retryInfo = details.retry ? ' | Retry attempt: ' + escapeHtml(String(details.retry)) : '';
             errorAlertHtml = '<div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:6px; padding:0.5rem 0.75rem; margin-top:0.5rem; color:#fca5a5; font-size:0.78rem;">' +
-              '<strong>Błąd:</strong> ' + errText + retryInfo +
+              '<strong>Error:</strong> ' + errText + retryInfo +
+            '</div>';
+          }
+
+          // Structured Details Block
+          let structuredRunHtml = '';
+          if (details.finalDecision || details.qualityScore !== undefined || details.rejectionReason) {
+            const dec = humanizeAiDecision(details.finalDecision);
+            const isRej = dec.label === 'Rejected' || dec.label === 'Blocked';
+            const postTitle = safeStr(details.title || run.title || '');
+            const reason = safeStr(details.rejectionReason || details.reason || run.errorMessage || run.error_message || '');
+
+            structuredRunHtml = '<div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.75rem; margin-bottom:0.6rem;">' +
+              '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">' +
+                '<div style="font-weight:600; font-size:0.85rem; color:var(--text-main);">' + (isRej ? 'Post draft rejected by AI review' : 'Post draft generation evaluation') + '</div>' +
+                (details.finalDecision ? '<span class="status-badge ' + dec.badgeClass + '">AI Decision: ' + dec.label + '</span>' : '') +
+              '</div>' +
+              '<div style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem;">' +
+                (postTitle ? '<div><strong style="color:var(--text-muted);">Post:</strong> <span style="color:var(--text-main); font-weight:500;">' + escapeHtml(postTitle) + '</span></div>' : '') +
+                (details.qualityScore !== undefined && details.qualityScore !== null ? '<div><strong style="color:var(--text-muted);">Quality score:</strong> <span style="color:var(--accent-cyan); font-weight:600;">' + details.qualityScore + ' / 10</span></div>' : '') +
+                (reason ? '<div style="background:rgba(239,68,68,0.08); border-left:3px solid #f87171; padding:0.4rem 0.6rem; border-radius:4px; margin-top:0.2rem;"><strong style="color:#fca5a5;">Reason:</strong> <span style="color:var(--text-main);">' + escapeHtml(reason) + '</span></div>' : '') +
+              '</div>' +
             '</div>';
           }
 
@@ -4741,13 +4991,17 @@ export function getAdminScripts(): string {
                 (d1Writes ? '<span style="font-size:0.75rem; color:var(--text-muted);">' + d1Writes + '</span>' : '') +
                 (d1Reads ? '<span style="font-size:0.7rem; color:var(--text-muted);">' + d1Reads + '</span>' : '') +
                 '<button type="button" class="btn-secondary" style="font-size:0.72rem; padding:0.2rem 0.5rem; margin-top:0.25rem;" onclick="toggleActivityDetails(' + "'" + runId + "'" + ')">' +
-                  'Szczegóły' +
+                  'Details' +
                 '</button>' +
               '</div>' +
             '</div>' +
             '<div id="activity-details-' + runId + '" style="display:none; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border-color);">' +
-              '<div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.3rem;">Szczegóły zdarzenia / Metadane D1</div>' +
-              '<pre style="background:#090d16; color:#94a3b8; padding:0.6rem; border-radius:6px; font-size:0.72rem; font-family:monospace; max-height:180px; overflow-y:auto; margin:0; white-space:pre-wrap; word-break:break-word;">' + rawJson + '</pre>' +
+              '<div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.5rem; letter-spacing:0.04em;">Workflow Details & Metrics</div>' +
+              structuredRunHtml +
+              '<details style="margin-top:0.6rem;">' +
+                '<summary style="font-size:0.75rem; color:var(--accent-blue); cursor:pointer; font-weight:600;">Raw details</summary>' +
+                '<pre style="background:#090d16; color:#94a3b8; padding:0.6rem; border-radius:6px; font-size:0.72rem; font-family:monospace; max-height:180px; overflow-y:auto; margin:0.35rem 0 0 0; white-space:pre-wrap; word-break:break-word;">' + rawJson + '</pre>' +
+              '</details>' +
             '</div>' +
           '</div>';
         }).join('');
@@ -7331,9 +7585,8 @@ export function getAdminScripts(): string {
           formData.append('status', status);
           formData.append('notes', notes);
 
-          res = await fetch('/api/admin/images', {
+          res = await guardedFetch('/api/admin/images', {
             method: 'POST',
-            headers: { 'x-csrf-token': csrfToken },
             body: formData,
           });
         } else {
@@ -7346,7 +7599,7 @@ export function getAdminScripts(): string {
 
           res = await guardedFetch('/api/admin/images', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               title,
               url,
@@ -7366,10 +7619,11 @@ export function getAdminScripts(): string {
           closeModal('add-image-modal');
           loadImagesData();
         } else {
-          alert(safeStr(data.error, 'Failed to add image.'));
+          alert(extractHumanErrorMessage(data, 'Failed to add image.'));
         }
       } catch (err) {
         console.error('Error adding image:', err);
+        alert(extractHumanErrorMessage(err, 'Failed to upload image.'));
       }
     }
 

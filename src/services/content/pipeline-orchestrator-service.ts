@@ -713,10 +713,10 @@ export class PipelineOrchestratorService {
             result: r,
             outcome,
             summary:
-              `Znaleziono ${found} elementów źródłowych, oceniono AI ${r.candidatesEvaluated}, ` +
-              `odrzucono ${rejected}, odroczono ${r.deferredCount}, zaakceptowano ${accepted}` +
-              (r.invalidResponses ? `, nieprawidłowe odpowiedzi AI ${r.invalidResponses}` : '') +
-              (r.aiInferenceFailed ? `, błędy AI ${r.aiInferenceFailed}` : ''),
+              `Discovered ${found} raw sources, evaluated ${r.candidatesEvaluated} with AI, ` +
+              `rejected ${rejected}, deferred ${r.deferredCount}, accepted ${accepted}` +
+              (r.invalidResponses ? `, invalid AI responses ${r.invalidResponses}` : '') +
+              (r.aiInferenceFailed ? `, AI inference errors ${r.aiInferenceFailed}` : ''),
           };
           await this.recordRunEnd(runId, r.researchError ? 'failed' : 'completed', 'topics', {
             topicsDiscovered: accepted,
@@ -756,7 +756,7 @@ export class PipelineOrchestratorService {
             success: ok,
             result: r,
             outcome: postOutcome,
-            summary: ok ? `Wygenerowano post: "${r.title}"` : `Post odrzucony (${r.finalDecision}): ${r.rejectionReason || ''}`,
+            summary: ok ? `Generated post draft: "${r.title}"` : `Post draft rejected (${r.finalDecision}): ${r.rejectionReason || ''}`,
           };
           await this.recordRunEnd(runId, ok ? 'completed' : r.finalDecision === 'DEFERRED' ? 'deferred' : 'failed', 'posts', {
             postId: r.postId,
@@ -788,7 +788,7 @@ export class PipelineOrchestratorService {
             success: true,
             result: r,
             outcome: imageOutcome,
-            summary: `Ilustracje: przetworzono ${r.processed}, dołączono ${attached} z biblioteki, kandydaci do akceptacji ${candidatesCreated} (Openverse ${r.assignedFromOpenverse}, AI ${r.generatedFromAi}), bez wyniku ${r.notFound}`,
+            summary: `Images: processed ${r.processed}, attached ${attached} from library, candidates awaiting approval ${candidatesCreated} (Openverse ${r.assignedFromOpenverse}, AI ${r.generatedFromAi}), without result ${r.notFound}`,
           };
           await this.recordRunEnd(runId, 'completed', 'images', {
             message: res.summary,
@@ -815,7 +815,7 @@ export class PipelineOrchestratorService {
             success: true,
             result: r,
             outcome: schedOutcome,
-            summary: `Zaplanowano ${r.scheduledCount} post(ów)` + (r.skippedWithoutImage ? `, ${r.skippedWithoutImage} czeka na obraz` : ''),
+            summary: `Scheduled ${r.scheduledCount} post(s)` + (r.skippedWithoutImage ? `, ${r.skippedWithoutImage} awaiting image` : ''),
           };
           await this.recordRunEnd(runId, 'completed', 'scheduling', {
             message: res.summary,
@@ -1055,7 +1055,7 @@ export class PipelineOrchestratorService {
       }
 
       const stepSummary = steps.map((s) => s.summary).join(' | ');
-      const promotionNote = promotedFromDeferred > 0 ? `Przywrócono z odroczonych: ${promotedFromDeferred}` : '';
+      const promotionNote = promotedFromDeferred > 0 ? `Promoted from deferred: ${promotedFromDeferred}` : '';
       const windowNote = !inAiWindow ? `AI window: outside (${AI_BACKGROUND_WINDOW_LABEL})` : '';
       const reason = [stepSummary, promotionNote, windowNote].filter(Boolean).join(' | ') || 'Nothing to do.';
 
@@ -1502,19 +1502,19 @@ export class PipelineOrchestratorService {
       } else if (!summary || summary === 'null') {
         switch (stage) {
           case 'topics':
-            summary = `Wyszukiwanie tematów: znaleziono ${(row.topics_discovered as number) || 0} nowych propozycji`;
+            summary = `Topic discovery: found ${(row.topics_discovered as number) || 0} new proposals`;
             break;
           case 'posts':
-            summary = row.post_id ? `Utworzono post (ID: ${String(row.post_id).substring(0, 8)})` : 'Generowanie postów zakończone';
+            summary = row.post_id ? `Created post draft (ID: ${String(row.post_id).substring(0, 8)})` : 'Post generation completed';
             break;
           case 'images':
-            summary = 'Dopasowanie i weryfikacja ilustracji';
+            summary = 'Image matching and verification';
             break;
           case 'scheduling':
-            summary = 'Planowanie publikacji gotowych postów';
+            summary = 'Publication scheduling for ready drafts';
             break;
           default:
-            summary = `Uruchomienie etapu: ${stage} (${status})`;
+            summary = `Stage execution: ${stage} (${status})`;
             break;
         }
       }

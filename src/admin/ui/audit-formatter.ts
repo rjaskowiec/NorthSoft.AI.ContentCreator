@@ -217,6 +217,13 @@ export function formatAuditDetails(detailsInput: unknown): DetailItem[] {
     neurons: 'Est. Neurons',
     errorMessage: 'Error',
     error: 'Error',
+    finalDecision: 'AI Decision',
+    qualityScore: 'Quality Score',
+    rejectionReason: 'Rejection Reason',
+    postId: 'Post ID',
+    ideaId: 'Idea ID',
+    title: 'Title',
+    outcome: 'Outcome',
   };
 
   const items: DetailItem[] = [];
@@ -238,8 +245,8 @@ export function formatAuditDetails(detailsInput: unknown): DetailItem[] {
       value = String(rawVal);
     }
 
-    if (value.length > 36) {
-      value = value.substring(0, 33) + '…';
+    if (value.length > 50) {
+      value = value.substring(0, 47) + '…';
     }
 
     items.push({ key, label, value });

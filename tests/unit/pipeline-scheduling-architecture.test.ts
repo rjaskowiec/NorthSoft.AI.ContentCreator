@@ -237,7 +237,7 @@ describe('AI Window Architecture & 24/7 Scheduling Regression Suite', () => {
     expect(result.ran).toBe(true);
     expect(result.outcome).toBe('COMPLETED_WITH_OUTPUT');
     expect(result.deterministicOutcome).toBe('EXECUTED');
-    expect(result.reason).toContain('Przywrócono z odroczonych: 1');
+    expect(result.reason).toMatch(/Promoted from deferred: 1|Przywrócono z odroczonych: 1/);
     const promotedTopic = topics.find((t) => t.id === 'idea-deferred-1');
     expect(promotedTopic?.status).toBe('queued');
   });
